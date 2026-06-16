@@ -1,0 +1,63 @@
+{
+  "summary": "Backend testing complete for My Funding Bank fintech super app. 47 of 48 pytest tests passed (97.9%). 1 critical failure: Stripe checkout session creation fails with 'Invalid API Key' because `sk_test_emergent` in backend/.env is NOT a real Stripe test key — Stripe rejects it. All other endpoints (auth signup/login/OTP, wallet send/recharge/billpay, investments, travel, insurance, rewards, referral, KYC, dashboard) work correctly. Auth protection verified on 12 protected endpoints (all return 401 without Bearer). No MongoDB _id leaks observed. Demo user demo@mfb.in/demo1234 login works. OTP demo flow (123456) works. Welcome bonus ₹5000 + 100 reward points correctly credited on signup. 2% cashback on recharge verified.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/wallet/topup/create-session",
+        "issue": "Stripe API key `sk_test_emergent` set in /app/backend/.env is invalid. Stripe responds: 'Invalid API Key provided: sk_test_****gent'. Endpoint returns 502 Bad Gateway. The placeholder key needs to be replaced with a real Stripe test secret key (sk_test_xxx from a real Stripe account) OR the integration should be switched to Emergent's Stripe checkout wrapper (emergentintegrations). Real card top-up flow is currently 100% broken.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/otp/verify",
+        "issue": "OTP record is not deleted when verification fails, but is deleted on success — minor; consider expiring OTPs after N minutes since `created_at` is stored but never checked."
+      },
+      {
+        "endpoint": "POST /api/wallet/send & friends",
+        "issue": "Wallet debit + transaction insert are not wrapped in a Mongo transaction. If the tx insert fails after balance is decremented, wallet will be over-debited. Not blocking, but worth noting for production hardening."
+      },
+      {
+        "endpoint": "POST /api/insurance/buy",
+        "issue": "`plan_id` is a query param instead of a JSON body field. Works fine but is inconsistent with other endpoints that accept JSON bodies — main agent may want to standardize."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_mfb_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix Stripe key: replace `STRIPE_API_KEY=sk_test_emergent` in /app/backend/.env with a real Stripe test secret key (or switch to emergentintegrations Stripe wrapper) and restart backend. Without this, `/api/wallet/topup/create-session` will keep returning 502.",
+    "Consider adding OTP expiry check (e.g. reject OTP older than 5 minutes) in /api/auth/otp/verify.",
+    "(Optional) Standardize /api/insurance/buy to accept plan_id in JSON body instead of query string."
+  ],
+  "critical_code_review_comments": [
+    "STRIPE_API_KEY=sk_test_emergent is a placeholder, not a real Stripe key — checkout will always fail (see server.py:26-28, 452-470).",
+    "No transactional safety between wallet update and transactions insert (server.py:397-438). Acceptable for MVP but should be revisited.",
+    "/api/profile (PUT) uses req.dict() which is deprecated in Pydantic v2 — prefer req.model_dump() (server.py:761).",
+    "_user_public references u['created_at'] without defaulting; safe today but fragile if seed data lacks the field.",
+    "Wallet `_ensure_wallet` is called inside signup AND inside /wallet GET — fine for resilience, but unnecessary writes on every wallet read of a brand new user.",
+    "server.py is ~820 lines — close to the 700 line guideline. Consider splitting into routers (auth.py, wallet.py, invest.py, travel.py, insurance.py) for maintainability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (created)",
+    "/app/backend/tests/test_mfb_backend.py (created)"
+  ],
+  "success_rate": {
+    "backend": "97.9% (47/48 passed, 1 critical failure on Stripe checkout, 1 skipped due to balance depletion in earlier test run)",
+    "frontend": "Not tested (backend-only request)"
+  },
+  "seed_data_creation": "Tests create transient TEST_-prefixed users via /api/auth/signup and OTP signup. These are isolated to test runs and use unique emails/mobiles per run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend is stable except for Stripe checkout. Demo user demo@mfb.in/demo1234 works. Once Stripe key is fixed, re-run only `pytest /app/backend/tests/test_mfb_backend.py::TestStripeTopup -v`. Note: the test class TestWallet drains the demo user's wallet quickly, which causes TestInsurance.test_buy_and_list_policies (₹2500 premium) to skip on repeated runs — consider topping up demo wallet in seed or running insurance test first.",
+  "rca_of_issue": "RCA — /api/wallet/topup/create-session 502:\n1. /app/backend/.env contains STRIPE_API_KEY=\"sk_test_emergent\".\n2. server.py:28 sets stripe.api_key from this value.\n3. When stripe.checkout.Session.create() is called, Stripe API responds 401 'Invalid API Key provided: sk_test_****gent'.\n4. FastAPI catches stripe.error.StripeError and raises HTTPException(502, ...).\n5. Confirmed via direct curl to localhost:8001 returning: {\"detail\":\"Stripe error: Invalid API Key provided: sk_test_****gent\"}.\nFix: Set STRIPE_API_KEY to a real Stripe test secret key (sk_test_...) from dashboard.stripe.com OR migrate to emergentintegrations Stripe checkout wrapper. Restart backend after change."
+}
