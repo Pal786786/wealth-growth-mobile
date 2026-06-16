@@ -29,6 +29,7 @@ export default function InvestTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setData(null);
     try {
       if (active === "portfolio") {
         const { data } = await api.get("/invest/portfolio");
@@ -141,7 +142,7 @@ export default function InvestTab() {
           </>
         )}
 
-        {!loading && active === "mf" && (data ?? []).map((f: any) => (
+        {!loading && active === "mf" && Array.isArray(data) && data.map((f: any) => (
           <Pressable key={f.id} onPress={() => buy(f, "mutual_fund", f.name)} testID={`mf-${f.id}`}>
             <Card style={s.row}>
               <View style={[s.iconWrap, { backgroundColor: palette.primary + "1A" }]}>
@@ -159,14 +160,22 @@ export default function InvestTab() {
           </Pressable>
         ))}
 
-        {!loading && active === "stocks" && (data ?? []).map((stk: any) => (
+        {!loading && active === "stocks" && Array.isArray(data) && data.map((stk: any) => (
           <Pressable key={stk.id} onPress={() => buy(stk, "stock", stk.name)} testID={`stk-${stk.id}`}>
             <Card style={s.row}>
               <View style={[s.iconWrap, { backgroundColor: palette.secondary + "1A" }]}>
                 <BarChart3 color={palette.secondary} size={20} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[s.rowTitle, { color: palette.textPrimary }]}>{stk.symbol}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={[s.rowTitle, { color: palette.textPrimary }]}>{stk.symbol}</Text>
+                  {stk.live ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: palette.success + "1A", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 }}>
+                      <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: palette.success }} />
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: palette.success, letterSpacing: 0.5 }}>LIVE</Text>
+                    </View>
+                  ) : null}
+                </View>
                 <Text style={[s.rowMeta, { color: palette.textSecondary }]} numberOfLines={1}>{stk.name}</Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>
@@ -199,7 +208,7 @@ export default function InvestTab() {
           </Card>
         )}
 
-        {!loading && active === "fd" && (data ?? []).map((fd: any) => (
+        {!loading && active === "fd" && Array.isArray(data) && data.map((fd: any) => (
           <Pressable key={fd.id} onPress={() => buy(fd, "fd", fd.name)} testID={`fd-${fd.id}`}>
             <Card style={s.row}>
               <View style={[s.iconWrap, { backgroundColor: palette.success + "1A" }]}>
@@ -217,7 +226,7 @@ export default function InvestTab() {
           </Pressable>
         ))}
 
-        {!loading && active === "govt" && (data ?? []).map((g: any) => (
+        {!loading && active === "govt" && Array.isArray(data) && data.map((g: any) => (
           <Pressable key={g.id} onPress={() => buy(g, "govt", g.name)} testID={`govt-${g.id}`}>
             <Card style={s.row}>
               <View style={[s.iconWrap, { backgroundColor: palette.primary + "1A" }]}>

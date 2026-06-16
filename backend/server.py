@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Any, Dict
 
 import bcrypt
+import httpx
 import jwt
 import stripe
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Request
@@ -24,6 +25,7 @@ DB_NAME = os.environ["DB_NAME"]
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
+ALPHA_VANTAGE_KEY = os.environ.get("ALPHA_VANTAGE_KEY", "")
 
 stripe.api_key = STRIPE_API_KEY
 
@@ -191,14 +193,14 @@ MUTUAL_FUNDS = [
     {"id": "mf_hdfc_balanced", "name": "HDFC Balanced Advantage", "category": "Hybrid", "nav": 412.85, "returns_1y": 14.7, "risk": "Low"},
 ]
 STOCKS = [
-    {"id": "stk_reliance", "symbol": "RELIANCE", "name": "Reliance Industries", "price": 2845.20, "change": 1.42},
-    {"id": "stk_tcs", "symbol": "TCS", "name": "Tata Consultancy Services", "price": 4128.55, "change": -0.86},
-    {"id": "stk_hdfcbank", "symbol": "HDFCBANK", "name": "HDFC Bank", "price": 1672.30, "change": 0.74},
-    {"id": "stk_infy", "symbol": "INFY", "name": "Infosys", "price": 1854.10, "change": 2.18},
-    {"id": "stk_icicibank", "symbol": "ICICIBANK", "name": "ICICI Bank", "price": 1284.45, "change": 1.05},
-    {"id": "stk_bharti", "symbol": "BHARTIARTL", "name": "Bharti Airtel", "price": 1602.80, "change": 0.62},
-    {"id": "stk_itc", "symbol": "ITC", "name": "ITC Ltd", "price": 462.15, "change": -0.34},
-    {"id": "stk_lt", "symbol": "LT", "name": "Larsen & Toubro", "price": 3712.60, "change": 1.86},
+    {"id": "stk_reliance", "symbol": "RELIANCE", "av_symbol": "RELIANCE.BSE", "name": "Reliance Industries", "price": 2845.20, "change": 1.42},
+    {"id": "stk_tcs", "symbol": "TCS", "av_symbol": "TCS.BSE", "name": "Tata Consultancy Services", "price": 4128.55, "change": -0.86},
+    {"id": "stk_hdfcbank", "symbol": "HDFCBANK", "av_symbol": "HDFCBANK.BSE", "name": "HDFC Bank", "price": 1672.30, "change": 0.74},
+    {"id": "stk_infy", "symbol": "INFY", "av_symbol": "INFY.BSE", "name": "Infosys", "price": 1854.10, "change": 2.18},
+    {"id": "stk_icicibank", "symbol": "ICICIBANK", "av_symbol": "ICICIBANK.BSE", "name": "ICICI Bank", "price": 1284.45, "change": 1.05},
+    {"id": "stk_bharti", "symbol": "BHARTIARTL", "av_symbol": "BHARTIARTL.BSE", "name": "Bharti Airtel", "price": 1602.80, "change": 0.62},
+    {"id": "stk_itc", "symbol": "ITC", "av_symbol": "ITC.BSE", "name": "ITC Ltd", "price": 462.15, "change": -0.34},
+    {"id": "stk_lt", "symbol": "LT", "av_symbol": "LT.BSE", "name": "Larsen & Toubro", "price": 3712.60, "change": 1.86},
 ]
 GOLD_PRICE_PER_GRAM = 7820.50  # INR/g
 
@@ -538,9 +540,88 @@ async def list_mutual_funds():
 
 
 @api.get("/invest/stocks")
-async def list_stocks():
-    # Add tiny jitter to simulate live prices
-    return [{**s, "price": round(s["price"] * (1 + random.uniform(-0.002, 0.002)), 2)} for s in STOCKS]
+async def list_stocks(force: bool = False):
+    """Returns stocks list. Live prices from Alpha Vantage cached in MongoDB (12h TTL).
+    Free tier is 25 req/day so we cache aggressively. Falls back to seed prices on rate limit.
+    """
+    results = []
+    cache_ttl_seconds = 12 * 3600  # 12 hours
+    av_budget_per_call = 4  # max number of AV calls per stocks request
+
+    av_calls_made = 0
+    for s in STOCKS:
+        cached = await db.stock_cache.find_one({"symbol": s["symbol"]}, {"_id": 0})
+        is_fresh = False
+        if cached and cached.get("fetched_at"):
+            fetched = cached["fetched_at"]
+            if fetched.tzinfo is None:
+                fetched = fetched.replace(tzinfo=timezone.utc)
+            age = (now_utc() - fetched).total_seconds()
+            is_fresh = age < cache_ttl_seconds
+
+        if is_fresh and not force and cached.get("price"):
+            results.append({
+                "id": s["id"], "symbol": s["symbol"], "name": s["name"],
+                "price": cached["price"], "change": cached["change_pct"],
+                "live": True, "as_of": cached["fetched_at"],
+            })
+            continue
+
+        # Try fetching live (with budget)
+        if ALPHA_VANTAGE_KEY and av_calls_made < av_budget_per_call:
+            av_calls_made += 1
+            try:
+                async with httpx.AsyncClient(timeout=8) as http:
+                    r = await http.get(
+                        "https://www.alphavantage.co/query",
+                        params={
+                            "function": "GLOBAL_QUOTE",
+                            "symbol": s["av_symbol"],
+                            "apikey": ALPHA_VANTAGE_KEY,
+                        },
+                    )
+                    data = r.json() or {}
+                q = data.get("Global Quote") or data.get("GlobalQuote") or {}
+                price_raw = q.get("05. price")
+                change_raw = q.get("10. change percent")
+                if price_raw and change_raw:
+                    price = float(price_raw)
+                    change_pct = float(change_raw.rstrip("%"))
+                    await db.stock_cache.update_one(
+                        {"symbol": s["symbol"]},
+                        {"$set": {
+                            "symbol": s["symbol"], "price": price,
+                            "change_pct": change_pct, "fetched_at": now_utc(),
+                        }},
+                        upsert=True,
+                    )
+                    results.append({
+                        "id": s["id"], "symbol": s["symbol"], "name": s["name"],
+                        "price": price, "change": change_pct,
+                        "live": True, "as_of": now_utc(),
+                    })
+                    continue
+                # Rate limit / empty response
+                if data.get("Note") or data.get("Information"):
+                    logger.warning(f"Alpha Vantage rate limit: {data.get('Note') or data.get('Information')}")
+            except Exception as e:
+                logger.warning(f"Alpha Vantage fetch failed for {s['symbol']}: {e}")
+
+        # Fallback: cached (even if stale) or seed
+        if cached and cached.get("price"):
+            results.append({
+                "id": s["id"], "symbol": s["symbol"], "name": s["name"],
+                "price": cached["price"], "change": cached["change_pct"],
+                "live": True, "as_of": cached.get("fetched_at"),
+            })
+        else:
+            # Seed jitter as last resort
+            jittered = round(s["price"] * (1 + random.uniform(-0.002, 0.002)), 2)
+            results.append({
+                "id": s["id"], "symbol": s["symbol"], "name": s["name"],
+                "price": jittered, "change": s["change"], "live": False,
+            })
+    return results
 
 
 @api.get("/invest/gold-price")
@@ -805,13 +886,15 @@ async def dashboard_summary(user: Dict[str, Any] = Depends(get_current_user)):
         if h["asset_type"] == "gold":
             gold_value += cv
     recent_tx = await db.transactions.find({"user_id": user["user_id"]}, {"_id": 0, "user_id": 0}).sort("created_at", -1).to_list(5)
+    # Use cached live stocks for trending (no extra AV calls beyond cache)
+    trending_stocks = await list_stocks()
     return {
         "wallet_balance": w["balance"],
         "portfolio_value": round(portfolio_value, 2),
         "portfolio_invested": round(invested, 2),
         "gold_value": round(gold_value, 2),
         "recent_transactions": recent_tx,
-        "trending_stocks": STOCKS[:4],
+        "trending_stocks": trending_stocks[:4],
         "trending_funds": MUTUAL_FUNDS[:3],
     }
 
