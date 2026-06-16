@@ -61,7 +61,7 @@ export default function TravelTab() {
         <Text style={[s.subtitle, { color: palette.textSecondary }]}>Book flights, hotels & more</Text>
       </View>
 
-      <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: 24 }]}>
+      <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: 110 }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabsRow}>
           {tabs.map((t) => (
             <Pressable

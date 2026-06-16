@@ -87,7 +87,7 @@ export default function InvestTab() {
       </View>
 
       <ScrollView
-        contentContainerStyle={[s.scroll, { paddingBottom: 24 }]}
+        contentContainerStyle={[s.scroll, { paddingBottom: 110 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={palette.primary} />}
       >
         {loading ? <ActivityIndicator color={palette.primary} style={{ marginTop: 30 }} /> : null}

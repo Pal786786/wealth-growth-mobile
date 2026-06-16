@@ -1,29 +1,18 @@
 import React from "react";
 import { Tabs } from "expo-router";
-import { View, StyleSheet, Platform } from "react-native";
 import { Home, Wallet, TrendingUp, Plane, User } from "lucide-react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
+import { FloatingTabBar } from "@/src/components/FloatingTabBar";
 
 export default function TabsLayout() {
   const { palette } = useTheme();
-  const insets = useSafeAreaInsets();
   return (
     <Tabs
+      tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarShowLabel: true,
         tabBarActiveTintColor: palette.primary,
         tabBarInactiveTintColor: palette.textMuted,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
-        tabBarStyle: {
-          backgroundColor: palette.surface,
-          borderTopColor: palette.border,
-          borderTopWidth: 1,
-          paddingTop: 8,
-          paddingBottom: Math.max(insets.bottom, 8),
-          height: 60 + Math.max(insets.bottom, 8),
-        },
       }}
     >
       <Tabs.Screen
@@ -49,5 +38,3 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
-
-const s = StyleSheet.create({});

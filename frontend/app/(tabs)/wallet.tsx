@@ -50,7 +50,7 @@ export default function WalletTab() {
       <FlatList
         data={txs}
         keyExtractor={(t) => t.tx_id}
-        contentContainerStyle={[s.scroll, { paddingBottom: 24 }]}
+        contentContainerStyle={[s.scroll, { paddingBottom: 110 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.primary} />}
         ListHeaderComponent={
           <View style={{ gap: 16 }}>

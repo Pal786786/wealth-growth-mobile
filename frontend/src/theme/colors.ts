@@ -10,10 +10,11 @@ export const Colors = {
     success: "#10B981",
     danger: "#EF4444",
     warning: "#F59E0B",
+    bullEye: "#FF2D2D",
   },
   light: {
-    background: "#FFFFFF",
-    surface: "#F8FAFC",
+    background: "#F8FAFC",
+    surface: "#FFFFFF",
     surfaceAlt: "#F1F5F9",
     surfaceGlass: "rgba(255,255,255,0.85)",
     textPrimary: "#0F172A",

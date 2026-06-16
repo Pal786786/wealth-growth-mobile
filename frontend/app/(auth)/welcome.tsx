@@ -16,10 +16,10 @@ export default function Welcome() {
       <View style={s.container}>
         <View style={s.heroWrap}>
           <View style={s.logoBlock}>
-            <BullLogo size={88} />
+            <BullLogo size={104} />
             <Text style={[s.brandName, { color: palette.textPrimary }]}>My Funding Bank</Text>
-            <Text style={[s.tagline, { color: palette.textSecondary }]}>
-              Bank • Invest • Travel • Grow
+            <Text style={[s.tagline, { color: palette.secondary }]}>
+              ◆ Bank • Invest • Travel • Grow ◆
             </Text>
           </View>
 

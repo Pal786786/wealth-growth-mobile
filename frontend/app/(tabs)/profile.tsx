@@ -58,7 +58,7 @@ export default function ProfileTab() {
 
   return (
     <View style={[s.root, { backgroundColor: palette.background }]}>
-      <ScrollView contentContainerStyle={[s.scroll, { paddingTop: insets.top + 16, paddingBottom: 32 }]}>
+      <ScrollView contentContainerStyle={[s.scroll, { paddingTop: insets.top + 16, paddingBottom: 120 }]}>
         <View style={s.userCard}>
           <View style={[s.avatar, { backgroundColor: palette.primary + "30", borderColor: palette.primary }]}>
             <Text style={[s.avatarTxt, { color: palette.primary }]}>{initials}</Text>
