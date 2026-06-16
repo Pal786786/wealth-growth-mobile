@@ -2,106 +2,118 @@ import React from "react";
 import { View, StyleSheet, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, {
-  Path, Polyline, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, RadialGradient, G, Filter, FeGaussianBlur, FeMerge, FeMergeNode,
+  Path, Polyline, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, RadialGradient,
 } from "react-native-svg";
 import { Colors } from "@/src/theme/colors";
 
-// Aggressive stock-market bull with glowing red eyes
+/**
+ * Premium investment-bull logo for My Funding Bank.
+ * - Confident (not aggressive) bull head, head-up posture.
+ * - Curved horns whose left tip is replaced by an upward stock-chart line ending in a gold arrow.
+ * - Subtle gold horn tips and gold "M" monogram on the forehead — wealth + brand cues.
+ * - Sky blue / deep blue body gradient with white highlights, no red.
+ */
 export function BullLogo({
   size = 80,
   withWordmark = false,
   variant = "boxed",
 }: { size?: number; withWordmark?: boolean; variant?: "boxed" | "flat" }) {
   const inner = (
-    <Svg width={size * 0.8} height={size * 0.8} viewBox="0 0 120 120" fill="none">
+    <Svg width={size * 0.82} height={size * 0.82} viewBox="0 0 120 120" fill="none">
       <Defs>
-        <SvgLinearGradient id="bullFill" x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%" stopColor="#F8FAFC" />
-          <Stop offset="55%" stopColor="#CBD5E1" />
-          <Stop offset="100%" stopColor="#64748B" />
+        <SvgLinearGradient id="bullBody" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor="#7DD3FC" />
+          <Stop offset="60%" stopColor="#38BDF8" />
+          <Stop offset="100%" stopColor="#0EA5E9" />
         </SvgLinearGradient>
-        <SvgLinearGradient id="hornGradient" x1="0" y1="0" x2="1" y2="1">
+        <SvgLinearGradient id="hornBlue" x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0%" stopColor="#FFFFFF" />
-          <Stop offset="100%" stopColor="#94A3B8" />
+          <Stop offset="100%" stopColor="#7DD3FC" />
         </SvgLinearGradient>
-        <RadialGradient id="eyeGlow" cx="50%" cy="50%" r="50%">
-          <Stop offset="0%" stopColor="#FF6B6B" stopOpacity="1" />
-          <Stop offset="50%" stopColor="#FF2D2D" stopOpacity="1" />
-          <Stop offset="100%" stopColor="#FF2D2D" stopOpacity="0" />
+        <SvgLinearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor="#FCD34D" />
+          <Stop offset="100%" stopColor="#F59E0B" />
+        </SvgLinearGradient>
+        <RadialGradient id="shine" cx="35%" cy="30%" r="60%">
+          <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.5" />
+          <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
         </RadialGradient>
-        <SvgLinearGradient id="arrowGradient" x1="0" y1="1" x2="1" y2="0">
-          <Stop offset="0%" stopColor="#10B981" />
-          <Stop offset="100%" stopColor="#34D399" />
-        </SvgLinearGradient>
       </Defs>
 
-      {/* Subtle red glow halo behind eyes */}
-      <Circle cx="42" cy="58" r="11" fill="url(#eyeGlow)" opacity="0.6" />
-      <Circle cx="78" cy="58" r="11" fill="url(#eyeGlow)" opacity="0.6" />
-
-      {/* Sharp curved horns (aggressive, swept back & up) */}
+      {/* Curved blue horns (left & right) */}
       <Path
-        d="M14 30 C 8 18, 22 8, 32 14 C 38 18, 42 24, 44 32 C 38 28, 30 27, 22 30 C 18 31, 16 31, 14 30 Z"
-        fill="url(#hornGradient)"
+        d="M22 38 C 14 28, 18 16, 30 14 C 38 14, 44 22, 46 32 C 38 30, 28 32, 22 38 Z"
+        fill="url(#hornBlue)"
         stroke="#0F172A"
-        strokeWidth="1.5"
-      />
-      <Path
-        d="M106 30 C 112 18, 98 8, 88 14 C 82 18, 78 24, 76 32 C 82 28, 90 27, 98 30 C 102 31, 104 31, 106 30 Z"
-        fill="url(#hornGradient)"
-        stroke="#0F172A"
-        strokeWidth="1.5"
-      />
-
-      {/* Muscular bull head (forward-charging, angular) */}
-      <Path
-        d="M28 34
-           C 32 28, 40 22, 50 22
-           L 70 22
-           C 80 22, 88 28, 92 34
-           L 96 50
-           C 96 58, 92 64, 86 68
-           L 82 80
-           C 80 88, 72 94, 60 94
-           C 48 94, 40 88, 38 80
-           L 34 68
-           C 28 64, 24 58, 24 50 Z"
-        fill="url(#bullFill)"
-        stroke="#0F172A"
-        strokeWidth="2"
+        strokeWidth="1.4"
         strokeLinejoin="round"
       />
+      <Path
+        d="M98 38 C 106 28, 102 16, 90 14 C 82 14, 76 22, 74 32 C 82 30, 92 32, 98 38 Z"
+        fill="url(#hornBlue)"
+        stroke="#0F172A"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      {/* Gold horn tips */}
+      <Circle cx="22" cy="36" r="3" fill="url(#gold)" stroke="#92400E" strokeWidth="0.6" />
+      <Circle cx="98" cy="36" r="3" fill="url(#gold)" stroke="#92400E" strokeWidth="0.6" />
 
-      {/* Forehead shadow / muscle definition */}
-      <Path d="M44 36 L 60 32 L 76 36 L 72 46 L 60 42 L 48 46 Z" fill="#0F172A" opacity="0.12" />
-      <Path d="M38 60 L 44 64 L 42 72 Z" fill="#0F172A" opacity="0.1" />
-      <Path d="M82 60 L 76 64 L 78 72 Z" fill="#0F172A" opacity="0.1" />
+      {/* Bull head — confident, smooth, head-up profile */}
+      <Path
+        d="M32 40
+           C 36 32, 44 26, 54 26
+           L 66 26
+           C 76 26, 84 32, 88 40
+           L 92 56
+           C 92 64, 88 70, 82 74
+           L 78 84
+           C 76 90, 70 94, 60 94
+           C 50 94, 44 90, 42 84
+           L 38 74
+           C 32 70, 28 64, 28 56 Z"
+        fill="url(#bullBody)"
+        stroke="#0F172A"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      {/* Soft top highlight */}
+      <Path
+        d="M36 38 C 42 30, 52 28, 60 28 C 68 28, 78 30, 84 38 L 80 48 C 72 42, 64 41, 60 41 C 56 41, 48 42, 40 48 Z"
+        fill="url(#shine)"
+      />
 
-      {/* Glowing red eyes (intense, angular) */}
-      <Path d="M36 54 L 48 52 L 46 62 L 36 60 Z" fill="#0F172A" />
-      <Path d="M84 54 L 72 52 L 74 62 L 84 60 Z" fill="#0F172A" />
-      <Circle cx="42" cy="57" r="3.2" fill="#FF2D2D" />
-      <Circle cx="78" cy="57" r="3.2" fill="#FF2D2D" />
-      <Circle cx="41" cy="56" r="1" fill="#FFE5E5" />
-      <Circle cx="77" cy="56" r="1" fill="#FFE5E5" />
+      {/* Calm dark eyes (small, not glowing) */}
+      <Circle cx="46" cy="56" r="2.6" fill="#0F172A" />
+      <Circle cx="74" cy="56" r="2.6" fill="#0F172A" />
+      <Circle cx="46.8" cy="55.2" r="0.9" fill="#FFFFFF" />
+      <Circle cx="74.8" cy="55.2" r="0.9" fill="#FFFFFF" />
 
-      {/* Snout / nose ring */}
-      <Path d="M48 76 C 48 70, 72 70, 72 76 L 70 86 C 70 90, 64 92, 60 92 C 56 92, 50 90, 50 86 Z" fill="#0F172A" opacity="0.85" />
-      <Circle cx="60" cy="84" r="3" fill="none" stroke="#F8FAFC" strokeWidth="1.6" />
-      <Circle cx="54" cy="80" r="1.2" fill="#0F172A" />
-      <Circle cx="66" cy="80" r="1.2" fill="#0F172A" />
+      {/* Soft snout / nose ring */}
+      <Path d="M48 76 C 48 70, 72 70, 72 76 L 70 84 C 70 88, 64 90, 60 90 C 56 90, 50 88, 50 84 Z" fill="#0F172A" />
+      <Circle cx="60" cy="83" r="2.8" fill="none" stroke="#FCD34D" strokeWidth="1.4" />
 
-      {/* Rising stock chart arrow across chin */}
+      {/* Stock-market growth line rising from chest up & off to the right, with gold arrow tip */}
       <Polyline
-        points="22,104 36,96 48,100 60,88 72,92 84,80 98,84"
-        stroke="url(#arrowGradient)"
+        points="24,108 36,100 46,104 56,92 66,96 78,82 92,86"
+        stroke="#10B981"
         strokeWidth="3.2"
         fill="none"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* Arrowhead */}
-      <Path d="M98 84 L 106 78 L 104 88 Z" fill="#10B981" />
+      {/* Gold arrowhead at the end of the chart line */}
+      <Path d="M92 86 L 104 76 L 102 92 Z" fill="url(#gold)" stroke="#92400E" strokeWidth="0.8" strokeLinejoin="round" />
+
+      {/* Subtle gold "M" monogram on forehead */}
+      <Path
+        d="M52 36 L 54 46 L 60 40 L 66 46 L 68 36"
+        stroke="url(#gold)"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
     </Svg>
   );
 
@@ -127,9 +139,9 @@ export function BullLogo({
             height: size,
             borderRadius: size * 0.26,
             shadowColor: Colors.brand.primary,
-            shadowOpacity: 0.5,
-            shadowRadius: size * 0.2,
-            shadowOffset: { width: 0, height: size * 0.06 },
+            shadowOpacity: 0.45,
+            shadowRadius: size * 0.18,
+            shadowOffset: { width: 0, height: size * 0.05 },
             elevation: 8,
           },
         ]}
