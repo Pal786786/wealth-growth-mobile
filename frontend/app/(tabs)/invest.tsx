@@ -7,6 +7,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { api } from "@/src/api/client";
 import { Card } from "@/src/components/Card";
+import { BullLogo } from "@/src/components/BullLogo";
+import { AnimatedCounter } from "@/src/components/AnimatedCounter";
+import { Sparkline } from "@/src/components/Sparkline";
 import { formatINR } from "@/src/utils/format";
 
 const TABS = [
@@ -62,7 +65,10 @@ export default function InvestTab() {
   return (
     <View style={[s.root, { backgroundColor: palette.background }]}>
       <View style={[s.hdr, { paddingTop: insets.top + 8 }]}>
-        <Text style={[s.title, { color: palette.textPrimary }]}>Investments</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <BullLogo size={32} />
+          <Text style={[s.title, { color: palette.textPrimary }]}>Investments</Text>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabsRow}>
           {TABS.map((t) => (
             <Pressable
@@ -94,9 +100,18 @@ export default function InvestTab() {
 
         {!loading && active === "portfolio" && (
           <>
-            <LinearGradient colors={[palette.primary, palette.secondary]} style={s.portCard} testID="investment-portfolio-chart">
-              <Text style={s.portLabel}>Current Portfolio Value</Text>
-              <Text style={s.portValue}>{formatINR(data?.total_current ?? 0)}</Text>
+            <LinearGradient
+              colors={["#0F172A", "#0EA5E9", "#38BDF8"]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              locations={[0, 0.65, 1]}
+              style={s.portCard}
+              testID="investment-portfolio-chart"
+            >
+              <View style={s.heroBullWrap} pointerEvents="none">
+                <BullLogo size={130} variant="flat" />
+              </View>
+              <Text style={s.portLabel}>CURRENT PORTFOLIO VALUE</Text>
+              <AnimatedCounter value={data?.total_current ?? 0} style={s.portValue} />
               <View style={s.portStats}>
                 <View style={s.portStat}>
                   <Text style={s.portStatLabel}>Invested</Text>
@@ -107,6 +122,9 @@ export default function InvestTab() {
                   <Text style={[s.portStatValue, { color: (data?.returns_pct ?? 0) >= 0 ? "#86efac" : "#fda4af" }]}>
                     {(data?.returns_pct ?? 0) >= 0 ? "+" : ""}{(data?.returns_pct ?? 0).toFixed(2)}%
                   </Text>
+                </View>
+                <View style={{ width: 80 }}>
+                  <Sparkline width={80} height={36} positive={(data?.returns_pct ?? 0) >= 0} color={(data?.returns_pct ?? 0) >= 0 ? "#86efac" : "#fda4af"} />
                 </View>
               </View>
             </LinearGradient>
@@ -278,10 +296,11 @@ const s = StyleSheet.create({
   tabsRow: { gap: 8, paddingRight: 16 },
   chip: { paddingHorizontal: 14, height: 36, borderRadius: 18, borderWidth: 1, justifyContent: "center", flexShrink: 0 },
   scroll: { paddingHorizontal: 16, paddingTop: 12, gap: 10 },
-  portCard: { borderRadius: 24, padding: 20, gap: 8 },
-  portLabel: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "600" },
-  portValue: { color: "#fff", fontSize: 32, fontWeight: "800", letterSpacing: -1 },
-  portStats: { flexDirection: "row", marginTop: 8, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 12, padding: 12, gap: 16 },
+  portCard: { borderRadius: 28, padding: 22, gap: 8, overflow: "hidden", position: "relative" },
+  heroBullWrap: { position: "absolute", right: -28, top: -18, opacity: 0.16, transform: [{ rotate: "12deg" }] },
+  portLabel: { color: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: "800", letterSpacing: 1.4 },
+  portValue: { color: "#fff", fontSize: 34, fontWeight: "800", letterSpacing: -1, marginTop: 2 },
+  portStats: { flexDirection: "row", marginTop: 8, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 14, padding: 12, gap: 16, alignItems: "center" },
   portStat: { flex: 1 },
   portStatLabel: { color: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: "600" },
   portStatValue: { color: "#fff", fontSize: 16, fontWeight: "800", marginTop: 2 },

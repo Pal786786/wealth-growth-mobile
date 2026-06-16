@@ -1,12 +1,14 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, FlatList } from "react-native";
+import { View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, FlatList } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
-import { Send, Plus, QrCode, ArrowDownLeft, ArrowUpRight, History } from "lucide-react-native";
+import { Send, Plus, QrCode, ArrowDownLeft, ArrowUpRight, History, Wallet as WalletIcon } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { api } from "@/src/api/client";
 import { Card } from "@/src/components/Card";
+import { BullLogo } from "@/src/components/BullLogo";
+import { AnimatedCounter } from "@/src/components/AnimatedCounter";
 import { formatINR, shortDate } from "@/src/utils/format";
 
 export default function WalletTab() {
@@ -45,7 +47,10 @@ export default function WalletTab() {
   return (
     <View style={[s.root, { backgroundColor: palette.background }]}>
       <View style={[s.hdr, { paddingTop: insets.top + 8, backgroundColor: palette.background }]}>
-        <Text style={[s.title, { color: palette.textPrimary }]}>Wallet</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <BullLogo size={32} />
+          <Text style={[s.title, { color: palette.textPrimary }]}>Wallet</Text>
+        </View>
       </View>
       <FlatList
         data={txs}
@@ -54,12 +59,29 @@ export default function WalletTab() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.primary} />}
         ListHeaderComponent={
           <View style={{ gap: 16 }}>
-            <LinearGradient colors={[palette.primary, palette.secondary]} style={s.balanceCard}>
-              <Text style={s.balanceLabel}>Available Balance</Text>
-              <Text style={s.balanceValue} testID="wallet-balance-text">
-                {loading ? "—" : formatINR(balance ?? 0)}
-              </Text>
-              <Text style={s.balanceSub}>INR • My Funding Bank Wallet</Text>
+            <LinearGradient
+              colors={["#0F172A", "#0EA5E9", "#38BDF8"]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              locations={[0, 0.65, 1]}
+              style={s.balanceCard}
+            >
+              <View style={s.heroBullWrap} pointerEvents="none">
+                <BullLogo size={130} variant="flat" />
+              </View>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <Text style={s.balanceLabel}>AVAILABLE BALANCE</Text>
+                <WalletIcon color="rgba(255,255,255,0.85)" size={22} />
+              </View>
+              {loading ? (
+                <Text style={s.balanceValue} testID="wallet-balance-text">—</Text>
+              ) : (
+                <AnimatedCounter
+                  value={balance ?? 0}
+                  style={s.balanceValue}
+                  testID="wallet-balance-text"
+                />
+              )}
+              <Text style={s.balanceSub}>INR · My Funding Bank Wallet</Text>
             </LinearGradient>
 
             <View style={s.actionsRow}>
@@ -118,10 +140,11 @@ const s = StyleSheet.create({
   hdr: { paddingHorizontal: 16, paddingBottom: 12 },
   title: { fontSize: 24, fontWeight: "800", letterSpacing: -0.5 },
   scroll: { paddingHorizontal: 16, gap: 10 },
-  balanceCard: { borderRadius: 24, padding: 24, gap: 6 },
-  balanceLabel: { color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600" },
-  balanceValue: { color: "#fff", fontSize: 38, fontWeight: "800", letterSpacing: -1 },
-  balanceSub: { color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: "600", marginTop: 4 },
+  balanceCard: { borderRadius: 28, padding: 22, gap: 6, overflow: "hidden", position: "relative" },
+  heroBullWrap: { position: "absolute", right: -28, top: -18, opacity: 0.16, transform: [{ rotate: "12deg" }] },
+  balanceLabel: { color: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: "800", letterSpacing: 1.4 },
+  balanceValue: { color: "#fff", fontSize: 38, fontWeight: "800", letterSpacing: -1, marginTop: 4 },
+  balanceSub: { color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: "600", marginTop: 6 },
   actionsRow: { flexDirection: "row", gap: 10 },
   actionBtn: { flex: 1, padding: 14, borderRadius: 16, borderWidth: 1, alignItems: "center", gap: 8 },
   actionIcon: { padding: 10, borderRadius: 12 },
