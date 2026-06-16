@@ -439,12 +439,28 @@ async def bill_pay(req: BillPayReq, user: Dict[str, Any] = Depends(get_current_u
 
 
 # ---------- Stripe Wallet Top-up ----------
+STRIPE_CONFIGURED = STRIPE_API_KEY.startswith("sk_test_") and len(STRIPE_API_KEY) > 20
+
+
 @api.post("/wallet/topup/create-session")
 async def create_topup_session(req: StripeCheckoutReq, user: Dict[str, Any] = Depends(get_current_user)):
-    if not STRIPE_API_KEY:
-        raise HTTPException(status_code=500, detail="Stripe not configured")
     if req.amount < 10 or req.amount > 100000:
         raise HTTPException(status_code=400, detail="Amount must be between ₹10 and ₹1,00,000")
+
+    # Demo mode: Stripe not configured (placeholder key) — credit instantly
+    if not STRIPE_CONFIGURED:
+        session_id = gen_id("demo")
+        await db.topups.insert_one({
+            "session_id": session_id,
+            "user_id": user["user_id"],
+            "amount": req.amount,
+            "status": "pending",
+            "demo": True,
+            "created_at": now_utc(),
+        })
+        # Return a special checkout_url that the client can short-circuit
+        return {"checkout_url": f"mfb://demo-pay?session_id={session_id}", "session_id": session_id, "demo": True}
+
     amount_paise = int(round(req.amount * 100))
     success_url = "https://wealth-growth-mobile.preview.emergentagent.com/wallet/topup-success?session_id={CHECKOUT_SESSION_ID}"
     cancel_url = "https://wealth-growth-mobile.preview.emergentagent.com/wallet/topup-cancel"
@@ -479,19 +495,28 @@ async def create_topup_session(req: StripeCheckoutReq, user: Dict[str, Any] = De
         "status": "pending",
         "created_at": now_utc(),
     })
-    return {"checkout_url": session.url, "session_id": session.id}
+    return {"checkout_url": session.url, "session_id": session.id, "demo": False}
 
 
 @api.get("/wallet/topup/status/{session_id}")
 async def topup_status(session_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     """Polled by client after returning from Stripe. Verifies & credits wallet."""
-    if not STRIPE_API_KEY:
-        raise HTTPException(status_code=500, detail="Stripe not configured")
     pending = await db.topups.find_one({"session_id": session_id, "user_id": user["user_id"]}, {"_id": 0})
     if not pending:
         raise HTTPException(status_code=404, detail="Session not found")
     if pending["status"] == "completed":
         return {"status": "completed", "amount": pending["amount"]}
+
+    # Demo mode: instant success
+    if pending.get("demo"):
+        await db.topups.update_one({"session_id": session_id}, {"$set": {"status": "completed", "completed_at": now_utc()}})
+        amount = pending["amount"]
+        await db.wallets.update_one({"user_id": user["user_id"]}, {"$inc": {"balance": amount}})
+        await _add_tx(user["user_id"], "credit", "topup", amount, "Wallet top-up (demo)", "success")
+        return {"status": "completed", "amount": amount, "demo": True}
+
+    if not STRIPE_CONFIGURED:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
     try:
         session = stripe.checkout.Session.retrieve(session_id)
     except stripe.error.StripeError:

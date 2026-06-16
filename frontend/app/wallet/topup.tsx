@@ -67,6 +67,13 @@ export default function TopUp() {
     try {
       const { data } = await api.post("/wallet/topup/create-session", { amount: num, platform: "native" });
       setSessionId(data.session_id);
+      if (data.demo) {
+        // Demo mode: instantly verify
+        show("info", "Demo mode: simulating successful payment…");
+        await new Promise((r) => setTimeout(r, 800));
+        verify(data.session_id, 0);
+        return;
+      }
       const res = await WebBrowser.openAuthSessionAsync(data.checkout_url, undefined);
       // when user returns
       if (res.type === "success" || res.type === "dismiss" || res.type === "cancel") {
