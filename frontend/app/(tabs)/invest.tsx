@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
-import { TrendingUp, Coins, PiggyBank, Landmark, BarChart3, ChevronRight } from "lucide-react-native";
+import { TrendingUp, Coins, PiggyBank, Landmark, BarChart3, ChevronRight, RefreshCw } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { api } from "@/src/api/client";
@@ -160,6 +160,25 @@ export default function InvestTab() {
           </Pressable>
         ))}
 
+        {!loading && active === "stocks" && Array.isArray(data) && (
+          <View style={s.stocksHeader}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: palette.success }} />
+              <Text style={[s.liveLabel, { color: palette.textSecondary }]}>
+                {data.filter((s: any) => s.live).length}/{data.length} live • BSE
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => load(true)}
+              style={[s.refreshBtn, { backgroundColor: palette.primary + "1A", borderColor: palette.primary + "40" }]}
+              testID="stocks-refresh-btn"
+            >
+              <RefreshCw color={palette.primary} size={14} />
+              <Text style={{ color: palette.primary, fontWeight: "700", fontSize: 12 }}>Refresh</Text>
+            </Pressable>
+          </View>
+        )}
+
         {!loading && active === "stocks" && Array.isArray(data) && data.map((stk: any) => (
           <Pressable key={stk.id} onPress={() => buy(stk, "stock", stk.name)} testID={`stk-${stk.id}`}>
             <Card style={s.row}>
@@ -273,4 +292,7 @@ const s = StyleSheet.create({
   rowMeta: { fontSize: 11, marginTop: 2 },
   rowValue: { fontSize: 14, fontWeight: "800" },
   cta: { paddingVertical: 14, borderRadius: 14, alignItems: "center", marginTop: 8 },
+  stocksHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
+  liveLabel: { fontSize: 12, fontWeight: "600", letterSpacing: 0.3 },
+  refreshBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1 },
 });
