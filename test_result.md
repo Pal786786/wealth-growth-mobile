@@ -196,3 +196,39 @@ agent_communication:
         3) Disable a row → verify status="disabled" and mobile /api/app/api-status reflects it.
         4) Mobile (web preview): login as demo@mfb.in/demo1234 → home should show Demo Mode banner.
         5) Existing flows still work: wallet top-up (should auto-fallback to demo), stocks list (should still load with live cache), notifications, banners, KYC.
+
+backend_v2:
+  - task: "AI Investment Suggestions endpoint (ai_invest.py)"
+    implemented: true
+    working: true
+    file: "/app/backend/ai_invest.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Uses Emergent LLM key + Claude Sonnet 4.6 to return personalised JSON with overall_summary, risk_score, risk_label, recommendations (buy/hold/sell + confidence + reason), suggested_sip, next_steps, disclaimer. Falls back to rule-based suggestion when LLM fails or key absent. Per-user cache (30 min) stored in MongoDB ai_suggestions collection. Manual curl tests passed: live mode returns rich Claude output in ~17s; cached call returns in 14ms with cached=true."
+
+frontend_v2:
+  - task: "Mobile: AI Investment Coach screen + teaser card"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/invest/ai-coach.tsx, /app/frontend/app/(tabs)/invest.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New /invest/ai-coach screen with purple-pink hero, Today's snapshot card, risk profile bar, recommendation cards (BUY/HOLD/SELL badges with confidence dots), suggested SIP card, next steps list, disclaimer, refresh button. Teaser card with gradient added to Invest > Portfolio tab. Verified visually — Claude generates real recommendations (RELIANCE/HDFCBANK/TCS as BUY with reasons)."
+
+agent_communication_v2:
+    -agent: "main"
+    -message: |
+      Built AI Investment Suggestions feature.
+      Backend: /app/backend/ai_invest.py uses emergentintegrations LlmChat with claude-sonnet-4-6. Endpoint GET /api/invest/ai-suggestions (auth required), optional ?refresh=true. Per-user 30-min MongoDB cache. Rule-based fallback when LLM unavailable.
+      Mobile: New screen /app/frontend/app/invest/ai-coach.tsx with hero, snapshot, recommendations, SIP card. Teaser card on Invest tab Portfolio view.
+      Creds: demo@mfb.in / demo1234 (mobile); admin@mfb.in / Admin@MFB2026 (admin).
+      Verify: (1) endpoint returns full JSON shape; (2) 2nd call cached=true <200ms; (3) ?refresh=true bypasses cache; (4) mobile teaser → AI Coach screen renders; (5) existing flows unaffected.
+

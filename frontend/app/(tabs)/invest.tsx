@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
-import { TrendingUp, Coins, PiggyBank, Landmark, BarChart3, ChevronRight, RefreshCw } from "lucide-react-native";
+import { TrendingUp, Coins, PiggyBank, Landmark, BarChart3, ChevronRight, RefreshCw, Sparkles } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { api } from "@/src/api/client";
@@ -100,6 +100,26 @@ export default function InvestTab() {
 
         {!loading && active === "portfolio" && (
           <>
+            {/* AI Investment Coach teaser */}
+            <Pressable onPress={() => router.push("/invest/ai-coach")} testID="ai-coach-teaser">
+              <LinearGradient
+                colors={["#7C3AED", "#EC4899", "#F59E0B"]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={s.aiTeaser}
+              >
+                <View style={s.aiTeaserIcon}>
+                  <Sparkles color="#fff" size={20} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.aiTeaserTitle}>AI Investment Coach</Text>
+                  <Text style={s.aiTeaserSub}>
+                    Personalised Buy/Hold/Sell calls powered by Claude Sonnet 4.6
+                  </Text>
+                </View>
+                <ChevronRight color="#fff" size={20} />
+              </LinearGradient>
+            </Pressable>
+
             <LinearGradient
               colors={["#0F172A", "#0EA5E9", "#38BDF8"]}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -297,6 +317,10 @@ const s = StyleSheet.create({
   chip: { paddingHorizontal: 14, height: 36, borderRadius: 18, borderWidth: 1, justifyContent: "center", flexShrink: 0 },
   scroll: { paddingHorizontal: 16, paddingTop: 12, gap: 10 },
   portCard: { borderRadius: 28, padding: 22, gap: 8, overflow: "hidden", position: "relative" },
+  aiTeaser: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 20, shadowColor: "#7C3AED", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+  aiTeaserIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
+  aiTeaserTitle: { color: "#fff", fontSize: 15, fontWeight: "800" },
+  aiTeaserSub: { color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: "600", marginTop: 2 },
   heroBullWrap: { position: "absolute", right: -28, top: -18, opacity: 0.16, transform: [{ rotate: "12deg" }] },
   portLabel: { color: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: "800", letterSpacing: 1.4 },
   portValue: { color: "#fff", fontSize: 34, fontWeight: "800", letterSpacing: -1, marginTop: 2 },

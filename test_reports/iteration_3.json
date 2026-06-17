@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 3 — AI Investment Suggestions (Claude Sonnet 4.6 via Emergent LLM key) tested end-to-end. Backend: 10/10 pytest cases pass (100%) — auth required (401), first call returns full live LLM payload with all required keys (overall_summary, risk_score 1-5 int, risk_label, recommendations[], suggested_sip|null, next_steps[], disclaimer, mode='live', generated_at, cached=false), second call is cached (cached=true) in <500ms, refresh=true bypasses cache (new generated_at, cached=false), and regression suite for /api/auth/login, /api/dashboard/summary, /api/invest/stocks, /api/invest/portfolio, /api/wallet, /api/app/api-status all green. Frontend mobile: signed in as demo@mfb.in/demo1234, Invest tab → Portfolio sub-tab shows purple→pink→orange 'AI Investment Coach' gradient teaser with testID='ai-coach-teaser' at the top, tap navigates to /invest/ai-coach. AI Coach screen renders the gradient hero with title 'AI Investment Coach' + 'Personalised by Claude Sonnet 4.6', back+refresh icons (testIDs ai-back, ai-refresh), 'Today's snapshot' card with LLM summary, 1-5 segment risk bar with 'Conservative' label, three BUY recommendation cards (HDFCBANK, INFY, ITC) with confidence dots, and italic disclaimer footer. Refresh icon triggers GET /api/invest/ai-suggestions?refresh=true (verified via Network sniff). Back button returns to /invest. No demo chip displayed → live mode confirmed by both API & UI.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "RN Web shadow* props", "issue": "Console warning persists: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Likely from /app/frontend/app/invest/ai-coach.tsx and other Card/hero styles. Non-blocking but should be migrated for RN Web compatibility."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ai_invest.py",
+    "/app/test_reports/pytest/ai_invest_results.xml"
+  ],
+  "action_items": [
+    "(Optional, low priority) Migrate React Native shadow* style props to boxShadow on web in ai-coach.tsx hero/cards to silence deprecation warnings.",
+    "No functional fixes required — all acceptance criteria pass."
+  ],
+  "critical_code_review_comments": [
+    "ai_invest.py is clean and well-isolated: dependency injection via attach(), per-user MongoDB cache with 30-min TTL, idempotent upsert keyed by user_id, ObjectId excluded via {_id:0} projection — good.",
+    "_ask_llm() correctly uses emergentintegrations LlmChat with model ('anthropic','claude-sonnet-4-6') and parses LLM output through _extract_json() which strips code fences and grabs the first {...} block — robust.",
+    "Graceful fallback to _rule_based_fallback() if the LLM call raises and on missing EMERGENT_LLM_KEY; mode tag ('live' vs 'demo') is correctly set on the response.",
+    "Cache expires_at timezone normalization (naive→UTC) avoids the common 'can't compare offset-naive and offset-aware datetimes' bug.",
+    "ai-coach.tsx uses testIDs on the back & refresh buttons and the teaser button, has proper loading + error states, animated spin during fetch, pull-to-refresh wired to refresh=true, and renders all required sections (hero, snapshot, risk bar, recommendations, optional SIP, next-steps, disclaimer).",
+    "Minor: ai_invest.py is 254 lines — within size limits. SYSTEM_PROMPT is well-constrained (SEBI-aware, JSON-only, no invented numbers, SIP <= 25% wallet)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ai_invest.py (created — 10 tests covering feature + regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 — TestAiSuggestions 4/4 + TestExistingEndpointsRegression 6/6)",
+    "frontend": "100% (login → invest tab → teaser visible → tap → AI Coach screen renders all required sections → refresh hits ?refresh=true → back returns to /invest)"
+  },
+  "seed_data_creation": "None. Tests use existing demo user (demo@mfb.in) and write an ai_suggestions cache document per user (auto-managed by the feature).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend AI suggestions live at GET /api/invest/ai-suggestions (Bearer auth, ?refresh=true bypasses cache). Mode is 'live' (Claude Sonnet 4.6 via Emergent LLM key) and first call typically takes ~10-20s; subsequent cached calls <500ms for 30 minutes. The AI Coach teaser on the Invest→Portfolio screen has testID='ai-coach-teaser' and routes to /invest/ai-coach which has testIDs 'ai-back' and 'ai-refresh'. To rerun: `pytest /app/backend/tests/test_ai_invest.py -v`.",
+  "rca_of_issue": "N/A — no defects found this iteration."
+}

@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, EmailStr
 import admin as admin_module
 import admin_extra
 import api_settings as api_settings_module
+import ai_invest
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -959,6 +960,7 @@ async def mark_read(user: Dict[str, Any] = Depends(get_current_user)):
 admin_module.attach(api, db, logger)
 admin_extra.attach(api, db)
 api_settings_module.attach(api, db)
+ai_invest.attach(api, db, get_current_user, lambda: list_stocks(force=False), logger=logger)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/
