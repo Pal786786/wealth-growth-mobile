@@ -23,6 +23,7 @@ import admin_extra
 import api_settings as api_settings_module
 import ai_invest
 import super_app
+import push as push_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -965,6 +966,7 @@ admin_extra.attach(api, db)
 api_settings_module.attach(api, db)
 ai_invest.attach(api, db, get_current_user, lambda: list_stocks(force=False), logger=logger)
 super_app.attach(api, db, get_current_user, _add_tx, admin_module.get_current_admin, INSURANCE_PLANS, logger=logger)
+push_module.attach(api, db, get_current_user)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/

@@ -23,6 +23,7 @@ class NotificationReq(BaseModel):
     target: str = "all"   # "all" | "user" | "segment"
     user_id: Optional[str] = None
     segment: Optional[str] = None  # "kyc_pending" | "active" | "investors"
+    deeplink: Optional[str] = None  # e.g. "/wallet" or "https://..."
 
 
 class FundReq(BaseModel):
@@ -128,6 +129,20 @@ async def send_notification(req: NotificationReq, admin=Depends(get_current_admi
         "created_at": _now(),
     } for uid in user_ids]
     await _db.notifications.insert_many(docs)
+
+    # Best-effort push send — chunked to 100 recipients per playbook
+    try:
+        import push as push_module  # type: ignore
+        for i in range(0, len(user_ids), 100):
+            chunk = user_ids[i:i + 100]
+            await push_module.send_push(
+                recipients=chunk,
+                data={"title": req.title, "message": req.body, "action_url": req.deeplink or ""},
+                idempotency_key=f"{batch_id}-{i//100}",
+            )
+    except Exception:
+        # Push is non-blocking — broadcast still succeeds
+        pass
 
     await _db.notification_batches.insert_one({
         "batch_id": batch_id,

@@ -8,17 +8,31 @@
     "scheme": "myfundingbank",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.myfundingbank.app"
-    },
     "android": {
       "package": "com.myfundingbank.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0F172A"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.myfundingbank.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan QR codes to send and receive payments",
+        "NSPhotoLibraryUsageDescription": "Attach photos to your KYC documents",
+        "NSFaceIDUsageDescription": "Quickly authenticate to view your wallet"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -36,7 +50,14 @@
           "backgroundColor": "#0F172A"
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#38BDF8"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

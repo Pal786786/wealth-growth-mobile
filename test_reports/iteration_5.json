@@ -1,0 +1,74 @@
+{
+  "summary": "Iteration 5 (Release-Readiness) — Push Notifications (demo-mode FCM), Onboarding first-launch flow, and Dark-Mode polish across 12 modules validated end-to-end. Backend: 15/15 new push-notification tests + 32/32 super-app regression = 47/47 PASS (100%). Frontend: Onboarding redirects work (clear storage → / redirects to /onboarding; Skip → /(auth)/welcome persists mfb_onboarded=true; subsequent / bypasses onboarding). Notification Settings (/notifications/settings) renders the amber 'FCM Not Configured' banner with help text, all 4 category toggles, and PUT /api/notifications/preferences fires on each toggle (verified via network trace). Dark-mode toggle in Profile (Appearance row) flips global theme — all 12 audited screens (Home, Wallet, Invest, Travel, Insurance, Rewards, Referral, Recharge, Profile, AI Coach, Notification Settings, Notifications) render with deep-navy backgrounds, sky-blue (#38BDF8) accents, high-contrast white/slate text, and consistent card styling. ONE FRONTEND BUG: Onboarding 'Next' button does NOT advance slides on the web preview — FlatList.scrollToIndex+pagingEnabled does not trigger onScroll on react-native-web, so `index` state stays at 0 and the CTA never becomes 'Get Started'. Skip works, so first-launch flow is recoverable, but the 6-slide tour is non-functional on web. (Native build will likely work — RN-Web limitation.) MINOR: Onboarding slide 1 title text appears low-contrast/washed-out on web (looks like the Animated opacity worklet under reanimated@RN-Web shows 0→1 fade in a fractional state at idle).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Onboarding Next button (FlatList scrollToIndex)",
+        "issue": "Tapping 'Next' on /onboarding does NOT advance to the next slide on web preview. The FlatList horizontal+pagingEnabled+scrollToIndex pattern does not fire onScroll on react-native-web, so `index` state stays 0 and the CTA never flips to 'Get Started'. As a result the multi-slide flow is unreachable from web — Skip is the only way out. Reference: /app/frontend/app/onboarding/index.tsx:98-104. Suggested fix: drive `setIndex` directly inside next() before calling scrollToIndex, e.g. `setIndex(index+1); listRef.current?.scrollToIndex({index: index+1, animated: true});` (do NOT rely on onScroll on web). Also drives scrollX shared-value via withTiming for the animated styles.",
+        "testID": "onboarding-next",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Onboarding slide title opacity (reanimated worklet on RN-Web)",
+        "issue": "Slide 1 title 'Welcome to My Funding Bank' renders washed-out / very low opacity on web at idle. Likely the Animated.View opacity interpolation against scrollX shared-value defaults to ~0 on RN-Web before any scroll event fires. Reference: /app/frontend/app/onboarding/index.tsx:182-187. Suggested fix: initialise opacity to 1 for the first slide, or use `Platform.OS === 'web' ? 1 : interpolated` for the textStyle opacity.",
+        "testID": "n/a",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/onboarding",
+        "issues": [
+          "Per-slide image renders a white block flash for ~200ms before unsplash loads — consider adding a placeholder skeleton or a darker fallback background to match the deep-navy theme."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "shadow* style props",
+        "issue": "Console warning on every render: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Likely from Card/onboarding imageGlow shadows. Non-blocking on native but pollutes console. Reference: /app/frontend/app/onboarding/index.tsx:235 (shadowColor/shadowOpacity/shadowRadius/shadowOffset)."
+      },
+      {
+        "component": "FlatList scrollToIndex on react-native-web",
+        "issue": "Documented RN-Web limitation — pagingEnabled+scrollToIndex does not reliably fire onScroll/momentum events, breaking carousel state machines that depend on scroll position. Recommend driving the slide index from local state directly (setIndex before scrollToIndex). Reference: /app/frontend/app/onboarding/index.tsx:98-104."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_push_notifications.py",
+    "/app/test_reports/pytest/push_results.xml",
+    "/app/test_reports/pytest/super_app_results.xml"
+  ],
+  "action_items": [
+    "Fix /app/frontend/app/onboarding/index.tsx next() — call setIndex(index+1) before scrollToIndex, and drive scrollX.value via withTiming so animated worklets advance even when onScroll doesn't fire on web. This unblocks the 6-slide tour for web preview & for QA video walk-through.",
+    "Set the first slide's text opacity to 1 by default (or branch on Platform.OS === 'web') so the welcome title doesn't render washed-out at idle.",
+    "(Optional cleanup) Replace deprecated shadow* style props with boxShadow on onboarding's imageGlow and any Card component still using shadowColor/shadowOpacity/shadowRadius/shadowOffset."
+  ],
+  "critical_code_review_comments": [
+    "push.py is solid: PUSH_ENABLED = bool(PUSH_KEY) and PUSH_KEY != 'placeholder' correctly gates relay; send_push() is wrapped in try/except and silently returns when not configured — admin broadcast confirmed to still succeed (200) in demo mode. GOOD.",
+    "register-push uses upsert keyed on (user_id, device_token) — idempotent on repeated calls from the same device. Verified via test_register_push_upsert_idempotent.",
+    "GET/PUT /notifications/preferences defaults all four categories to True when no doc exists, returns push_enabled=False as expected for placeholder key. Verified persistence by toggling promotional=False and re-GETing.",
+    "/admin/push-status returns {configured:false, status:'demo', registered_devices:N, message:'FCM Not Configured ...'} — exactly matches spec. Note: this endpoint is NOT auth-gated (no Depends on admin). For an 'admin' status endpoint, consider gating it behind get_current_admin to avoid leaking the device-count to public callers. LOW risk in demo mode but worth fixing before live FCM rollout.",
+    "admin_extra.send_notification wraps push_module.send_push in try/except so broadcast inserts always succeed even if push relay throws. Verified via test_broadcast_all_succeeds.",
+    "Onboarding screen uses storage.setItem('mfb_onboarded', true) before router.replace — race condition is correctly avoided. Skip path verified working.",
+    "_layout.tsx guards Platform.OS !== 'web' for expo-notifications setup — clean. Cold-start handler reads getLastNotificationResponseAsync — correct per Emergent Push playbook.",
+    "Notification Settings screen uses Card + Switch with testID=pref-{key} — fully testable. PUT call sends the full prefs object (not partial) so prior toggles are preserved on each save. GOOD pattern."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_push_notifications.py (NEW — 15 tests covering register-push, preferences, admin push-status, admin broadcast in demo mode, + 7 regression smoke tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (47/47 — 15 new push-notif tests + 32 super-app regression. Endpoints validated: /register-push, /notifications/preferences (GET/PUT), /admin/push-status, /admin/notifications/send, /auth/login, /wallet, /invest/ai-suggestions, /travel/buses, /travel/trains, /travel/book, /travel/cancel, /insurance/quote, /insurance/buy, /insurance/plans, /insurance/policies, /rewards, /rewards/tier, /rewards/redeem, /admin/super/*, /admin/api-settings, /app/api-status)",
+    "frontend": "85% (Skip onboarding flow, mfb_onboarded persistence, bypass on revisit, Notification Settings full rendering, 4-toggle PUT API integration, dark mode toggle in Profile + 12-screen dark mode visual audit — ALL PASS. ONLY FAIL: Onboarding 'Next' button does not advance slides on web preview.)"
+  },
+  "seed_data_creation": "No new seed data. Notification preferences was toggled (promotional True→False→True) and restored at end of test. Push token rows are written to db.push_tokens with TEST_ prefix on device_token for easy cleanup.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_push_notifications.py + /app/backend/tests/test_super_app.py for regression — they cover the complete Iteration-5 surface (47 tests, 17s total). For frontend, the Onboarding Next-button bug is the only outstanding fix; once /app/frontend/app/onboarding/index.tsx next() is patched to call setIndex(index+1) and animate scrollX.value via withTiming, the full 6-slide flow + final Get Started CTA should work on web. To clear AsyncStorage in browser preview: page.evaluate(\"() => { localStorage.clear(); }\") before visiting /. demo@mfb.in is currently ~3088 reward points (still Gold tier).",
+  "rca_of_issue": "ROOT CAUSE — Onboarding Next button doesn't advance on web: react-native-web's FlatList implementation of pagingEnabled+scrollToIndex does not consistently fire onScroll events for programmatic scrolls (it works for user-driven swipe but not for scrollToIndex animations). The component's `index` state is updated ONLY inside onScroll → setIndex never runs → CTA label stays 'Next' forever, and finishOnboarding (only reached when index === SLIDES.length - 1) is never called. REPRO: clear localStorage, visit /, tap Next 5 times — slide stays on welcome, CTA stays 'Next'. MITIGATION: drive `setIndex(index + 1)` explicitly in next() before scrollToIndex, and animate scrollX via withTiming so the reanimated worklets that drive image scale/text opacity also advance. Two-line fix in /app/frontend/app/onboarding/index.tsx:98-104."
+}

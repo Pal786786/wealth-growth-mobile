@@ -44,7 +44,7 @@ export default function ProfileTab() {
       items: [
         { icon: Shield, label: "Security Settings", route: "/profile/security", color: palette.danger },
         { icon: ShieldCheck, label: "Privacy Controls", route: "/profile/privacy", color: palette.secondary },
-        { icon: Bell, label: "Notifications", route: "/notifications", color: palette.primary },
+        { icon: Bell, label: "Notification Settings", route: "/notifications/settings", color: palette.primary },
       ],
     },
     {

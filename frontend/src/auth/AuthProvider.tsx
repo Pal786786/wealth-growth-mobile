@@ -49,6 +49,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (token: string, u: User) => {
     await setAuthToken(token);
     setUser(u);
+    // Fire and forget — register for push notifications (no-op on web / FCM not configured)
+    try {
+      const { registerForPush } = await import("@/src/notifications/registerPush");
+      registerForPush(u.user_id).catch(() => {});
+    } catch {}
   }, []);
 
   const signOut = useCallback(async () => {
