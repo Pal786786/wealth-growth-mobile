@@ -47,9 +47,9 @@ API_CATALOG: List[Dict[str, Any]] = [
         "api_name": "sms_provider",
         "display_name": "SMS Provider (OTP)",
         "category": "messaging",
-        "description": "Send real OTP/SMS to mobile numbers (Twilio/MSG91).",
-        "fields": ["api_key", "sender_id"],
-        "test_kind": "noop",
+        "description": "Send real OTP/SMS to mobile numbers. Supports MSG91 (default) and Twilio.",
+        "fields": ["api_key", "provider", "sender_id", "template_id", "twilio_sid", "twilio_from"],
+        "test_kind": "sms_provider",
     },
     {
         "api_name": "email_service",
@@ -142,9 +142,10 @@ def _status_of(doc: Optional[Dict[str, Any]]) -> str:
 
 
 async def seed_catalog():
-    """Insert any missing catalog entries with demo defaults. Never overwrites existing."""
-    existing = await _db.api_settings.distinct("api_name")
-    existing_set = set(existing)
+    """Insert any missing catalog entries with demo defaults. Never overwrites api_key/extra/flags.
+    DOES sync display_name/description/fields/category from catalog so UI stays consistent."""
+    existing = await _db.api_settings.find({}, {"_id": 0}).to_list(200)
+    existing_by_name = {r["api_name"]: r for r in existing}
     docs = []
     # Pre-seed Stripe & Alpha Vantage from env so they don't appear empty on first run
     env_seed = {
@@ -152,7 +153,18 @@ async def seed_catalog():
         "stock_market": os.environ.get("ALPHA_VANTAGE_KEY", ""),
     }
     for entry in API_CATALOG:
-        if entry["api_name"] in existing_set:
+        if entry["api_name"] in existing_by_name:
+            # Sync metadata fields from catalog (display_name/description/fields/category/test_kind)
+            await _db.api_settings.update_one(
+                {"api_name": entry["api_name"]},
+                {"$set": {
+                    "display_name": entry["display_name"],
+                    "category": entry["category"],
+                    "description": entry["description"],
+                    "fields": entry["fields"],
+                    "test_kind": entry["test_kind"],
+                }},
+            )
             continue
         env_key = env_seed.get(entry["api_name"], "")
         # Treat placeholder demo keys as empty
@@ -348,6 +360,41 @@ async def test_connection(api_name: str, admin=Depends(get_current_admin)):
                 return {"ok": False, "mode": "demo", "message": f"Razorpay error {r.status_code}"}
             except Exception as e:
                 return {"ok": False, "mode": "demo", "message": f"Razorpay test failed: {e}"}
+        if kind == "sms_provider":
+            extra = doc.get("extra", {}) or {}
+            provider = (extra.get("provider") or "").lower().strip()
+            if not provider:
+                # Auto-infer
+                if key.startswith("AC") and len(key) >= 30:
+                    provider = "twilio"
+                else:
+                    provider = "msg91"
+            try:
+                async with httpx.AsyncClient(timeout=8) as http:
+                    if provider == "msg91":
+                        # MSG91 balance endpoint validates the key (no SMS sent)
+                        r = await http.get(
+                            "https://api.msg91.com/api/balance.php",
+                            params={"authkey": key, "type": "4"},
+                        )
+                        if r.status_code == 200 and r.text and not r.text.strip().lower().startswith("invalid"):
+                            return {"ok": True, "mode": "live", "message": f"MSG91 authenticated. Balance check OK (balance: {r.text.strip()})."}
+                        return {"ok": False, "mode": "demo", "message": f"MSG91 rejected key: {r.text[:120]}"}
+                    elif provider == "twilio":
+                        sid = extra.get("twilio_sid", "")
+                        if not sid:
+                            return {"ok": False, "mode": "demo", "message": "Twilio needs both Account SID and Auth Token."}
+                        r = await http.get(
+                            f"https://api.twilio.com/2010-04-01/Accounts/{sid}.json",
+                            auth=(sid, key),
+                        )
+                        if r.status_code == 200:
+                            return {"ok": True, "mode": "live", "message": "Twilio account authenticated."}
+                        return {"ok": False, "mode": "demo", "message": f"Twilio rejected (status {r.status_code})"}
+                    else:
+                        return {"ok": False, "mode": "demo", "message": f"Unknown SMS provider: {provider}"}
+            except Exception as e:
+                return {"ok": False, "mode": "demo", "message": f"SMS provider test failed: {e}"}
         # noop / unknown: optimistic
         return {"ok": True, "mode": "live", "message": "Key saved. Live calls will be attempted on next request."}
     except Exception as e:
