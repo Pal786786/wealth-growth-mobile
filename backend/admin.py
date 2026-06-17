@@ -380,9 +380,35 @@ async def list_transactions(
 
 # Audit log
 @admin_router.get("/audit")
-async def audit(limit: int = 100, admin: Dict[str, Any] = Depends(get_current_admin)):
-    rows = await _db.admin_audit.find({}, {"_id": 0}).sort("at", -1).limit(limit).to_list(limit)
-    return rows
+async def audit(
+    limit: int = 200,
+    action: Optional[str] = None,
+    actor: Optional[str] = None,
+    target: Optional[str] = None,
+    since_days: Optional[int] = None,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """Returns recent admin audit log entries with optional filters."""
+    q: Dict[str, Any] = {}
+    if action:
+        q["action"] = {"$regex": action, "$options": "i"}
+    if actor:
+        q["admin_id"] = actor
+    if target:
+        q["target"] = {"$regex": target, "$options": "i"}
+    if since_days and since_days > 0:
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        q["at"] = {"$gte": _dt.now(_tz.utc) - _td(days=since_days)}
+    rows = await _db.admin_audit.find(q, {"_id": 0}).sort("at", -1).limit(min(limit, 500)).to_list(min(limit, 500))
+    # Join admin names
+    admin_ids = list({r.get("admin_id") for r in rows if r.get("admin_id")})
+    admins_map: Dict[str, str] = {}
+    if admin_ids:
+        async for a in _db.admins.find({"admin_id": {"$in": admin_ids}}, {"_id": 0, "admin_id": 1, "email": 1, "full_name": 1}):
+            admins_map[a["admin_id"]] = a.get("full_name") or a.get("email") or a["admin_id"]
+    for r in rows:
+        r["actor_name"] = admins_map.get(r.get("admin_id", ""), r.get("admin_id", "system"))
+    return {"items": rows, "total": len(rows)}
 
 
 def attach(parent_router: APIRouter, db, logger):

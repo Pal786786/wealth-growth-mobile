@@ -13,6 +13,10 @@ import Wallet from "./pages/Wallet";
 import { Notifications, InvestmentManager, ContentManager, Reports, Settings } from "./pages/AdminExtras";
 import AdminUsers from "./pages/AdminUsers";
 import ApiManagement from "./pages/ApiManagement";
+import AdminTravel from "./pages/AdminTravel";
+import AdminInsurance from "./pages/AdminInsurance";
+import AdminRewards from "./pages/AdminRewards";
+import AdminAuditLogs from "./pages/AdminAuditLogs";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -43,6 +47,10 @@ createRoot(document.getElementById("root")!).render(
               <Route path="investments" element={<InvestmentManager />} />
               <Route path="content" element={<ContentManager />} />
               <Route path="reports" element={<Reports />} />
+              <Route path="travel" element={<AdminTravel />} />
+              <Route path="insurance" element={<AdminInsurance />} />
+              <Route path="rewards" element={<AdminRewards />} />
+              <Route path="audit" element={<AdminAuditLogs />} />
               <Route path="api-management" element={<ApiManagement />} />
               <Route path="settings" element={<Settings />} />
               <Route path="admins" element={<AdminUsers />} />

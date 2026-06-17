@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon, ShieldCheck, KeyRound, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon, ShieldCheck, KeyRound, AlertTriangle, Plane, Shield, Trophy, ScrollText } from "lucide-react";
 import { Logo } from "../components/Logo";
 import { useAdminAuth } from "../lib/auth";
 import { useState } from "react";
@@ -7,10 +7,10 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
 const ROLE_NAV: Record<string, string[]> = {
-  super_admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/content", "/reports", "/api-management", "/settings", "/admins"],
-  admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/content", "/reports", "/api-management", "/settings"],
-  finance_manager: ["/", "/users", "/transactions", "/wallet", "/reports"],
-  support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications"],
+  super_admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/travel", "/insurance", "/rewards", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
+  admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/travel", "/insurance", "/rewards", "/content", "/reports", "/audit", "/api-management", "/settings"],
+  finance_manager: ["/", "/users", "/transactions", "/wallet", "/rewards", "/reports", "/audit"],
+  support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications", "/travel", "/insurance"],
   investment_manager: ["/", "/users", "/investments", "/content"],
 };
 
@@ -22,8 +22,12 @@ const NAV = [
   { to: "/wallet", label: "Wallet Adjust", icon: Wallet },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/investments", label: "Investments", icon: TrendingUp },
+  { to: "/travel", label: "Travel", icon: Plane },
+  { to: "/insurance", label: "Insurance", icon: Shield },
+  { to: "/rewards", label: "Rewards", icon: Trophy },
   { to: "/content", label: "Content", icon: Image },
   { to: "/reports", label: "Reports", icon: FileText },
+  { to: "/audit", label: "Audit Logs", icon: ScrollText },
   { to: "/api-management", label: "API Management", icon: KeyRound },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
   { to: "/admins", label: "Admin Users", icon: ShieldCheck },

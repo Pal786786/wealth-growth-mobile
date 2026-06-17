@@ -24,6 +24,9 @@ export function inr(n: number | undefined | null): string {
   return `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
+// Alias used by new admin pages
+export const fmtCurrency = inr;
+
 export function fmtDate(s?: string) {
   if (!s) return "—";
   try {
