@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, fmtDate } from "../lib/api";
 import { useAdminAuth } from "../lib/auth";
-import { Plus, Trash2, UserPlus, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Plus, Trash2, UserPlus, ShieldAlert, ShieldCheck, KeyRound } from "lucide-react";
 
 export default function AdminUsers() {
   const qc = useQueryClient();
@@ -30,6 +30,20 @@ export default function AdminUsers() {
     mutationFn: (id: string) => api.delete(`/admin/admins/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-admins"] }),
   });
+
+  const resetPw = useMutation({
+    mutationFn: ({ id, pw }: { id: string; pw: string }) =>
+      api.post(`/admin/admins/${id}/reset-password`, { new_password: pw }),
+    onSuccess: (_, v) => window.alert(`Password reset successfully. Share the new password with the admin securely.`),
+    onError: (e: any) => window.alert(e?.response?.data?.detail || "Reset failed"),
+  });
+
+  const handleReset = (id: string, name: string) => {
+    const pw = window.prompt(`New password for ${name} (min 8 chars):`);
+    if (!pw) return;
+    if (pw.length < 8) { window.alert("Password must be at least 8 characters"); return; }
+    resetPw.mutate({ id, pw });
+  };
 
   if (error && (error as any)?.response?.status === 403) {
     return (
@@ -121,9 +135,14 @@ export default function AdminUsers() {
                       {a.admin_id === me?.admin_id ? (
                         <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-semibold"><ShieldCheck className="w-3.5 h-3.5" /> current</span>
                       ) : (
-                        <button onClick={() => del.mutate(a.admin_id)} className="btn-ghost !py-1.5 !px-3 !text-xs gap-1 !text-red-600 !border-red-200 hover:!bg-red-50">
-                          <Trash2 className="w-3.5 h-3.5" /> Delete
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => handleReset(a.admin_id, a.name)} className="btn-ghost !py-1.5 !px-3 !text-xs gap-1">
+                            <KeyRound className="w-3.5 h-3.5" /> Reset
+                          </button>
+                          <button onClick={() => del.mutate(a.admin_id)} className="btn-ghost !py-1.5 !px-3 !text-xs gap-1 !text-red-600 !border-red-200 hover:!bg-red-50">
+                            <Trash2 className="w-3.5 h-3.5" /> Delete
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
