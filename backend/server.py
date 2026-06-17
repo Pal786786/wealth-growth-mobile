@@ -13,9 +13,12 @@ import jwt
 import stripe
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
+
+import admin as admin_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -900,7 +903,14 @@ async def dashboard_summary(user: Dict[str, Any] = Depends(get_current_user)):
 
 
 # Mount
+admin_module.attach(api, db, logger)
 app.include_router(api)
+
+# Serve built admin SPA (after admin app is built) at /api/admin-ui/
+ADMIN_DIST = Path("/app/admin/dist")
+if ADMIN_DIST.exists():
+    app.mount("/api/admin-ui", StaticFiles(directory=str(ADMIN_DIST), html=True), name="admin-ui")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -919,6 +929,9 @@ async def startup():
     await db.wallets.create_index("user_id", unique=True)
     await db.transactions.create_index([("user_id", 1), ("created_at", -1)])
     await db.topups.create_index("session_id", unique=True)
+    await db.admins.create_index("email", unique=True)
+    await db.admins.create_index("admin_id", unique=True)
+    await admin_module.seed_admin(db, logger)
     logger.info("MFB backend ready")
 
 
