@@ -109,20 +109,46 @@ TIER_BENEFITS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def _tier_index(tier_id: str) -> int:
-    """Returns 0-based rank index (bronze=0, diamond=4). -1 if unknown."""
-    for i, t in enumerate(_TIERS):
+async def _live_tiers() -> List[Dict[str, Any]]:
+    """Returns the active tier list — DB-backed via tier_config, fallback to startup _TIERS."""
+    try:
+        import tier_config as _tc  # type: ignore
+        return await _tc.get_tiers()
+    except Exception:
+        return _TIERS
+
+
+def _tier_index(tier_id: str, tier_list: Optional[List[Dict[str, Any]]] = None) -> int:
+    """Returns 0-based rank index. -1 if unknown."""
+    tl = tier_list or _TIERS
+    for i, t in enumerate(tl):
         if t["id"] == tier_id:
             return i
     return -1
 
 
 def _enrich_tier(tier: Dict[str, Any]) -> Dict[str, Any]:
-    """Combine TIERS metadata + TIER_BENEFITS into a single payload for UI."""
+    """For DB-backed tiers, perks are already inside `tier['perks']`. We just compute
+    derived display fields (cashback_rate_pct, emoji defaults)."""
     if not tier:
         return {}
-    b = TIER_BENEFITS.get(tier["id"], {})
-    return {**tier, **b}
+    rate_pct = round(float(tier.get("rate", 0)) * 100, 2)
+    perks = tier.get("perks") or []
+    # Normalize perks to plain strings of only enabled items for mobile display
+    perk_strs: List[str] = []
+    for p in perks:
+        if isinstance(p, str):
+            perk_strs.append(p)
+        elif isinstance(p, dict) and p.get("enabled", True):
+            perk_strs.append(p.get("text", ""))
+    return {
+        **tier,
+        "cashback_rate_pct": rate_pct,
+        "points_multiplier": float(tier.get("points_multiplier", 1.0)),
+        "tagline": tier.get("tagline", f"You're now {tier.get('name','')}!"),
+        "emoji": tier.get("emoji", ""),
+        "perks": [p for p in perk_strs if p],
+    }
 
 
 # ============================================================================
@@ -133,9 +159,15 @@ async def check_and_upgrade(user_id: str, trigger: str = "transaction",
     """Detects tier change and, only if the user moved UP a tier, persists the
     upgrade, notifies the user, and writes an audit log entry.
 
+    Reads tier definitions LIVE from MongoDB (tier_config) so admin edits apply
+    instantly without redeploy.
+
     Returns the upgrade event dict if one was fired, else None.
     """
-    if _db is None or not _TIERS:
+    if _db is None:
+        return None
+    tier_list = await _live_tiers()
+    if not tier_list:
         return None
     u = await _db.users.find_one(
         {"user_id": user_id},
@@ -146,38 +178,32 @@ async def check_and_upgrade(user_id: str, trigger: str = "transaction",
 
     points = int(u.get("reward_points", 0) or 0)
     # Compute new tier from points
-    new_tier: Dict[str, Any] = _TIERS[0]
-    for t in _TIERS:
+    new_tier: Dict[str, Any] = tier_list[0]
+    for t in tier_list:
         if points >= t["min"]:
             new_tier = t
 
     old_tier_id = u.get("tier_id") or "bronze"
     new_tier_id = new_tier["id"]
 
-    # Persist current tier on the user record (cheap upsert)
     if old_tier_id != new_tier_id:
         await _db.users.update_one(
             {"user_id": user_id},
             {"$set": {"tier_id": new_tier_id, "tier_updated_at": _now()}},
         )
 
-    # Anti-spam: only upgrades (not downgrades) trigger notifications
-    if _tier_index(new_tier_id) <= _tier_index(old_tier_id):
+    if _tier_index(new_tier_id, tier_list) <= _tier_index(old_tier_id, tier_list):
         return None
 
-    # Anti-spam: never duplicate an upgrade event for the SAME (user, new_tier) within 24h
     recent_dup = await _db.tier_upgrades.find_one(
-        {
-            "user_id": user_id,
-            "new_tier_id": new_tier_id,
-            "at": {"$gte": _now() - timedelta(hours=24)},
-        },
+        {"user_id": user_id, "new_tier_id": new_tier_id,
+         "at": {"$gte": _now() - timedelta(hours=24)}},
         {"_id": 1},
     )
     if recent_dup:
         return None
 
-    old_tier_full = next((t for t in _TIERS if t["id"] == old_tier_id), _TIERS[0])
+    old_tier_full = next((t for t in tier_list if t["id"] == old_tier_id), tier_list[0])
     enriched_new = _enrich_tier(new_tier)
     enriched_old = _enrich_tier(old_tier_full)
 
@@ -254,7 +280,8 @@ def _attach_user_routes(api: APIRouter):
 
     @r.get("/benefits")
     async def all_tier_benefits():
-        return {"tiers": [_enrich_tier(t) for t in _TIERS]}
+        live = await _live_tiers()
+        return {"tiers": [_enrich_tier(t) for t in live]}
 
     @r.get("/history")
     async def my_upgrade_history(user: Dict[str, Any] = Depends(_get_current_user), limit: int = 20):
@@ -269,12 +296,11 @@ def _attach_user_routes(api: APIRouter):
         doc = await _db.tier_upgrades.find_one({"upgrade_id": upgrade_id, "user_id": user["user_id"]}, {"_id": 0})
         if not doc:
             raise HTTPException(404, "Upgrade event not found")
-        # Enrich both old and new tiers with benefits
-        old_full = next((t for t in _TIERS if t["id"] == doc["old_tier_id"]), _TIERS[0])
-        new_full = next((t for t in _TIERS if t["id"] == doc["new_tier_id"]), _TIERS[0])
+        live = await _live_tiers()
+        old_full = next((t for t in live if t["id"] == doc["old_tier_id"]), live[0])
+        new_full = next((t for t in live if t["id"] == doc["new_tier_id"]), live[0])
         doc["old_tier"] = _enrich_tier(old_full)
         doc["new_tier"] = _enrich_tier(new_full)
-        # Mark seen
         await _db.tier_upgrades.update_one({"upgrade_id": upgrade_id}, {"$set": {"seen_by_user": True}})
         return doc
 
@@ -342,14 +368,14 @@ def _attach_admin_routes(api: APIRouter):
         return {
             "users_total": users_total,
             "users_per_tier": [
-                {"tier_id": t["id"], "tier_name": t["name"], "count": per_tier[t["id"]], "color": t.get("color")}
-                for t in _TIERS
+                {"tier_id": t["id"], "tier_name": t["name"], "count": per_tier.get(t["id"], 0), "color": t.get("color")}
+                for t in (await _live_tiers())
             ],
             "migrations": migrations,
             "trend_30d": trend,
             "by_trigger": [{"trigger": tr["_id"] or "unknown", "count": tr["c"]} for tr in trig_agg],
             "total_upgrades": await _db.tier_upgrades.count_documents({}),
-            "tiers": [_enrich_tier(t) for t in _TIERS],
+            "tiers": [_enrich_tier(t) for t in (await _live_tiers())],
         }
 
     @r.get("/user/{user_id}")
@@ -359,7 +385,8 @@ def _attach_admin_routes(api: APIRouter):
         if not u:
             raise HTTPException(404, "User not found")
         rows = await _db.tier_upgrades.find({"user_id": user_id}, {"_id": 0}).sort("at", -1).limit(50).to_list(50)
-        cur_tier = next((t for t in _TIERS if t["id"] == (u.get("tier_id") or "bronze")), _TIERS[0])
+        live = await _live_tiers()
+        cur_tier = next((t for t in live if t["id"] == (u.get("tier_id") or "bronze")), live[0])
         return {
             "user": u,
             "current_tier": _enrich_tier(cur_tier),

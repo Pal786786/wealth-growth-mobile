@@ -7,8 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
 const ROLE_NAV: Record<string, string[]> = {
-  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/notifications", "/push-logs", "/investments", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
-  admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/notifications", "/push-logs", "/investments", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/content", "/reports", "/audit", "/api-management", "/settings"],
+  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/notifications", "/push-logs", "/investments", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
+  admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/notifications", "/push-logs", "/investments", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings"],
   finance_manager: ["/", "/users", "/transactions", "/wallet", "/insurance/claims", "/rewards", "/tier-upgrades", "/reports", "/audit"],
   support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications", "/push-logs", "/travel", "/insurance", "/insurance/claims", "/tier-upgrades"],
   investment_manager: ["/", "/users", "/investments", "/content"],
@@ -30,6 +30,7 @@ const NAV = [
   { to: "/insurance/claims", label: "Insurance Claims", icon: FileSearch },
   { to: "/rewards", label: "Rewards", icon: Trophy },
   { to: "/tier-upgrades", label: "Tier Upgrades", icon: Crown },
+  { to: "/cashback-editor", label: "Cashback Editor", icon: Trophy },
   { to: "/content", label: "Content", icon: Image },
   { to: "/reports", label: "Reports", icon: FileText },
   { to: "/audit", label: "Audit Logs", icon: ScrollText },

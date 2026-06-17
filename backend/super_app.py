@@ -9,7 +9,7 @@ from __future__ import annotations
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -289,19 +289,31 @@ TIERS = [
 ]
 
 
-def _tier_for(points: int) -> Dict[str, Any]:
-    cur = TIERS[0]
+def _tier_for(points: int, tiers: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    t_list = tiers or TIERS
+    cur = t_list[0]
     nxt = None
-    for i, t in enumerate(TIERS):
+    for i, t in enumerate(t_list):
         if points >= t["min"]:
             cur = t
-            nxt = TIERS[i + 1] if i + 1 < len(TIERS) else None
+            nxt = t_list[i + 1] if i + 1 < len(t_list) else None
     return {"current": cur, "next": nxt}
+
+
+async def _live_tiers() -> List[Dict[str, Any]]:
+    """Live tier list from MongoDB config (with fallback to hardcoded defaults)."""
+    try:
+        import tier_config  # type: ignore
+        return await tier_config.get_tiers()
+    except Exception:
+        return TIERS
 
 
 async def award_cashback(user_id: str, spend_amount: float, category: str = "general") -> Dict[str, Any]:
     """Award cashback + points after a successful debit transaction.
     Called by other endpoints (recharge/bill/travel/insurance).
+    Reads tier rate & points multiplier live from MongoDB config so admin edits
+    apply instantly without redeploy.
     Returns {points_added, cashback_amount, tier}.
     """
     if spend_amount <= 0:
@@ -310,19 +322,20 @@ async def award_cashback(user_id: str, spend_amount: float, category: str = "gen
     if not u:
         return {"points_added": 0, "cashback_amount": 0}
     points = u.get("reward_points", 0)
-    tier = _tier_for(points)["current"]
-    cashback_amt = round(spend_amount * tier["rate"], 2)
-    # 1 point per ₹10 spent + bonus 2x on travel/insurance
+    live_tiers = await _live_tiers()
+    tier = _tier_for(points, live_tiers)["current"]
+    cashback_amt = round(spend_amount * float(tier.get("rate", 0)), 2)
+    # Base: 1 point per ₹10 spent; multiplier per tier for travel/insurance
     pts_earned = int(spend_amount / 10)
     if category in ("travel", "insurance"):
-        pts_earned *= 2
+        pts_earned = int(pts_earned * float(tier.get("points_multiplier", 1.0)))
     new_points = points + pts_earned
     await _db.users.update_one({"user_id": user_id}, {"$set": {"reward_points": new_points}})
     if cashback_amt > 0:
         await _db.wallets.update_one({"user_id": user_id}, {"$inc": {"balance": cashback_amt}})
         if _add_tx:
             await _add_tx(user_id, "credit", "cashback", cashback_amt,
-                          f"{tier['name']} tier cashback ({int(tier['rate']*1000)/10}%)",
+                          f"{tier['name']} tier cashback ({round(float(tier.get('rate',0))*100, 2)}%)",
                           "success", f"Cashback on {category}")
     # Tier upgrade detection (anti-spam: only fires on actual tier change)
     try:

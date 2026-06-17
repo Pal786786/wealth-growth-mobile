@@ -986,6 +986,8 @@ import tier_upgrades  # type: ignore
 tier_upgrades.attach(api, db, get_current_user, admin_module.get_current_admin, super_app.TIERS)
 import travel_admin  # type: ignore
 travel_admin.attach(api, db, get_current_user, admin_module.get_current_admin, _add_tx, admin_module._log_action)
+import tier_config  # type: ignore
+tier_config.attach(api, db, admin_module.get_current_admin, admin_module._log_action)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/
@@ -1022,6 +1024,13 @@ async def startup():
     await db.bookings.create_index("booking_id", unique=True)
     await db.bookings.create_index([("status", 1), ("created_at", -1)])
     await db.bookings.create_index([("refund_status", 1), ("updated_at", -1)])
+    # Seed tier config singleton if missing
+    try:
+        import tier_config as _tc  # type: ignore
+        _tc._db = db
+        await _tc.seed_config()
+    except Exception as _e:
+        logger.warning(f"tier_config seed failed: {_e}")
     await admin_module.seed_admin(db, logger)
     await api_settings_module.seed_catalog()
     await super_app.seed_demo_catalogs()
