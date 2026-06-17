@@ -216,6 +216,7 @@ async def issue_otp(mobile: str, purpose: str = "login") -> Dict[str, Any]:
         "mobile": mobile,
         "purpose": purpose,
         "otp_hash": _hash_otp(otp, mobile),
+        "otp_plain_demo": otp if delivery.get("demo") else None,  # ONLY in demo mode
         "created_at": _now(),
         "expires_at": _now() + timedelta(minutes=OTP_TTL_MIN),
         "attempts": 0,
@@ -541,5 +542,26 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin, send_push_fn
             "at": _now(),
         })
         return {"ok": True, "action": body.action, "user_id": user_id}
+
+    @admin.get("/demo-otps")
+    async def demo_otps_view(adm=Depends(get_current_admin)):
+        """Returns recent DEMO OTPs (last 10 min, unconsumed) for admin testing.
+        SECURITY: only returns OTPs issued in demo mode. Real SMS OTPs never
+        expose the OTP value here — otp_plain_demo is null for those."""
+        _ensure(adm)
+        recent = await _db.otp_codes.find(
+            {
+                "otp_plain_demo": {"$ne": None},
+                "consumed": False,
+                "created_at": {"$gte": _now() - timedelta(minutes=10)},
+            },
+            {"_id": 0, "mobile": 1, "purpose": 1, "otp_plain_demo": 1,
+             "created_at": 1, "expires_at": 1, "attempts": 1, "delivery": 1},
+        ).sort("created_at", -1).limit(20).to_list(20)
+        return {
+            "items": recent,
+            "count": len(recent),
+            "warning": "These OTPs are visible only in DEMO mode. Configure SMS provider in API Management to enable real SMS delivery — once enabled, OTP values will no longer appear here.",
+        }
 
     api.include_router(admin)

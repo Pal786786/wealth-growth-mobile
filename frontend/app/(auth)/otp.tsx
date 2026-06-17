@@ -23,6 +23,8 @@ export default function Otp() {
   const [loading, setLoading] = useState(false);
   const [needsName, setNeedsName] = useState(false);
 
+  const [demoMode, setDemoMode] = useState(false);
+
   const sendOtp = async () => {
     if (!/^[0-9]{10}$/.test(mobile)) {
       show("error", "Enter a valid 10-digit mobile number");
@@ -30,8 +32,11 @@ export default function Otp() {
     }
     setLoading(true);
     try {
-      await api.post("/auth/otp/request", { mobile });
-      show("success", "OTP sent. Use 123456 for demo.");
+      const { data } = await api.post("/auth/otp/request", { mobile });
+      setDemoMode(!!data?.demo);
+      show("success", data?.demo
+        ? "OTP sent (demo mode — ask admin for the code)"
+        : "OTP sent to your mobile");
       setStep("otp");
     } catch (e: any) {
       show("error", e?.response?.data?.detail || "Failed to send OTP");
@@ -79,7 +84,9 @@ export default function Otp() {
           <Text style={[s.subtitle, { color: palette.textSecondary }]}>
             {step === "mobile"
               ? "We'll send a 6-digit code to your number"
-              : `Code sent to +91 ${mobile}. Use 123456 for demo.`}
+              : demoMode
+                ? `Code sent to +91 ${mobile}. (Demo mode — check admin logs for the code)`
+                : `Code sent to +91 ${mobile}. It expires in 5 minutes.`}
           </Text>
         </View>
 
@@ -101,7 +108,7 @@ export default function Otp() {
             <>
               <Input
                 label="OTP"
-                placeholder="123456"
+                placeholder="Enter 6-digit code"
                 value={otp}
                 onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, 6))}
                 keyboardType="number-pad"
