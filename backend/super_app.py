@@ -84,6 +84,13 @@ class CancelReq(BaseModel):
     reason: Optional[str] = "User cancelled"
 
 
+class BonusReq(BaseModel):
+    user_id: str
+    points: int = 0
+    cashback: float = 0
+    note: Optional[str] = "Admin bonus"
+
+
 def _attach_travel(api: APIRouter):
     travel = APIRouter(prefix="/travel", tags=["travel-extra"])
 
@@ -405,12 +412,6 @@ def _attach_admin(api: APIRouter, get_current_admin):
             "top_referrers": top_referrers,
             "tiers": TIERS,
         }
-
-    class BonusReq(BaseModel):
-        user_id: str
-        points: int = 0
-        cashback: float = 0
-        note: Optional[str] = "Admin bonus"
 
     @adm.post("/grant-bonus")
     async def grant_bonus(req: BonusReq, admin=Depends(get_current_admin)):

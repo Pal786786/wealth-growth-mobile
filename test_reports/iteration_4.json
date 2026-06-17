@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 4 — Super-app modules (Travel Bus/Train + Cancellation, Insurance Premium Calculator + Compare, Rewards Tier + Redeem + Cashback Engine, Admin super endpoints) tested end-to-end. Backend: 32/32 pytest tests pass (100%) after fixing one product bug (see below). Frontend: Login (demo@mfb.in/demo1234) → Travel tab → Bus chip shows 5 routes with Book buttons → tapping Book displays toast 'Bus booked! +₹5.39 cashback · +88 pts' (Gold tier 1.2% cashback + 2x travel points engine confirmed live) → Train chip shows 5 trains with prices/classes → 'My bookings (7)' history section with Cancel button per active booking → cancel triggers refund flow. /insurance shows Premium Calculator at top (Health/Life/Motor/Travel chips + Age + Cover inputs + Calculate Premium button) → click renders 'ESTIMATED ANNUAL PREMIUM ₹7,080 ≈ ₹590/month · incl. GST ₹1,080'. /rewards shows tier card with progress bar, Redeem points (100 pts = ₹10) button, referral & earned stat cards, Achievement Badges row. Demo user is already on Gold tier (2204 points) → card shows 'Gold Tier · 2796 pts to Platinum' (Bronze→Silver text only appears for fresh users — by design). All regression endpoints (/auth/login, /wallet, /invest/ai-suggestions, /app/api-status, /admin/api-settings, /travel/flights, /travel/hotels, /insurance/plans, /insurance/policies, /rewards) still green.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/(tabs)/travel", "issues": ["Booking history ('My bookings') section is collapsed by default — users must tap 'Show' to see Cancel buttons. Acceptance criteria says 'Booking history section visible at bottom with Cancel button'. Suggestion: default showHistory to true OR auto-expand when bookings.length>0 for first-time visibility."]}
+    ],
+    "react_native_issues": [
+      {"component": "Animated useNativeDriver", "issue": "Console warning: 'Animated: useNativeDriver is not supported because the native animated module is missing. Falling back to JS-based animation.' — common on RN-Web, non-blocking."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — likely from a third-party component. Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_super_app.py",
+    "/app/test_reports/pytest/super_app_results.xml"
+  ],
+  "action_items": [
+    "(Optional UX) In /app/frontend/app/(tabs)/travel.tsx (line ~232), default showHistory=true (or set to true when bookings.length>0) so the booking history + Cancel buttons are visible without an extra tap.",
+    "(Optional cleanup) Address RN-Web console warnings about props.pointerEvents and useNativeDriver."
+  ],
+  "critical_code_review_comments": [
+    "BUG FIXED by test agent: /api/admin/super/grant-bonus returned HTTP 422 'Field required loc=[query, req]' because the Pydantic BonusReq class was defined inside the closure _attach_admin(). FastAPI + Pydantic v2 fail to recognize closure-scoped BaseModel subclasses as request-body schemas and fall back to treating the param as a query field. Fix applied: hoisted BonusReq to module scope in /app/backend/super_app.py (alongside CancelReq). Verified: endpoint now returns 200 with correct {success, user_id, points, cashback} response, and demo user's reward_points + wallet.balance update atomically. Recommend keeping all Pydantic request models at module scope as a project convention.",
+    "super_app.py is 250 lines — clean and within limits. All endpoints validate input with Pydantic and excluding _id projections everywhere (good).",
+    "Cancellation refund policy correctly differentiates 90% (>=24h) vs 50% (<24h) using travel_date parsing with safe fallback to now()+7d on parse failure — robust.",
+    "award_cashback() is idempotent on a per-transaction basis and atomically updates user.reward_points + wallet.balance + transactions collection — good design. Travel/insurance 2× points multiplier is applied correctly.",
+    "/insurance/quote uses pure-formula demo calculations with proper GST (18%), monthly_emi, and per-plan-type breakdowns — sensible defaults and returns mode='demo' for transparency.",
+    "/insurance/compare returns 404 cleanly when no IDs match seed (verified). Could be enhanced to read INSURANCE_PLANS directly instead of going through _db.insurance_seed, but current path works once seed runs at startup.",
+    "/admin/super/* endpoints correctly enforce role check via _ensure(admin) → 403 for unauthorized roles. Tested with super_admin role only — other roles not verified but logic is straightforward.",
+    "Frontend testIDs cover all interactive elements: travel-tab-bus/train, book-bus-*, book-train-*, cancel-booking-*, calc-age, calc-cover, calc-quote-btn, redeem-points-btn, reward-points — excellent testability."
+  ],
+  "updated_files": [
+    "/app/backend/super_app.py (hoisted BonusReq to module scope — fix for 422 on /admin/super/grant-bonus)",
+    "/app/backend/tests/test_super_app.py (new — 32 tests covering Travel/Insurance/Rewards/Admin + Regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (32/32 — Travel 6/6, Insurance 7/7, Rewards 4/4, Admin 4/4, Regression 11/11)",
+    "frontend": "100% (login → travel bus/train listings + booking with cashback toast + cancel via Show booking history → insurance calculator end-to-end → rewards tier/redeem/badges screen)"
+  },
+  "seed_data_creation": "Used demo user's wallet top-up (POST /api/wallet/topup/create-session + GET /api/wallet/topup/status/{sid}) to fund test bookings. No additional seed data created — buses/trains were pre-seeded by the backend on first request.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_super_app.py for regression — covers all super-app routes plus 11 existing endpoints. Demo user demo@mfb.in is already past Bronze (currently Gold @ 2204 pts after these tests), so rewards UI shows 'Gold Tier · X pts to Platinum' instead of Bronze→Silver. To reset, use admin /api/users to nullify reward_points or test with a fresh signup. Backend bug pattern to watch: any Pydantic BaseModel used as request body MUST be defined at module scope (not inside attach()/closures) — otherwise FastAPI 2.x treats it as query params and returns 422.",
+  "rca_of_issue": "ROOT CAUSE — /api/admin/super/grant-bonus 422 error: BonusReq pydantic model was declared inside _attach_admin() closure. FastAPI's parameter-classification logic in fastapi.dependencies.utils.analyze_param() inspects type annotations via inspect.signature() at route-registration time; when the annotation refers to a class defined inside the same lexical scope as the route handler, Pydantic v2 BaseModel detection sometimes fails (the class object is valid but FastAPI's lenient_issubclass check on the inferred FieldInfo's annotation can mis-classify it as a primitive param). Result: req gets categorized as query param → JSON body is ignored → 'Field required at query.req'. REPRO: POST /api/admin/super/grant-bonus with body {user_id, points, cashback} and admin Bearer → 422. MITIGATION: hoisted BonusReq to module scope alongside CancelReq/QuoteReq (which already work). Verified fix via pytest TestAdminSuper::test_grant_bonus PASSED — demo user's reward_points incremented by 50 and wallet.balance by ₹10."
+}
