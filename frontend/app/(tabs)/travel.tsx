@@ -23,7 +23,7 @@ export default function TravelTab() {
   const [buses, setBuses] = useState<any[]>([]);
   const [trains, setTrains] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistory, setShowHistory] = useState(true);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
