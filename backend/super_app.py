@@ -324,6 +324,13 @@ async def award_cashback(user_id: str, spend_amount: float, category: str = "gen
             await _add_tx(user_id, "credit", "cashback", cashback_amt,
                           f"{tier['name']} tier cashback ({int(tier['rate']*1000)/10}%)",
                           "success", f"Cashback on {category}")
+    # Tier upgrade detection (anti-spam: only fires on actual tier change)
+    try:
+        import tier_upgrades  # type: ignore
+        await tier_upgrades.check_and_upgrade(user_id, trigger=f"cashback:{category}",
+                                              trigger_detail=f"+{pts_earned} pts from {category}")
+    except Exception:
+        pass
     return {"points_added": pts_earned, "cashback_amount": cashback_amt, "tier": tier["id"]}
 
 
@@ -424,6 +431,15 @@ def _attach_admin(api: APIRouter, get_current_admin):
             await _db.wallets.update_one({"user_id": req.user_id}, {"$inc": {"balance": req.cashback}})
             if _add_tx:
                 await _add_tx(req.user_id, "credit", "cashback", req.cashback, req.note, "success", "Admin bonus")
+        # Tier upgrade detection on admin bonus
+        try:
+            import tier_upgrades  # type: ignore
+            await tier_upgrades.check_and_upgrade(
+                req.user_id, trigger="admin_bonus",
+                trigger_detail=f"Admin granted {req.points} pts / ₹{req.cashback}",
+            )
+        except Exception:
+            pass
         return {"success": True, "user_id": req.user_id, "points": req.points, "cashback": req.cashback}
 
     api.include_router(adm)

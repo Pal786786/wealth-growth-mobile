@@ -412,6 +412,11 @@ async def send_money(req: SendMoneyReq, user: Dict[str, Any] = Depends(get_curre
     tx = await _add_tx(user["user_id"], "debit", "send", req.amount, req.note or f"Sent to {req.recipient}", "success", req.recipient)
     # award reward points (1 per 100)
     await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"reward_points": int(req.amount / 100)}})
+    try:
+        import tier_upgrades
+        await tier_upgrades.check_and_upgrade(user["user_id"], trigger="send_money", trigger_detail=f"₹{req.amount}")
+    except Exception:
+        pass
     return {"success": True, "tx": tx}
 
 
@@ -429,6 +434,11 @@ async def recharge(req: RechargeReq, user: Dict[str, Any] = Depends(get_current_
         await db.wallets.update_one({"user_id": user["user_id"]}, {"$inc": {"balance": cashback}})
         await _add_tx(user["user_id"], "credit", "cashback", cashback, "2% cashback on recharge", "success")
     await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"reward_points": 10}})
+    try:
+        import tier_upgrades
+        await tier_upgrades.check_and_upgrade(user["user_id"], trigger="recharge", trigger_detail=f"₹{req.amount}")
+    except Exception:
+        pass
     return {"success": True, "tx": tx, "cashback": cashback}
 
 
@@ -442,6 +452,11 @@ async def bill_pay(req: BillPayReq, user: Dict[str, Any] = Depends(get_current_u
     await db.wallets.update_one({"user_id": user["user_id"]}, {"$inc": {"balance": -req.amount}})
     tx = await _add_tx(user["user_id"], "debit", "bill", req.amount, f"{req.biller_name} ({req.biller_type}) - {req.consumer_number}", "success", req.biller_name)
     await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"reward_points": 5}})
+    try:
+        import tier_upgrades
+        await tier_upgrades.check_and_upgrade(user["user_id"], trigger="bill_payment", trigger_detail=f"₹{req.amount}")
+    except Exception:
+        pass
     return {"success": True, "tx": tx}
 
 
@@ -967,6 +982,8 @@ push_module.attach(api, db, get_current_user)
 security_extras.attach(api, db, get_current_user, admin_module.get_current_admin, push_module.send_push, logger_=logger)
 import insurance_claims  # type: ignore
 insurance_claims.attach(api, db, get_current_user, admin_module.get_current_admin, _add_tx, admin_module._log_action)
+import tier_upgrades  # type: ignore
+tier_upgrades.attach(api, db, get_current_user, admin_module.get_current_admin, super_app.TIERS)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/
@@ -997,6 +1014,9 @@ async def startup():
     await db.insurance_claims.create_index("claim_id", unique=True)
     await db.insurance_claims.create_index([("user_id", 1), ("created_at", -1)])
     await db.insurance_claims.create_index([("status", 1), ("created_at", -1)])
+    await db.tier_upgrades.create_index("upgrade_id", unique=True)
+    await db.tier_upgrades.create_index([("user_id", 1), ("at", -1)])
+    await db.tier_upgrades.create_index([("new_tier_id", 1), ("at", -1)])
     await admin_module.seed_admin(db, logger)
     await api_settings_module.seed_catalog()
     await super_app.seed_demo_catalogs()

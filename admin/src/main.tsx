@@ -21,6 +21,7 @@ import AdminPushLogs from "./pages/AdminPushLogs";
 import AdminUserSecurity from "./pages/AdminUserSecurity";
 import AdminDemoOtps from "./pages/AdminDemoOtps";
 import AdminInsuranceClaims from "./pages/AdminInsuranceClaims";
+import AdminTierUpgrades from "./pages/AdminTierUpgrades";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -58,6 +59,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="insurance" element={<AdminInsurance />} />
               <Route path="insurance/claims" element={<AdminInsuranceClaims />} />
               <Route path="rewards" element={<AdminRewards />} />
+              <Route path="tier-upgrades" element={<AdminTierUpgrades />} />
               <Route path="audit" element={<AdminAuditLogs />} />
               <Route path="api-management" element={<ApiManagement />} />
               <Route path="settings" element={<Settings />} />
