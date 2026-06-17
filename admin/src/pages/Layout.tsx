@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X } from "lucide-react";
+import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon } from "lucide-react";
 import { Logo } from "../components/Logo";
 import { useAdminAuth } from "../lib/auth";
 import { useState } from "react";
@@ -10,6 +10,11 @@ const NAV = [
   { to: "/kyc", label: "KYC Review", icon: FileCheck2 },
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { to: "/wallet", label: "Wallet Adjust", icon: Wallet },
+  { to: "/notifications", label: "Notifications", icon: Bell },
+  { to: "/investments", label: "Investments", icon: TrendingUp },
+  { to: "/content", label: "Content", icon: Image },
+  { to: "/reports", label: "Reports", icon: FileText },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 export default function Layout() {

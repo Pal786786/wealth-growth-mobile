@@ -19,6 +19,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 
 import admin as admin_module
+import admin_extra
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -904,6 +905,7 @@ async def dashboard_summary(user: Dict[str, Any] = Depends(get_current_user)):
 
 # Mount
 admin_module.attach(api, db, logger)
+admin_extra.attach(api, db)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/
