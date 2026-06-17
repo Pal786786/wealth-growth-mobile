@@ -17,6 +17,8 @@ import AdminTravel from "./pages/AdminTravel";
 import AdminInsurance from "./pages/AdminInsurance";
 import AdminRewards from "./pages/AdminRewards";
 import AdminAuditLogs from "./pages/AdminAuditLogs";
+import AdminPushLogs from "./pages/AdminPushLogs";
+import AdminUserSecurity from "./pages/AdminUserSecurity";
 import "./index.css";
 
 const queryClient = new QueryClient({

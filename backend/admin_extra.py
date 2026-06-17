@@ -130,19 +130,22 @@ async def send_notification(req: NotificationReq, admin=Depends(get_current_admi
     } for uid in user_ids]
     await _db.notifications.insert_many(docs)
 
-    # Best-effort push send — chunked to 100 recipients per playbook
+    # Best-effort push send with full logging + retry (security_extras)
     try:
-        import push as push_module  # type: ignore
+        import security_extras  # type: ignore
         for i in range(0, len(user_ids), 100):
             chunk = user_ids[i:i + 100]
-            await push_module.send_push(
+            await security_extras.send_push_logged(
                 recipients=chunk,
                 data={"title": req.title, "message": req.body, "action_url": req.deeplink or ""},
-                idempotency_key=f"{batch_id}-{i//100}",
+                batch_id=f"{batch_id}-{i//100}",
             )
-    except Exception:
-        # Push is non-blocking — broadcast still succeeds
-        pass
+    except Exception as e:
+        try:
+            import logging as _lg
+            _lg.getLogger("mfb.admin_extra").warning(f"Push relay failed: {e}")
+        except Exception:
+            pass
 
     await _db.notification_batches.insert_one({
         "batch_id": batch_id,

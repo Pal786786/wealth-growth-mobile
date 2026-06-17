@@ -24,6 +24,7 @@ import api_settings as api_settings_module
 import ai_invest
 import super_app
 import push as push_module
+import security_extras
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -343,22 +344,17 @@ async def login(req: LoginReq):
     return {"token": token, "user": _user_public(user)}
 
 
-# Mobile OTP (mocked — always 123456 for demo)
+# Mobile OTP — delegated to security_extras (no hardcoded 123456)
 @api.post("/auth/otp/request")
 async def request_otp(req: OtpRequestReq):
-    await db.otps.update_one(
-        {"mobile": req.mobile},
-        {"$set": {"mobile": req.mobile, "otp": "123456", "created_at": now_utc()}},
-        upsert=True,
-    )
-    return {"sent": True, "demo_otp": "123456", "message": "OTP sent. Use 123456 for demo."}
+    return await security_extras.issue_otp(req.mobile, "login")
 
 
 @api.post("/auth/otp/verify", response_model=TokenOut)
 async def verify_otp(req: OtpVerifyReq):
-    record = await db.otps.find_one({"mobile": req.mobile}, {"_id": 0})
-    if not record or record.get("otp") != req.otp:
-        raise HTTPException(status_code=401, detail="Invalid OTP")
+    ok = await security_extras.verify_otp(req.mobile, req.otp, "login")
+    if not ok:
+        raise HTTPException(status_code=401, detail="Invalid or expired OTP")
     # Find or create user
     user = await db.users.find_one({"mobile": req.mobile})
     if not user:
@@ -375,10 +371,11 @@ async def verify_otp(req: OtpVerifyReq):
             "kyc_status": "pending",
             "created_at": now_utc(),
             "reward_points": 100,
+            "login_method": "mobile",
         }
         await db.users.insert_one(user)
         await _ensure_wallet(user_id)
-    await db.otps.delete_one({"mobile": req.mobile})
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"last_login_at": now_utc(), "failed_logins": 0}})
     token = create_token(user["user_id"])
     return {"token": token, "user": _user_public(user)}
 
@@ -967,6 +964,7 @@ api_settings_module.attach(api, db)
 ai_invest.attach(api, db, get_current_user, lambda: list_stocks(force=False), logger=logger)
 super_app.attach(api, db, get_current_user, _add_tx, admin_module.get_current_admin, INSURANCE_PLANS, logger=logger)
 push_module.attach(api, db, get_current_user)
+security_extras.attach(api, db, get_current_user, admin_module.get_current_admin, push_module.send_push, logger_=logger)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/

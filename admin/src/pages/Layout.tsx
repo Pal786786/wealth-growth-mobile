@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon, ShieldCheck, KeyRound, AlertTriangle, Plane, Shield, Trophy, ScrollText } from "lucide-react";
+import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon, ShieldCheck, KeyRound, AlertTriangle, Plane, Shield, Trophy, ScrollText, Lock, Activity } from "lucide-react";
 import { Logo } from "../components/Logo";
 import { useAdminAuth } from "../lib/auth";
 import { useState } from "react";
@@ -7,20 +7,22 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
 const ROLE_NAV: Record<string, string[]> = {
-  super_admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/travel", "/insurance", "/rewards", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
-  admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/travel", "/insurance", "/rewards", "/content", "/reports", "/audit", "/api-management", "/settings"],
+  super_admin: ["/", "/users", "/user-security", "/kyc", "/transactions", "/wallet", "/notifications", "/push-logs", "/investments", "/travel", "/insurance", "/rewards", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
+  admin: ["/", "/users", "/user-security", "/kyc", "/transactions", "/wallet", "/notifications", "/push-logs", "/investments", "/travel", "/insurance", "/rewards", "/content", "/reports", "/audit", "/api-management", "/settings"],
   finance_manager: ["/", "/users", "/transactions", "/wallet", "/rewards", "/reports", "/audit"],
-  support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications", "/travel", "/insurance"],
+  support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications", "/push-logs", "/travel", "/insurance"],
   investment_manager: ["/", "/users", "/investments", "/content"],
 };
 
 const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/users", label: "Users", icon: UsersIcon },
+  { to: "/user-security", label: "User Security", icon: Lock },
   { to: "/kyc", label: "KYC Review", icon: FileCheck2 },
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { to: "/wallet", label: "Wallet Adjust", icon: Wallet },
   { to: "/notifications", label: "Notifications", icon: Bell },
+  { to: "/push-logs", label: "Push Logs", icon: Activity },
   { to: "/investments", label: "Investments", icon: TrendingUp },
   { to: "/travel", label: "Travel", icon: Plane },
   { to: "/insurance", label: "Insurance", icon: Shield },
