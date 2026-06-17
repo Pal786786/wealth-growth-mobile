@@ -11,6 +11,7 @@ import { BullLogo } from "@/src/components/BullLogo";
 import { AnimatedCounter } from "@/src/components/AnimatedCounter";
 import { Sparkline } from "@/src/components/Sparkline";
 import { formatINR } from "@/src/utils/format";
+import { shadow } from "@/src/utils/shadow";
 
 const TABS = [
   { id: "portfolio", label: "Portfolio" },
@@ -105,7 +106,7 @@ export default function InvestTab() {
               <LinearGradient
                 colors={["#7C3AED", "#EC4899", "#F59E0B"]}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={s.aiTeaser}
+                style={[s.aiTeaser, shadow({ color: "#7C3AED", opacity: 0.25, radius: 14, offsetY: 6, elevation: 4 })]}
               >
                 <View style={s.aiTeaserIcon}>
                   <Sparkles color="#fff" size={20} />
@@ -317,7 +318,7 @@ const s = StyleSheet.create({
   chip: { paddingHorizontal: 14, height: 36, borderRadius: 18, borderWidth: 1, justifyContent: "center", flexShrink: 0 },
   scroll: { paddingHorizontal: 16, paddingTop: 12, gap: 10 },
   portCard: { borderRadius: 28, padding: 22, gap: 8, overflow: "hidden", position: "relative" },
-  aiTeaser: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 20, shadowColor: "#7C3AED", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+  aiTeaser: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 20 },
   aiTeaserIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
   aiTeaserTitle: { color: "#fff", fontSize: 15, fontWeight: "800" },
   aiTeaserSub: { color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: "600", marginTop: 2 },

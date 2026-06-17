@@ -5,6 +5,7 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/src/theme/ThemeProvider";
+import { shadow } from "@/src/utils/shadow";
 
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { palette } = useTheme();
@@ -18,10 +19,13 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
         style={[
           s.barShell,
           {
-            shadowColor: isDark ? "#000" : palette.brand?.primary || "#38BDF8",
             backgroundColor: isDark ? "rgba(15,23,42,0.92)" : "rgba(255,255,255,0.92)",
             borderColor: isDark ? "#1E293B" : "rgba(226,232,240,0.9)",
           },
+          shadow({
+            color: isDark ? "#000" : palette.brand?.primary || "#38BDF8",
+            opacity: 0.22, radius: 16, offsetY: 8, elevation: 12,
+          }),
         ]}
       >
         {Platform.OS !== "web" ? (
@@ -78,10 +82,6 @@ const s = StyleSheet.create({
     borderRadius: 28,
     overflow: "hidden",
     borderWidth: 1,
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
   },
   row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 8 },
   tab: { flex: 1, alignItems: "center" },

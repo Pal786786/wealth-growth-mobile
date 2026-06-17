@@ -16,6 +16,7 @@ import { Card } from "@/src/components/Card";
 import { AnimatedCounter } from "@/src/components/AnimatedCounter";
 import { Sparkline } from "@/src/components/Sparkline";
 import { formatINR, shortDate } from "@/src/utils/format";
+import { shadow } from "@/src/utils/shadow";
 
 type Summary = {
   wallet_balance: number;
@@ -254,7 +255,7 @@ export default function HomeTab() {
             return (
               <View
                 key={stk.id}
-                style={[s.stockCard, { backgroundColor: palette.surface, borderColor: palette.border, shadowColor: palette.cardShadow }]}
+                style={[s.stockCard, { backgroundColor: palette.surface, borderColor: palette.border }, shadow({ color: palette.cardShadow, opacity: 1, radius: 8, offsetY: 4 })]}
               >
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                   <Text style={[s.stockSym, { color: palette.textPrimary }]}>{stk.symbol}</Text>
@@ -394,18 +395,12 @@ const s = StyleSheet.create({
   bannerSubtitle: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "500" },
   bannerCta: { alignSelf: "flex-start", marginTop: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.2)" },
   bannerCtaTxt: { color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 0.4 },
-  bannerScroll: { gap: 12, paddingRight: 4 },
-  bannerCard: { width: 280, padding: 16, borderRadius: 20, gap: 6, overflow: "hidden" },
-  bannerTitle: { color: "#fff", fontSize: 16, fontWeight: "800", letterSpacing: -0.3 },
-  bannerSubtitle: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "500" },
-  bannerCta: { alignSelf: "flex-start", marginTop: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.2)" },
-  bannerCtaTxt: { color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 0.4 },
   rewardsIcon: { padding: 12, borderRadius: 14 },
   rewardsTitle: { fontSize: 15, fontWeight: "800" },
   rewardsSubtitle: { fontSize: 12, marginTop: 2 },
 
   hScroll: { gap: 12, paddingRight: 4 },
-  stockCard: { width: 160, gap: 6, borderRadius: 18, padding: 14, borderWidth: 1, shadowOpacity: 1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+  stockCard: { width: 160, gap: 6, borderRadius: 18, padding: 14, borderWidth: 1 },
   stockSym: { fontSize: 14, fontWeight: "800" },
   stockName: { fontSize: 11, fontWeight: "500" },
   stockPrice: { fontSize: 15, fontWeight: "800" },

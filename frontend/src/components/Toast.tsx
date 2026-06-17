@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Animated } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { CircleCheck, CircleAlert, Info } from "lucide-react-native";
+import { shadow } from "@/src/utils/shadow";
 
 type ToastType = "success" | "error" | "info";
 
@@ -48,8 +49,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               backgroundColor: palette.surface,
               borderColor: palette.border,
               opacity,
-              shadowColor: palette.cardShadow,
             },
+            shadow({ color: palette.cardShadow, opacity: 1, radius: 10, offsetY: 4, elevation: 6 }),
           ]}
         >
           <Icon color={color} size={20} />
@@ -78,10 +79,6 @@ const s = StyleSheet.create({
     gap: 10,
     alignItems: "center",
     borderWidth: 1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 10,
-    elevation: 6,
     zIndex: 9999,
   },
   txt: { flex: 1, fontSize: 14, fontWeight: "600" },

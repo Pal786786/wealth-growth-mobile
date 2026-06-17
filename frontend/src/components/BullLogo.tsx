@@ -5,6 +5,7 @@ import Svg, {
   Path, Polyline, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, RadialGradient,
 } from "react-native-svg";
 import { Colors } from "@/src/theme/colors";
+import { shadow } from "@/src/utils/shadow";
 
 /**
  * Premium investment-bull logo for My Funding Bank.
@@ -138,12 +139,14 @@ export function BullLogo({
             width: size,
             height: size,
             borderRadius: size * 0.26,
-            shadowColor: Colors.brand.primary,
-            shadowOpacity: 0.45,
-            shadowRadius: size * 0.18,
-            shadowOffset: { width: 0, height: size * 0.05 },
-            elevation: 8,
           },
+          shadow({
+            color: Colors.brand.primary,
+            opacity: 0.45,
+            radius: size * 0.18,
+            offsetY: size * 0.05,
+            elevation: 8,
+          }),
         ]}
       >
         {inner}

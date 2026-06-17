@@ -1,6 +1,7 @@
 import React from "react";
 import { View, StyleSheet, ViewProps } from "react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
+import { shadow } from "@/src/utils/shadow";
 
 export function Card({ children, style, ...rest }: ViewProps) {
   const { palette } = useTheme();
@@ -12,8 +13,8 @@ export function Card({ children, style, ...rest }: ViewProps) {
         {
           backgroundColor: palette.surface,
           borderColor: palette.border,
-          shadowColor: palette.cardShadow,
         },
+        shadow({ color: palette.cardShadow, opacity: 1, radius: 12, offsetY: 4, elevation: 2 }),
         style,
       ]}
     >
@@ -27,9 +28,5 @@ const s = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 12,
-    elevation: 2,
   },
 });
