@@ -965,6 +965,8 @@ ai_invest.attach(api, db, get_current_user, lambda: list_stocks(force=False), lo
 super_app.attach(api, db, get_current_user, _add_tx, admin_module.get_current_admin, INSURANCE_PLANS, logger=logger)
 push_module.attach(api, db, get_current_user)
 security_extras.attach(api, db, get_current_user, admin_module.get_current_admin, push_module.send_push, logger_=logger)
+import insurance_claims  # type: ignore
+insurance_claims.attach(api, db, get_current_user, admin_module.get_current_admin, _add_tx, admin_module._log_action)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/
@@ -992,6 +994,9 @@ async def startup():
     await db.topups.create_index("session_id", unique=True)
     await db.admins.create_index("email", unique=True)
     await db.admins.create_index("admin_id", unique=True)
+    await db.insurance_claims.create_index("claim_id", unique=True)
+    await db.insurance_claims.create_index([("user_id", 1), ("created_at", -1)])
+    await db.insurance_claims.create_index([("status", 1), ("created_at", -1)])
     await admin_module.seed_admin(db, logger)
     await api_settings_module.seed_catalog()
     await super_app.seed_demo_catalogs()
