@@ -547,20 +547,40 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin, send_push_fn
     async def demo_otps_view(adm=Depends(get_current_admin)):
         """Returns recent DEMO OTPs (last 10 min, unconsumed) for admin testing.
         SECURITY: only returns OTPs issued in demo mode. Real SMS OTPs never
-        expose the OTP value here — otp_plain_demo is null for those."""
-        _ensure(adm)
+        expose the OTP value here — otp_plain_demo is null for those.
+        Access restricted to super_admin / admin only. Every access is audited."""
+        if adm["role"] not in ("super_admin", "admin"):
+            raise HTTPException(403, "Only super_admin/admin can view demo OTPs")
+        # Check if SMS provider is live — if so, hide all OTPs (security)
+        cfg = await _get_sms_cfg()
+        if not cfg.get("is_demo"):
+            return {
+                "items": [],
+                "count": 0,
+                "live_mode": True,
+                "warning": "SMS provider is LIVE. Demo OTPs are not exposed in live mode for security.",
+            }
         recent = await _db.otp_codes.find(
             {
                 "otp_plain_demo": {"$ne": None},
-                "consumed": False,
                 "created_at": {"$gte": _now() - timedelta(minutes=10)},
             },
             {"_id": 0, "mobile": 1, "purpose": 1, "otp_plain_demo": 1,
-             "created_at": 1, "expires_at": 1, "attempts": 1, "delivery": 1},
-        ).sort("created_at", -1).limit(20).to_list(20)
+             "created_at": 1, "expires_at": 1, "attempts": 1, "delivery": 1, "consumed": 1},
+        ).sort("created_at", -1).limit(50).to_list(50)
+        # Audit log every access to demo OTP page
+        await _db.admin_audit.insert_one({
+            "admin_id": adm.get("admin_id"),
+            "admin_email": adm.get("email"),
+            "action": "security.demo_otps.view",
+            "target": "demo_otps",
+            "details": {"count": len(recent)},
+            "at": _now(),
+        })
         return {
             "items": recent,
             "count": len(recent),
+            "live_mode": False,
             "warning": "These OTPs are visible only in DEMO mode. Configure SMS provider in API Management to enable real SMS delivery — once enabled, OTP values will no longer appear here.",
         }
 

@@ -19,6 +19,7 @@ import AdminRewards from "./pages/AdminRewards";
 import AdminAuditLogs from "./pages/AdminAuditLogs";
 import AdminPushLogs from "./pages/AdminPushLogs";
 import AdminUserSecurity from "./pages/AdminUserSecurity";
+import AdminDemoOtps from "./pages/AdminDemoOtps";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -42,10 +43,13 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/" element={<Protected><Layout /></Protected>}>
               <Route index element={<Dashboard />} />
               <Route path="users" element={<Users />} />
+              <Route path="user-security" element={<AdminUserSecurity />} />
+              <Route path="demo-otps" element={<AdminDemoOtps />} />
               <Route path="kyc" element={<KYC />} />
               <Route path="transactions" element={<Transactions />} />
               <Route path="wallet" element={<Wallet />} />
               <Route path="notifications" element={<Notifications />} />
+              <Route path="push-logs" element={<AdminPushLogs />} />
               <Route path="investments" element={<InvestmentManager />} />
               <Route path="content" element={<ContentManager />} />
               <Route path="reports" element={<Reports />} />
