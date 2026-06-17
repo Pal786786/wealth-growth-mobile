@@ -11,6 +11,7 @@ import KYC from "./pages/KYC";
 import Transactions from "./pages/Transactions";
 import Wallet from "./pages/Wallet";
 import { Notifications, InvestmentManager, ContentManager, Reports, Settings } from "./pages/AdminExtras";
+import AdminUsers from "./pages/AdminUsers";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -42,6 +43,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="content" element={<ContentManager />} />
               <Route path="reports" element={<Reports />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="admins" element={<AdminUsers />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

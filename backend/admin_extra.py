@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from admin import get_current_admin, _log_action  # type: ignore
+from admin import get_current_admin, _log_action, _hash, ROLES, ROLE_LABEL  # type: ignore
 
 _db = None
 
@@ -354,3 +354,63 @@ def attach(parent_router: APIRouter, db):
     _db = db
     parent_router.include_router(router)
     parent_router.include_router(public_router)
+
+
+# ---------- Admin user management (super_admin only) ----------
+class NewAdminReq(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: str  # one of ROLES
+
+
+def _require_super(admin):
+    if admin["role"] != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super_admin can manage admins")
+
+
+@router.get("/admins")
+async def list_admins(admin=Depends(get_current_admin)):
+    _require_super(admin)
+    rows = await _db.admins.find({}, {"_id": 0, "password": 0}).sort("created_at", -1).to_list(200)
+    return {"items": rows, "roles": [{"id": r, "label": ROLE_LABEL[r]} for r in ROLES]}
+
+
+@router.post("/admins")
+async def create_admin(req: NewAdminReq, admin=Depends(get_current_admin)):
+    _require_super(admin)
+    if req.role not in ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Choose from {sorted(ROLES)}")
+    if await _db.admins.find_one({"email": req.email}):
+        raise HTTPException(status_code=400, detail="Admin with this email exists")
+    doc = {
+        "admin_id": _id("adm"),
+        "name": req.name,
+        "email": req.email,
+        "password": _hash(req.password),
+        "role": req.role,
+        "created_at": _now(),
+        "created_by": admin["admin_id"],
+    }
+    await _db.admins.insert_one(doc)
+    await _log_action(admin["admin_id"], "admin.create", target=doc["admin_id"], meta={"role": req.role})
+    doc.pop("password", None); doc.pop("_id", None)
+    return doc
+
+
+@router.delete("/admins/{admin_id}")
+async def delete_admin(admin_id: str, admin=Depends(get_current_admin)):
+    _require_super(admin)
+    if admin_id == admin["admin_id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    target = await _db.admins.find_one({"admin_id": admin_id}, {"_id": 0, "role": 1})
+    if not target:
+        raise HTTPException(status_code=404, detail="Admin not found")
+    if target.get("role") == "super_admin":
+        # don't allow deleting the last super_admin
+        cnt = await _db.admins.count_documents({"role": "super_admin"})
+        if cnt <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last super_admin")
+    await _db.admins.delete_one({"admin_id": admin_id})
+    await _log_action(admin["admin_id"], "admin.delete", target=admin_id)
+    return {"success": True}
