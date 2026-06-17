@@ -97,7 +97,12 @@ export default function Onboarding() {
 
   const next = () => {
     if (index < SLIDES.length - 1) {
-      listRef.current?.scrollToIndex({ index: index + 1, animated: true });
+      const newIdx = index + 1;
+      setIndex(newIdx);
+      // Drive scrollX directly so reanimated worklets advance even when
+      // FlatList programmatic scrolls don't emit onScroll on web.
+      scrollX.value = withTiming(newIdx * width, { duration: 380 });
+      listRef.current?.scrollToIndex({ index: newIdx, animated: true });
     } else {
       finishOnboarding();
     }
@@ -170,18 +175,19 @@ export default function Onboarding() {
 function Slide({ slide, width, index, scrollX }: { slide: Slide; width: number; index: number; scrollX: Animated.SharedValue<number> }) {
   const insets = useSafeAreaInsets();
 
-  // Animate slide content with parallax
+  // Animate slide content with parallax. On web, FlatList programmatic scroll
+  // doesn't reliably emit onScroll → we drive scrollX directly from next().
   const imageStyle = useAnimatedStyle(() => {
     const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
     const scale = interpolate(scrollX.value, inputRange, [0.6, 1, 0.6], Extrapolation.CLAMP);
-    const opacity = interpolate(scrollX.value, inputRange, [0, 1, 0], Extrapolation.CLAMP);
+    const opacity = interpolate(scrollX.value, inputRange, [0.4, 1, 0.4], Extrapolation.CLAMP);
     const translateY = interpolate(scrollX.value, inputRange, [50, 0, 50], Extrapolation.CLAMP);
     return { transform: [{ scale }, { translateY }], opacity };
   });
 
   const textStyle = useAnimatedStyle(() => {
     const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
-    const opacity = interpolate(scrollX.value, inputRange, [0, 1, 0], Extrapolation.CLAMP);
+    const opacity = interpolate(scrollX.value, inputRange, [0.4, 1, 0.4], Extrapolation.CLAMP);
     const translateX = interpolate(scrollX.value, inputRange, [width * 0.2, 0, -width * 0.2], Extrapolation.CLAMP);
     return { opacity, transform: [{ translateX }] };
   });

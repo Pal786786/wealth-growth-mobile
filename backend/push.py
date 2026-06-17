@@ -129,8 +129,8 @@ def attach(api: APIRouter, db, get_current_user):
         return {"success": True, **update}
 
     @api.get("/admin/push-status")
-    async def push_status():
-        """Public-ish admin status — used by Admin UI to show FCM configuration state."""
+    async def push_status(admin=Depends(_get_current_user)):
+        """Auth-gated admin status — used by Admin UI to show FCM configuration state."""
         token_count = await _db.push_tokens.count_documents({})
         return {
             "configured": PUSH_ENABLED,
