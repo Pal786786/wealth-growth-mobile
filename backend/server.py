@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, EmailStr
 
 import admin as admin_module
 import admin_extra
+import api_settings as api_settings_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -445,7 +446,13 @@ async def bill_pay(req: BillPayReq, user: Dict[str, Any] = Depends(get_current_u
 
 
 # ---------- Stripe Wallet Top-up ----------
-STRIPE_CONFIGURED = STRIPE_API_KEY.startswith("sk_test_") and len(STRIPE_API_KEY) > 20
+async def _stripe_cfg() -> Dict[str, Any]:
+    """Returns live Stripe config from api_settings, falling back to env."""
+    cfg = await api_settings_module.get_config("payment_gateway_stripe")
+    if cfg["is_demo"] and STRIPE_API_KEY.startswith(("sk_test_", "sk_live_")) and len(STRIPE_API_KEY) > 20:
+        # Legacy env fallback (only when admin hasn't configured anything)
+        return {"api_key": STRIPE_API_KEY, "is_demo": False, "mode": "live"}
+    return cfg
 
 
 @api.post("/wallet/topup/create-session")
@@ -453,8 +460,10 @@ async def create_topup_session(req: StripeCheckoutReq, user: Dict[str, Any] = De
     if req.amount < 10 or req.amount > 100000:
         raise HTTPException(status_code=400, detail="Amount must be between ₹10 and ₹1,00,000")
 
-    # Demo mode: Stripe not configured (placeholder key) — credit instantly
-    if not STRIPE_CONFIGURED:
+    cfg = await _stripe_cfg()
+
+    # Demo mode: Stripe not configured — credit instantly
+    if cfg["is_demo"]:
         session_id = gen_id("demo")
         await db.topups.insert_one({
             "session_id": session_id,
@@ -464,9 +473,9 @@ async def create_topup_session(req: StripeCheckoutReq, user: Dict[str, Any] = De
             "demo": True,
             "created_at": now_utc(),
         })
-        # Return a special checkout_url that the client can short-circuit
-        return {"checkout_url": f"mfb://demo-pay?session_id={session_id}", "session_id": session_id, "demo": True}
+        return {"checkout_url": f"mfb://demo-pay?session_id={session_id}", "session_id": session_id, "demo": True, "mode": "demo"}
 
+    stripe.api_key = cfg["api_key"]
     amount_paise = int(round(req.amount * 100))
     success_url = "https://wealth-growth-mobile.preview.emergentagent.com/wallet/topup-success?session_id={CHECKOUT_SESSION_ID}"
     cancel_url = "https://wealth-growth-mobile.preview.emergentagent.com/wallet/topup-cancel"
@@ -491,8 +500,19 @@ async def create_topup_session(req: StripeCheckoutReq, user: Dict[str, Any] = De
             },
         )
     except stripe.error.StripeError as e:
-        logger.exception("Stripe error")
-        raise HTTPException(status_code=502, detail=f"Stripe error: {str(e)}")
+        logger.exception("Stripe error — falling back to demo")
+        # Never block the user: fallback to demo top-up
+        session_id = gen_id("demo")
+        await db.topups.insert_one({
+            "session_id": session_id,
+            "user_id": user["user_id"],
+            "amount": req.amount,
+            "status": "pending",
+            "demo": True,
+            "created_at": now_utc(),
+            "fallback_reason": str(e),
+        })
+        return {"checkout_url": f"mfb://demo-pay?session_id={session_id}", "session_id": session_id, "demo": True, "mode": "demo"}
     # Track pending topup
     await db.topups.insert_one({
         "session_id": session.id,
@@ -501,7 +521,7 @@ async def create_topup_session(req: StripeCheckoutReq, user: Dict[str, Any] = De
         "status": "pending",
         "created_at": now_utc(),
     })
-    return {"checkout_url": session.url, "session_id": session.id, "demo": False}
+    return {"checkout_url": session.url, "session_id": session.id, "demo": False, "mode": "live"}
 
 
 @api.get("/wallet/topup/status/{session_id}")
@@ -521,8 +541,11 @@ async def topup_status(session_id: str, user: Dict[str, Any] = Depends(get_curre
         await _add_tx(user["user_id"], "credit", "topup", amount, "Wallet top-up (demo)", "success")
         return {"status": "completed", "amount": amount, "demo": True}
 
-    if not STRIPE_CONFIGURED:
+    cfg = await _stripe_cfg()
+    if cfg["is_demo"]:
+        # Should not reach here since demo branch above handles it, but be safe
         raise HTTPException(status_code=500, detail="Stripe not configured")
+    stripe.api_key = cfg["api_key"]
     try:
         session = stripe.checkout.Session.retrieve(session_id)
     except stripe.error.StripeError:
@@ -552,6 +575,11 @@ async def list_stocks(force: bool = False):
     cache_ttl_seconds = 12 * 3600  # 12 hours
     av_budget_per_call = 4  # max number of AV calls per stocks request
 
+    # Resolve Alpha Vantage key dynamically from api_settings (falls back to env)
+    av_cfg = await api_settings_module.get_config("stock_market")
+    av_key = av_cfg["api_key"] or (ALPHA_VANTAGE_KEY if av_cfg["is_demo"] else "")
+    is_demo_stocks = not av_key
+
     av_calls_made = 0
     for s in STOCKS:
         cached = await db.stock_cache.find_one({"symbol": s["symbol"]}, {"_id": 0})
@@ -572,7 +600,7 @@ async def list_stocks(force: bool = False):
             continue
 
         # Try fetching live (with budget)
-        if ALPHA_VANTAGE_KEY and av_calls_made < av_budget_per_call:
+        if av_key and av_calls_made < av_budget_per_call:
             av_calls_made += 1
             try:
                 async with httpx.AsyncClient(timeout=8) as http:
@@ -581,7 +609,7 @@ async def list_stocks(force: bool = False):
                         params={
                             "function": "GLOBAL_QUOTE",
                             "symbol": s["av_symbol"],
-                            "apikey": ALPHA_VANTAGE_KEY,
+                            "apikey": av_key,
                         },
                     )
                     data = r.json() or {}
@@ -617,6 +645,7 @@ async def list_stocks(force: bool = False):
                 "id": s["id"], "symbol": s["symbol"], "name": s["name"],
                 "price": cached["price"], "change": cached["change_pct"],
                 "live": True, "as_of": cached.get("fetched_at"),
+                "mode": "live" if not is_demo_stocks else "demo",
             })
         else:
             # Seed jitter as last resort
@@ -624,13 +653,23 @@ async def list_stocks(force: bool = False):
             results.append({
                 "id": s["id"], "symbol": s["symbol"], "name": s["name"],
                 "price": jittered, "change": s["change"], "live": False,
+                "mode": "demo",
             })
     return results
 
 
 @api.get("/invest/gold-price")
 async def gold_price():
-    return {"price_per_gram": GOLD_PRICE_PER_GRAM, "currency": "INR", "unit": "gram"}
+    # Try admin-managed override first (set via Investment Manager)
+    override = await db.app_settings.find_one({"_key": "gold_rate"}, {"_id": 0})
+    cfg = await api_settings_module.get_config("gold_price")
+    price = (override or {}).get("price_per_gram", GOLD_PRICE_PER_GRAM)
+    return {
+        "price_per_gram": price,
+        "currency": "INR",
+        "unit": "gram",
+        "mode": "live" if (not cfg["is_demo"]) else "demo",
+    }
 
 
 @api.get("/invest/fixed-deposits")
@@ -919,6 +958,7 @@ async def mark_read(user: Dict[str, Any] = Depends(get_current_user)):
 # Mount
 admin_module.attach(api, db, logger)
 admin_extra.attach(api, db)
+api_settings_module.attach(api, db)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/
@@ -947,6 +987,7 @@ async def startup():
     await db.admins.create_index("email", unique=True)
     await db.admins.create_index("admin_id", unique=True)
     await admin_module.seed_admin(db, logger)
+    await api_settings_module.seed_catalog()
     logger.info("MFB backend ready")
 
 

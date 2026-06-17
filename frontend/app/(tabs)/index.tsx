@@ -4,7 +4,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
 import {
   Bell, Send, Plus, QrCode, Smartphone, Receipt, Wallet as WalletIcon,
-  Plane, TrendingUp, ShieldCheck, Gift, ChevronRight, ArrowDownLeft, ArrowUpRight, Eye, EyeOff, TrendingDown
+  Plane, TrendingUp, ShieldCheck, Gift, ChevronRight, ArrowDownLeft, ArrowUpRight, Eye, EyeOff, TrendingDown,
+  AlertTriangle
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
@@ -37,17 +38,19 @@ export default function HomeTab() {
   const insets = useSafeAreaInsets();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [banners, setBanners] = useState<Banner[]>([]);
+  const [apiStatus, setApiStatus] = useState<{ any_demo: boolean; demo_count: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hideBalance, setHideBalance] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [{ data: s }, { data: b }] = await Promise.all([
+      const [{ data: s }, { data: b }, { data: st }] = await Promise.all([
         api.get<Summary>("/dashboard/summary"),
         api.get<Banner[]>("/app/banners").catch(() => ({ data: [] as Banner[] })),
+        api.get<{ any_demo: boolean; demo_count: number }>("/app/api-status").catch(() => ({ data: { any_demo: false, demo_count: 0 } as any })),
       ]);
-      setSummary(s); setBanners(b);
+      setSummary(s); setBanners(b); setApiStatus(st);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -99,6 +102,20 @@ export default function HomeTab() {
             <View style={[s.bellDot, { backgroundColor: palette.danger }]} />
           </Pressable>
         </View>
+
+        {/* Demo Mode banner — shown when any 3rd-party API is missing */}
+        {apiStatus?.any_demo ? (
+          <View style={s.demoBanner} testID="demo-mode-banner">
+            <AlertTriangle color="#92400E" size={16} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.demoBannerTitle}>Demo Mode Active</Text>
+              <Text style={s.demoBannerBody} numberOfLines={2}>
+                Live API keys are not configured yet. Demo data is being used.
+              </Text>
+            </View>
+            <View style={s.demoBadge}><Text style={s.demoBadgeText}>{apiStatus.demo_count}</Text></View>
+          </View>
+        ) : null}
 
         {/* Hero banner — bull, balance, sparkline */}
         <Pressable onPress={() => router.push("/(tabs)/wallet")} testID="balance-card">
@@ -337,6 +354,12 @@ const s = StyleSheet.create({
   name: { fontSize: 18, fontWeight: "800", letterSpacing: -0.3, marginTop: 2 },
   bellBtn: { padding: 10, borderRadius: 14, borderWidth: 1, position: "relative" },
   bellDot: { position: "absolute", top: 8, right: 8, width: 8, height: 8, borderRadius: 4 },
+
+  demoBanner: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FEF3C7", borderColor: "#FBBF24", borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
+  demoBannerTitle: { color: "#92400E", fontSize: 13, fontWeight: "800" },
+  demoBannerBody: { color: "#92400E", fontSize: 11, fontWeight: "500", opacity: 0.9 },
+  demoBadge: { backgroundColor: "#F59E0B", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  demoBadgeText: { color: "#fff", fontSize: 11, fontWeight: "800" },
 
   heroCard: { borderRadius: 28, padding: 20, gap: 14, overflow: "hidden", position: "relative" },
   heroBullWrap: { position: "absolute", right: -30, top: -20, opacity: 0.18, transform: [{ rotate: "12deg" }] },

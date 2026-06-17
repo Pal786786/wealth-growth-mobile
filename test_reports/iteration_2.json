@@ -1,0 +1,48 @@
+{
+  "summary": "Full-stack test of new centralized API Management + Demo Mode feature. Backend: 24/24 new pytest cases pass (100%) covering public api-status, admin login, GET/PUT api-settings with masking & status transitions (live/demo/disabled), POST test-connection (never raises, returns {ok,mode,message}), Stripe top-up demo fallback (returns demo=true with mfb://demo-pay URL and credits wallet on status check), Alpha Vantage live key works, existing endpoints (auth/login, notifications, banners, dashboard/stats, invest/stocks) unaffected. Frontend Admin UI at /api/admin-ui/#/api-management renders perfectly: sidebar 'API Management' nav, global 'Demo Mode · 10' badge, yellow Demo Mode banner, stats cards (Live 1 / Demo 10 / Disabled 0), category grouping (PAYMENTS, INVESTMENTS, MESSAGING, TRAVEL, COMPLIANCE), Refresh button, Filter chips (All/Live/Demo/Disabled), and per-row status pills (🟢 Live / 🟡 Demo with 'Key set' & 'Force-demo' indicators). Mobile demo banner on home tab confirmed after logging in as demo@mfb.in/demo1234: shows 'Demo Mode Active — Live API keys are not configured yet. Demo data is being used.' with count badge '10'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "RN Web shadow* props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — non-blocking but should be migrated for React Native Web compatibility (likely in any tab/banner using shadowColor/shadowOffset)."},
+      {"component": "Animated useNativeDriver", "issue": "Console warning on /login: 'Animated: useNativeDriver is not supported because the native animated module is missing. Falling back to JS-based animation.' — happens because the app runs in web preview; either gate useNativeDriver:true behind Platform.OS !== 'web' or accept the JS fallback. Non-blocking."},
+      {"component": "pointerEvents prop", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_api_management.py",
+    "/app/backend/tests/test_mfb_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/api_mgmt_results.xml"
+  ],
+  "action_items": [
+    "(Optional, low priority) Migrate React Native shadow* style props to boxShadow on web to silence deprecation warnings.",
+    "(Optional) Guard Animated.useNativeDriver: true behind Platform.OS !== 'web' so the JS-fallback warning disappears in the web preview.",
+    "(Optional) Replace deprecated props.pointerEvents with style.pointerEvents.",
+    "No functional fixes required — all primary acceptance criteria pass."
+  ],
+  "critical_code_review_comments": [
+    "api_settings.py is clean, well-typed, never raises in /test endpoint, masks keys correctly (first 4 + bullets + last 4 for keys >=8 chars), and excludes Mongo _id via projection.",
+    "_is_live() correctly treats keys <=8 chars or starting with 'demo' as not-live, and respects force_demo + is_enabled.",
+    "Public /api/app/api-status never exposes api_key or api_key_masked — correct.",
+    "Admin update endpoint properly upserts with audit logging via _log_action.",
+    "Seed function (seed_catalog) is idempotent (only inserts missing entries) and correctly treats placeholder env keys (sk_test_emergent, demo, placeholder) as empty so Stripe is detected as demo on first run — exactly the expected behaviour."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_api_management.py (created — 24 new test cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (24/24 new API-management tests passed; existing endpoint regression tests also pass)",
+    "frontend": "100% (Admin UI api-management page + mobile demo banner both render correctly with expected content & counts)"
+  },
+  "seed_data_creation": "Tests transiently set sms_provider key, razorpay key+secret with force_demo, and stripe fake key, then clean up by clearing keys / resetting force_demo. stock_market is briefly disabled then re-enabled.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All API Management feature tests pass. To rerun: `pytest /app/backend/tests/test_api_management.py -v`. Admin UI lives at /api/admin-ui/#/api-management (hash routes). Mobile demo banner reads /api/app/api-status (no auth) and renders 'Demo Mode Active' with count badge on the home tab. Alpha Vantage env key NZ1GBRDYEFIMU2GD makes stock_market the only 'live' integration by design; everything else is in demo by design. Stripe top-up now returns demo=true + mfb://demo-pay URL and credits wallet on status poll — the original iteration_1 critical Stripe bug is FIXED.",
+  "rca_of_issue": "N/A — no defects found this iteration. Previous iteration_1 critical (Stripe 502 on top-up) is RESOLVED: backend now routes through the new API Management system; when Stripe key is missing/placeholder, /api/wallet/topup/create-session returns {demo:true, checkout_url:'mfb://demo-pay/...', session_id:'cs_demo_...'} and /api/wallet/topup/status/{sid} credits the wallet immediately. Verified by TestStripeDemoFallback (both tests passing)."
+}

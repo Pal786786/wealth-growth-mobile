@@ -1,12 +1,14 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon, ShieldCheck, KeyRound, AlertTriangle } from "lucide-react";
 import { Logo } from "../components/Logo";
 import { useAdminAuth } from "../lib/auth";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../lib/api";
 
 const ROLE_NAV: Record<string, string[]> = {
-  super_admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/content", "/reports", "/settings", "/admins"],
-  admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/content", "/reports", "/settings"],
+  super_admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/content", "/reports", "/api-management", "/settings", "/admins"],
+  admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/content", "/reports", "/api-management", "/settings"],
   finance_manager: ["/", "/users", "/transactions", "/wallet", "/reports"],
   support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications"],
   investment_manager: ["/", "/users", "/investments", "/content"],
@@ -22,6 +24,7 @@ const NAV = [
   { to: "/investments", label: "Investments", icon: TrendingUp },
   { to: "/content", label: "Content", icon: Image },
   { to: "/reports", label: "Reports", icon: FileText },
+  { to: "/api-management", label: "API Management", icon: KeyRound },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
   { to: "/admins", label: "Admin Users", icon: ShieldCheck },
 ];
@@ -31,6 +34,11 @@ export default function Layout() {
   const [open, setOpen] = useState(false);
   const allowed = new Set(ROLE_NAV[admin?.role || "support_manager"] || []);
   const navItems = NAV.filter((n) => allowed.has(n.to));
+  const { data: apiStatus } = useQuery({
+    queryKey: ["api-status-banner"],
+    queryFn: async () => (await api.get("/app/api-status")).data as { any_demo: boolean; demo_count: number; live_count: number },
+    refetchInterval: 30000,
+  });
   return (
     <div className="min-h-screen bg-slate-50 flex">
       {/* Sidebar */}
@@ -87,10 +95,23 @@ export default function Layout() {
             <h1 className="text-lg font-extrabold text-brand-navy">Admin Console</h1>
             <p className="text-xs text-slate-500">Manage everything across My Funding Bank from here.</p>
           </div>
-          <div className="text-right text-xs text-slate-500">
-            Logged in as <span className="font-bold text-slate-800">{admin?.email}</span>
+          <div className="flex items-center gap-3">
+            {apiStatus?.any_demo ? (
+              <NavLink to="/api-management" className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
+                <AlertTriangle className="w-3.5 h-3.5" /> Demo Mode · {apiStatus.demo_count}
+              </NavLink>
+            ) : null}
+            <div className="text-right text-xs text-slate-500">
+              Logged in as <span className="font-bold text-slate-800">{admin?.email}</span>
+            </div>
           </div>
         </header>
+        {apiStatus?.any_demo ? (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 lg:px-8 py-2 flex items-start gap-2 text-sm text-amber-800">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span><b>Live API keys are not configured yet.</b> Demo data is being used for {apiStatus.demo_count} integration{apiStatus.demo_count > 1 ? "s" : ""}. <NavLink to="/api-management" className="underline font-bold">Configure now →</NavLink></span>
+          </div>
+        ) : null}
         <div className="px-4 lg:px-8 py-6"><Outlet /></div>
       </main>
     </div>

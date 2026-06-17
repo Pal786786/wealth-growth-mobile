@@ -101,3 +101,98 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Add centralized API Management + Demo Mode to the My Funding Bank admin dashboard
+  (and surface a demo banner on the mobile app). Admin must be able to add/edit API
+  keys for Stripe, Razorpay, SMS, Email, Stock Market, Mutual Fund, Gold, Flight,
+  Hotel, Push & KYC; enable/disable each; force-demo; and test connection. When a
+  key is missing, the integration auto-falls-back to demo data — no errors shown.
+
+backend:
+  - task: "API Settings registry + CRUD endpoints (api_settings.py)"
+    implemented: true
+    working: true
+    file: "/app/backend/api_settings.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New module with catalog of 11 supported integrations. Endpoints: GET /api/admin/api-settings (list), PUT /api/admin/api-settings/{name} (upsert key/enable/force-demo), POST /api/admin/api-settings/{name}/test (test connection — never raises), GET /api/app/api-status (public status feed for mobile banner). Manual curl tests passed for list/update/disable/clear."
+  - task: "Refactor Stripe & Alpha Vantage to use centralized api_settings"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Stripe top-up now reads key dynamically from api_settings (fallback to env, then to demo). Stripe errors now degrade to demo top-up instead of HTTP 502. Alpha Vantage stocks read key dynamically and add mode flag. /invest/gold-price respects api_settings + manual override."
+
+frontend:
+  - task: "Admin: API Management page + nav + global demo banner"
+    implemented: true
+    working: true
+    file: "/app/admin/src/pages/ApiManagement.tsx, /app/admin/src/pages/Layout.tsx, /app/admin/src/main.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New Settings → API Management page with stats cards (Live/Demo/Disabled), grouped table by category, expandable rows with masked key, extra fields, force-demo toggle, Test Connection, Enable/Disable, Save. Global amber banner + header badge shown when any_demo>0. Built with `yarn build`, served at /api/admin-ui/."
+  - task: "Mobile: Demo Mode banner on Home"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Home tab now calls /api/app/api-status alongside dashboard + banners. When any_demo=true, shows yellow Demo Mode card with count badge above the hero. Verified visually in preview."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.1"
+  test_sequence: 2
+  run_ui: true
+
+test_plan:
+  current_focus:
+    - "API Settings registry + CRUD endpoints (api_settings.py)"
+    - "Refactor Stripe & Alpha Vantage to use centralized api_settings"
+    - "Admin: API Management page + nav + global demo banner"
+    - "Mobile: Demo Mode banner on Home"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "main"
+    -message: |
+      Implemented full API Management + Demo Mode system.
+      Backend additions:
+        • /app/backend/api_settings.py (new module)
+        • Wired into /app/backend/server.py (router + startup seed)
+        • Stripe & Alpha Vantage now read key dynamically — graceful demo fallback
+        • Public endpoint /api/app/api-status for mobile banner
+      Admin UI:
+        • New /api-management route with full CRUD + Test Connection
+        • Global Demo Mode banner & header badge in Layout
+        • Sidebar nav entry "API Management"
+        • Built: /app/admin/dist updated
+      Mobile UI:
+        • Home tab shows Demo Mode banner with count when any integration is in demo
+      Test credentials in /app/memory/test_credentials.md (admin@mfb.in / Admin@MFB2026; demo@mfb.in / demo1234).
+      Please verify:
+        1) Admin login → /api-management → list, expand Stripe row, save fake key (sk_test_abcdefghijk1234567), test connection (will fail), then clear key. Verify status badge updates without page reload.
+        2) Toggle force_demo on Razorpay → verify status="demo" even with key set.
+        3) Disable a row → verify status="disabled" and mobile /api/app/api-status reflects it.
+        4) Mobile (web preview): login as demo@mfb.in/demo1234 → home should show Demo Mode banner.
+        5) Existing flows still work: wallet top-up (should auto-fallback to demo), stocks list (should still load with live cache), notifications, banners, KYC.
