@@ -20,13 +20,23 @@ export default function TravelTab() {
   const [tab, setTab] = useState<"flight" | "hotel" | "bus" | "train">("flight");
   const [flights, setFlights] = useState<any[]>([]);
   const [hotels, setHotels] = useState<any[]>([]);
+  const [buses, setBuses] = useState<any[]>([]);
+  const [trains, setTrains] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: f }, { data: h }] = await Promise.all([api.get("/travel/flights"), api.get("/travel/hotels")]);
-      setFlights(f); setHotels(h);
+      const [{ data: f }, { data: h }, { data: b }, { data: t }, { data: bk }] = await Promise.all([
+        api.get("/travel/flights"),
+        api.get("/travel/hotels"),
+        api.get("/travel/buses").catch(() => ({ data: [] })),
+        api.get("/travel/trains").catch(() => ({ data: [] })),
+        api.get("/travel/bookings").catch(() => ({ data: [] })),
+      ]);
+      setFlights(f); setHotels(h); setBuses(b); setTrains(t); setBookings(bk);
     } catch {} finally { setLoading(false); }
   }, []);
 
@@ -35,15 +45,28 @@ export default function TravelTab() {
   const book = async (type: string, title: string, amount: number, meta: any, from?: string, to?: string) => {
     try {
       const date = new Date(); date.setDate(date.getDate() + 7);
-      await api.post("/travel/book", {
+      const { data } = await api.post("/travel/book", {
         booking_type: type, title, amount, meta,
         from_loc: from, to_loc: to,
         travel_date: date.toISOString().slice(0, 10),
         passengers: 1,
       });
-      show("success", `${type[0].toUpperCase() + type.slice(1)} booked! Confirmation sent.`);
+      const cb = data?.cashback?.cashback_amount || 0;
+      const pts = data?.cashback?.points_added || 0;
+      show("success", `${type[0].toUpperCase() + type.slice(1)} booked!${cb ? ` +₹${cb} cashback` : ""}${pts ? ` · +${pts} pts` : ""}`);
+      load();
     } catch (e: any) {
       show("error", e?.response?.data?.detail || "Booking failed");
+    }
+  };
+
+  const cancel = async (bookingId: string) => {
+    try {
+      const { data } = await api.post(`/travel/cancel/${bookingId}`, { reason: "User cancelled" });
+      show("success", data.message);
+      load();
+    } catch (e: any) {
+      show("error", e?.response?.data?.detail || "Cancellation failed");
     }
   };
 
@@ -151,18 +174,95 @@ export default function TravelTab() {
         )}
 
         {!loading && (tab === "bus" || tab === "train") && (
-          <Card style={{ gap: 12, alignItems: "center", paddingVertical: 30 }}>
-            {tab === "bus"
-              ? <Bus color={palette.primary} size={48} />
-              : <TrainFront color={palette.primary} size={48} />}
-            <Text style={{ fontSize: 18, fontWeight: "800", color: palette.textPrimary }}>
-              {tab === "bus" ? "Bus" : "Train"} Booking Coming Soon
+          <View style={{ gap: 12 }}>
+            <Text style={[s.section, { color: palette.textPrimary }]}>
+              {tab === "bus" ? "Bus routes" : "Train routes"} • {(tab === "bus" ? buses : trains).length} options
             </Text>
-            <Text style={{ color: palette.textSecondary, textAlign: "center" }}>
-              We&apos;re partnering with top operators. Book a flight or hotel meanwhile.
-            </Text>
-          </Card>
+            {(tab === "bus" ? buses : trains).map((it: any) => (
+              <Card key={it.id} style={{ gap: 10 }}>
+                <View style={s.flightRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.airline, { color: palette.textPrimary }]} numberOfLines={1}>
+                      {tab === "bus" ? `${it.operator} • ${it.type}` : `${it.number} • ${it.name}`}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: palette.textSecondary, marginTop: 2 }}>
+                      {tab === "bus" ? `★ ${it.rating} · ${it.seats_left} seats left` : `★ ${it.rating} · ${(it.classes || []).join(" · ")}`}
+                    </Text>
+                  </View>
+                  <Text style={[s.price, { color: palette.primary }]}>
+                    {formatINR(tab === "bus" ? it.price : (it.prices?.["3A"] || it.prices?.["CC"] || it.prices?.["SL"] || 999))}
+                  </Text>
+                </View>
+                <View style={s.flightRoute}>
+                  <View style={{ alignItems: "flex-start" }}>
+                    <Text style={[s.routeTime, { color: palette.textPrimary }]}>{it.depart}</Text>
+                    <Text style={[s.routeCode, { color: palette.textSecondary }]} numberOfLines={1}>{it.from}</Text>
+                  </View>
+                  <View style={s.dashedLine}>
+                    <Text style={[s.duration, { color: palette.textMuted }]}>{it.duration}</Text>
+                    <ArrowRight color={palette.textMuted} size={16} />
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[s.routeTime, { color: palette.textPrimary }]}>{it.arrive}</Text>
+                    <Text style={[s.routeCode, { color: palette.textSecondary }]} numberOfLines={1}>{it.to}</Text>
+                  </View>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    const price = tab === "bus" ? it.price : (it.prices?.["3A"] || it.prices?.["CC"] || it.prices?.["SL"] || 999);
+                    const title = tab === "bus"
+                      ? `${it.operator} ${it.from}→${it.to}`
+                      : `${it.number} ${it.name} ${it.from}→${it.to}`;
+                    book(tab, title, price, it, it.from, it.to);
+                  }}
+                  style={[s.bookBtn, { backgroundColor: palette.primary }]}
+                  testID={`book-${tab}-${it.id}`}
+                >
+                  <Text style={s.bookTxt}>Book {tab === "bus" ? "Bus" : "Train"}</Text>
+                </Pressable>
+              </Card>
+            ))}
+          </View>
         )}
+
+        {/* Booking history section */}
+        {bookings.length > 0 ? (
+          <View style={{ gap: 10, marginTop: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={[s.section, { color: palette.textPrimary }]}>My bookings ({bookings.length})</Text>
+              <Pressable onPress={() => setShowHistory((v) => !v)}>
+                <Text style={{ color: palette.primary, fontWeight: "700", fontSize: 13 }}>
+                  {showHistory ? "Hide" : "Show"}
+                </Text>
+              </Pressable>
+            </View>
+            {showHistory ? bookings.map((bk: any) => (
+              <Card key={bk.booking_id} style={{ gap: 6 }}>
+                <View style={s.flightRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.hotelName, { color: palette.textPrimary }]} numberOfLines={1}>{bk.title}</Text>
+                    <Text style={{ fontSize: 11, color: palette.textSecondary, marginTop: 2 }}>
+                      {bk.booking_type.toUpperCase()} · {bk.travel_date} ·{" "}
+                      <Text style={{ color: bk.status === "cancelled" ? palette.danger : palette.success, fontWeight: "700" }}>
+                        {bk.status === "cancelled" ? `Cancelled (refund ₹${bk.refund_amount || 0})` : "Confirmed"}
+                      </Text>
+                    </Text>
+                  </View>
+                  <Text style={[s.price, { color: palette.textPrimary }]}>{formatINR(bk.amount)}</Text>
+                </View>
+                {bk.status !== "cancelled" ? (
+                  <Pressable
+                    onPress={() => cancel(bk.booking_id)}
+                    style={{ paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: palette.danger, alignItems: "center" }}
+                    testID={`cancel-booking-${bk.booking_id}`}
+                  >
+                    <Text style={{ color: palette.danger, fontWeight: "700", fontSize: 13 }}>Cancel booking</Text>
+                  </Pressable>
+                ) : null}
+              </Card>
+            )) : null}
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );

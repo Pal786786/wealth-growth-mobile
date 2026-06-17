@@ -22,6 +22,7 @@ import admin as admin_module
 import admin_extra
 import api_settings as api_settings_module
 import ai_invest
+import super_app
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -778,7 +779,8 @@ async def travel_book(req: BookingReq, user: Dict[str, Any] = Depends(get_curren
     await db.bookings.insert_one(booking)
     booking.pop("_id", None)
     tx = await _add_tx(user["user_id"], "debit", "travel", req.amount, f"{req.booking_type.title()} booking: {req.title}", "success", req.title)
-    return {"success": True, "booking": booking, "tx": tx}
+    cashback = await super_app.award_cashback(user["user_id"], req.amount, "travel")
+    return {"success": True, "booking": booking, "tx": tx, "cashback": cashback}
 
 
 @api.get("/travel/bookings")
@@ -818,7 +820,8 @@ async def insurance_buy(plan_id: str, user: Dict[str, Any] = Depends(get_current
     await db.policies.insert_one(policy)
     policy.pop("_id", None)
     await _add_tx(user["user_id"], "debit", "insurance", plan["premium"], f"{plan['name']} premium", "success", plan["name"])
-    return {"success": True, "policy": policy}
+    cashback = await super_app.award_cashback(user["user_id"], plan["premium"], "insurance")
+    return {"success": True, "policy": policy, "cashback": cashback}
 
 
 @api.get("/insurance/policies")
@@ -961,6 +964,7 @@ admin_module.attach(api, db, logger)
 admin_extra.attach(api, db)
 api_settings_module.attach(api, db)
 ai_invest.attach(api, db, get_current_user, lambda: list_stocks(force=False), logger=logger)
+super_app.attach(api, db, get_current_user, _add_tx, admin_module.get_current_admin, INSURANCE_PLANS, logger=logger)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/
@@ -990,6 +994,8 @@ async def startup():
     await db.admins.create_index("admin_id", unique=True)
     await admin_module.seed_admin(db, logger)
     await api_settings_module.seed_catalog()
+    await super_app.seed_demo_catalogs()
+    await super_app.seed_insurance_catalog(INSURANCE_PLANS)
     logger.info("MFB backend ready")
 
 

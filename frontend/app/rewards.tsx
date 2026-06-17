@@ -13,8 +13,29 @@ export default function Rewards() {
   const { palette } = useTheme();
   const router = useRouter();
   const [data, setData] = useState<any>(null);
+  const [tierInfo, setTierInfo] = useState<any>(null);
 
-  useEffect(() => { api.get("/rewards").then(({ data }) => setData(data)).catch(() => {}); }, []);
+  const load = () => {
+    api.get("/rewards").then(({ data }) => setData(data)).catch(() => {});
+    api.get("/rewards/tier").then(({ data }) => setTierInfo(data)).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+
+  const redeem = async () => {
+    if (!data) return;
+    const pts = Math.floor((data.reward_points || 0) / 100) * 100;
+    if (pts < 100) {
+      alert("You need at least 100 points to redeem.");
+      return;
+    }
+    try {
+      await api.post(`/rewards/redeem?amount=${pts}`);
+      alert(`Redeemed ${pts} points → ₹${pts / 10} credited to wallet`);
+      load();
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || "Redemption failed");
+    }
+  };
 
   const BADGE_ICONS: Record<string, any> = { Award, Trophy, Users, Gift };
 
@@ -30,6 +51,49 @@ export default function Rewards() {
           <Text style={s.heroValue} testID="reward-points">{data?.reward_points ?? 0}</Text>
           <Text style={s.heroSub}>Total cashback earned • {formatINR(data?.cashback_earned ?? 0)}</Text>
         </LinearGradient>
+
+        {/* Tier card */}
+        {tierInfo ? (
+          <Card style={{ gap: 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: tierInfo.current.color, alignItems: "center", justifyContent: "center" }}>
+                <Trophy color="#fff" size={18} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.row, { color: palette.textPrimary }]}>{tierInfo.current.name} Tier</Text>
+                <Text style={[s.rowSub, { color: palette.textSecondary }]}>
+                  {(tierInfo.current.rate * 100).toFixed(1)}% cashback on every spend
+                </Text>
+              </View>
+              {tierInfo.next ? (
+                <Text style={{ fontSize: 11, color: palette.textMuted, fontWeight: "700" }}>
+                  → {tierInfo.next.name}
+                </Text>
+              ) : (
+                <Text style={{ fontSize: 11, color: palette.warning, fontWeight: "800" }}>MAX</Text>
+              )}
+            </View>
+            {tierInfo.next ? (
+              <View>
+                <View style={{ height: 6, backgroundColor: palette.surfaceAlt, borderRadius: 3 }}>
+                  <View style={{ width: `${tierInfo.progress_pct}%`, height: "100%", backgroundColor: tierInfo.current.color, borderRadius: 3 }} />
+                </View>
+                <Text style={{ fontSize: 11, color: palette.textSecondary, marginTop: 6 }}>
+                  {tierInfo.next.min - tierInfo.current_points} pts to {tierInfo.next.name}
+                </Text>
+              </View>
+            ) : null}
+            <Pressable
+              onPress={redeem}
+              style={{ backgroundColor: palette.primary, paddingVertical: 12, borderRadius: 12, alignItems: "center", marginTop: 4 }}
+              testID="redeem-points-btn"
+            >
+              <Text style={{ color: "#fff", fontWeight: "800" }}>
+                Redeem points (100 pts = ₹10)
+              </Text>
+            </Pressable>
+          </Card>
+        ) : null}
 
         <View style={s.statsRow}>
           <Card style={s.statBox}>
