@@ -4,6 +4,14 @@ import { Logo } from "../components/Logo";
 import { useAdminAuth } from "../lib/auth";
 import { useState } from "react";
 
+const ROLE_NAV: Record<string, string[]> = {
+  super_admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/content", "/reports", "/settings", "/admins"],
+  admin: ["/", "/users", "/kyc", "/transactions", "/wallet", "/notifications", "/investments", "/content", "/reports", "/settings"],
+  finance_manager: ["/", "/users", "/transactions", "/wallet", "/reports"],
+  support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications"],
+  investment_manager: ["/", "/users", "/investments", "/content"],
+};
+
 const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/users", label: "Users", icon: UsersIcon },
@@ -21,6 +29,8 @@ const NAV = [
 export default function Layout() {
   const { admin, logout } = useAdminAuth();
   const [open, setOpen] = useState(false);
+  const allowed = new Set(ROLE_NAV[admin?.role || "support_manager"] || []);
+  const navItems = NAV.filter((n) => allowed.has(n.to));
   return (
     <div className="min-h-screen bg-slate-50 flex">
       {/* Sidebar */}
@@ -36,7 +46,7 @@ export default function Layout() {
           <button onClick={() => setOpen(false)} className="lg:hidden p-1"><X className="w-5 h-5" /></button>
         </div>
         <nav className="space-y-1">
-          {NAV.map((n) => (
+          {navItems.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}

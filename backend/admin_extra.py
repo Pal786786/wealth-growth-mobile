@@ -398,6 +398,22 @@ async def create_admin(req: NewAdminReq, admin=Depends(get_current_admin)):
     return doc
 
 
+class ResetPasswordReq(BaseModel):
+    new_password: str
+
+
+@router.post("/admins/{admin_id}/reset-password")
+async def reset_admin_password(admin_id: str, req: ResetPasswordReq, admin=Depends(get_current_admin)):
+    _require_super(admin)
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    res = await _db.admins.update_one({"admin_id": admin_id}, {"$set": {"password": _hash(req.new_password)}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Admin not found")
+    await _log_action(admin["admin_id"], "admin.password_reset", target=admin_id)
+    return {"success": True}
+
+
 @router.delete("/admins/{admin_id}")
 async def delete_admin(admin_id: str, admin=Depends(get_current_admin)):
     _require_super(admin)

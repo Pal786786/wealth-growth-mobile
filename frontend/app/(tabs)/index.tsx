@@ -26,6 +26,8 @@ type Summary = {
   trending_funds: any[];
 };
 
+type Banner = { id: string; title: string; subtitle?: string; cta_label?: string; cta_route?: string };
+
 const { width: SCREEN_W } = Dimensions.get("window");
 
 export default function HomeTab() {
@@ -34,14 +36,18 @@ export default function HomeTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [banners, setBanners] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hideBalance, setHideBalance] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const { data } = await api.get<Summary>("/dashboard/summary");
-      setSummary(data);
+      const [{ data: s }, { data: b }] = await Promise.all([
+        api.get<Summary>("/dashboard/summary"),
+        api.get<Banner[]>("/app/banners").catch(() => ({ data: [] as Banner[] })),
+      ]);
+      setSummary(s); setBanners(b);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -359,6 +365,18 @@ const s = StyleSheet.create({
   quickLabel: { fontSize: 11, fontWeight: "700", textAlign: "center" },
 
   rewardsCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: 20, borderWidth: 1 },
+  bannerScroll: { gap: 12, paddingRight: 4 },
+  bannerCard: { width: 280, padding: 16, borderRadius: 20, gap: 6, overflow: "hidden" },
+  bannerTitle: { color: "#fff", fontSize: 16, fontWeight: "800", letterSpacing: -0.3 },
+  bannerSubtitle: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "500" },
+  bannerCta: { alignSelf: "flex-start", marginTop: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.2)" },
+  bannerCtaTxt: { color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 0.4 },
+  bannerScroll: { gap: 12, paddingRight: 4 },
+  bannerCard: { width: 280, padding: 16, borderRadius: 20, gap: 6, overflow: "hidden" },
+  bannerTitle: { color: "#fff", fontSize: 16, fontWeight: "800", letterSpacing: -0.3 },
+  bannerSubtitle: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "500" },
+  bannerCta: { alignSelf: "flex-start", marginTop: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.2)" },
+  bannerCtaTxt: { color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 0.4 },
   rewardsIcon: { padding: 12, borderRadius: 14 },
   rewardsTitle: { fontSize: 15, fontWeight: "800" },
   rewardsSubtitle: { fontSize: 12, marginTop: 2 },
