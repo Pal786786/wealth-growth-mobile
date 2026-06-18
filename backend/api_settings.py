@@ -45,10 +45,10 @@ API_CATALOG: List[Dict[str, Any]] = [
     },
     {
         "api_name": "sms_provider",
-        "display_name": "SMS Provider (OTP)",
+        "display_name": "SMS Provider / OTP",
         "category": "messaging",
-        "description": "Send real OTP/SMS to mobile numbers. Supports MSG91 (default) and Twilio.",
-        "fields": ["api_key", "provider", "sender_id", "template_id", "twilio_sid", "twilio_from"],
+        "description": "Send real OTP/SMS via MSG91, Twilio, or use Firebase Phone Auth (ID-token verification on backend).",
+        "fields": ["api_key", "provider", "sender_id", "template_id", "twilio_sid", "twilio_from", "firebase_project_id"],
         "test_kind": "sms_provider",
     },
     {

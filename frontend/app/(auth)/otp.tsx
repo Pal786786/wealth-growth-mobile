@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Smartphone, User } from "lucide-react-native";
+import { ChevronLeft, Smartphone, User, ShieldCheck } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { Screen } from "@/src/components/Screen";
 import { Input } from "@/src/components/Input";
@@ -10,6 +10,9 @@ import { BullLogo } from "@/src/components/BullLogo";
 import { useToast } from "@/src/components/Toast";
 import { useAuth } from "@/src/auth/AuthProvider";
 import { api } from "@/src/api/client";
+import {
+  isFirebaseAvailable, sendFirebaseOtp, confirmFirebaseOtp,
+} from "@/src/auth/firebase";
 
 export default function Otp() {
   const { palette } = useTheme();
@@ -22,8 +25,24 @@ export default function Otp() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [needsName, setNeedsName] = useState(false);
+  const [provider, setProvider] = useState<"demo" | "msg91" | "twilio" | "firebase">("demo");
+  const firebaseConfirmation = useRef<any>(null);
 
   const [demoMode, setDemoMode] = useState(false);
+
+  // Pre-flight: detect which OTP provider the backend has configured
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get("/auth/firebase/status");
+        if (data?.enabled && isFirebaseAvailable()) {
+          setProvider("firebase");
+        } else {
+          setProvider(data?.provider || "demo");
+        }
+      } catch {}
+    })();
+  }, []);
 
   const sendOtp = async () => {
     if (!/^[0-9]{10}$/.test(mobile)) {
@@ -32,14 +51,28 @@ export default function Otp() {
     }
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/otp/request", { mobile });
-      setDemoMode(!!data?.demo);
-      show("success", data?.demo
-        ? "OTP sent (demo mode — ask admin for the code)"
-        : "OTP sent to your mobile");
-      setStep("otp");
+      if (provider === "firebase") {
+        // Firebase Phone Auth flow — triggers native reCAPTCHA / Play Integrity check
+        firebaseConfirmation.current = await sendFirebaseOtp(`+91${mobile}`);
+        setDemoMode(false);
+        show("success", "OTP sent via Firebase Phone Auth");
+        setStep("otp");
+      } else {
+        const { data } = await api.post("/auth/otp/request", { mobile });
+        setDemoMode(!!data?.demo);
+        show("success", data?.demo
+          ? "OTP sent (demo mode — ask admin for the code)"
+          : "OTP sent to your mobile");
+        setStep("otp");
+      }
     } catch (e: any) {
-      show("error", e?.response?.data?.detail || "Failed to send OTP");
+      const msg = e?.message || e?.response?.data?.detail || "Failed to send OTP";
+      show("error", msg);
+      // If Firebase failed (e.g. Expo Go), gracefully degrade to backend OTP
+      if (provider === "firebase") {
+        setProvider("demo");
+        show("info", "Falling back to backend OTP — retry now");
+      }
     } finally {
       setLoading(false);
     }
@@ -52,12 +85,25 @@ export default function Otp() {
     }
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/otp/verify", { mobile, otp, full_name: name || undefined });
-      await signIn(data.token, data.user);
-      show("success", `Welcome, ${data.user.full_name.split(" ")[0]}!`);
-      router.replace("/(tabs)");
+      if (provider === "firebase") {
+        if (!firebaseConfirmation.current) {
+          show("error", "Session expired, please request OTP again");
+          setStep("mobile");
+          return;
+        }
+        const idToken = await confirmFirebaseOtp(firebaseConfirmation.current, otp);
+        const { data } = await api.post("/auth/firebase/verify", { id_token: idToken, full_name: name || undefined });
+        await signIn(data.token, data.user);
+        show("success", `Welcome${data.is_new_user ? "" : " back"}, ${(data.user.full_name || "there").split(" ")[0]}!`);
+        router.replace("/(tabs)");
+      } else {
+        const { data } = await api.post("/auth/otp/verify", { mobile, otp, full_name: name || undefined });
+        await signIn(data.token, data.user);
+        show("success", `Welcome, ${data.user.full_name.split(" ")[0]}!`);
+        router.replace("/(tabs)");
+      }
     } catch (e: any) {
-      const msg = e?.response?.data?.detail || "Invalid OTP";
+      const msg = e?.message || e?.response?.data?.detail || "Invalid OTP";
       if (msg.toLowerCase().includes("full name")) {
         setNeedsName(true);
         show("info", "Looks like you're new. Tell us your name.");

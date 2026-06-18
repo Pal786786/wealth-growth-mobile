@@ -988,6 +988,8 @@ import travel_admin  # type: ignore
 travel_admin.attach(api, db, get_current_user, admin_module.get_current_admin, _add_tx, admin_module._log_action)
 import tier_config  # type: ignore
 tier_config.attach(api, db, admin_module.get_current_admin, admin_module._log_action)
+import firebase_auth  # type: ignore
+firebase_auth.attach(api, db, lambda payload: create_token(payload["user_id"]), now_fn=now_utc)
 app.include_router(api)
 
 # Serve built admin SPA (after admin app is built) at /api/admin-ui/

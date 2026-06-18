@@ -10,6 +10,7 @@
     "newArchEnabled": true,
     "android": {
       "package": "com.myfundingbank.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0F172A"
@@ -28,6 +29,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.myfundingbank.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan QR codes to send and receive payments",
         "NSPhotoLibraryUsageDescription": "Attach photos to your KYC documents",
@@ -57,7 +59,10 @@
           "icon": "./assets/images/icon.png",
           "color": "#38BDF8"
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-firebase/messaging"
     ],
     "experiments": {
       "typedRoutes": true
