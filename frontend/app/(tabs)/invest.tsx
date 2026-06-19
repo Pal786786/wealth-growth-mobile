@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
-import { TrendingUp, Coins, PiggyBank, Landmark, BarChart3, ChevronRight, RefreshCw, Sparkles } from "lucide-react-native";
+import { TrendingUp, Coins, PiggyBank, Landmark, BarChart3, ChevronRight, RefreshCw, Sparkles, Calculator } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { api } from "@/src/api/client";
@@ -101,6 +101,27 @@ export default function InvestTab() {
 
         {!loading && active === "portfolio" && (
           <>
+            {/* Investment Calculator CTA */}
+            <Pressable onPress={() => router.push("/invest/calculator")} testID="calculator-cta">
+              <LinearGradient
+                colors={["#0EA5E9", "#2563EB", "#0F172A"]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={[s.calcCta, shadow({ color: "#0EA5E9", opacity: 0.3, radius: 14, offsetY: 6, elevation: 4 })]}
+              >
+                <View style={s.calcCtaIcon}>
+                  <Calculator color="#fff" size={22} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.calcCtaTitle}>📊 Investment Calculator</Text>
+                  <Text style={s.calcCtaSub}>Plan your future returns instantly</Text>
+                </View>
+                <View style={s.calcCtaBtn}>
+                  <Text style={s.calcCtaBtnText}>Open</Text>
+                  <ChevronRight color="#0EA5E9" size={16} />
+                </View>
+              </LinearGradient>
+            </Pressable>
+
             {/* AI Investment Coach teaser */}
             <Pressable onPress={() => router.push("/invest/ai-coach")} testID="ai-coach-teaser">
               <LinearGradient
@@ -319,6 +340,12 @@ const s = StyleSheet.create({
   scroll: { paddingHorizontal: 16, paddingTop: 12, gap: 10 },
   portCard: { borderRadius: 28, padding: 22, gap: 8, overflow: "hidden", position: "relative" },
   aiTeaser: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 20 },
+  calcCta: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 20 },
+  calcCtaIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
+  calcCtaTitle: { color: "#fff", fontSize: 15, fontWeight: "800", letterSpacing: -0.2 },
+  calcCtaSub: { color: "rgba(255,255,255,0.9)", fontSize: 11, fontWeight: "600", marginTop: 2 },
+  calcCtaBtn: { flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: "#fff", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  calcCtaBtnText: { color: "#0EA5E9", fontWeight: "800", fontSize: 12 },
   aiTeaserIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
   aiTeaserTitle: { color: "#fff", fontSize: 15, fontWeight: "800" },
   aiTeaserSub: { color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: "600", marginTop: 2 },

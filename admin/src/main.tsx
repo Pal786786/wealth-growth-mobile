@@ -23,6 +23,7 @@ import AdminDemoOtps from "./pages/AdminDemoOtps";
 import AdminInsuranceClaims from "./pages/AdminInsuranceClaims";
 import AdminTierUpgrades from "./pages/AdminTierUpgrades";
 import AdminCashbackEditor from "./pages/AdminCashbackEditor";
+import AdminCalculatorConfig from "./pages/AdminCalculatorConfig";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -62,6 +63,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="rewards" element={<AdminRewards />} />
               <Route path="tier-upgrades" element={<AdminTierUpgrades />} />
               <Route path="cashback-editor" element={<AdminCashbackEditor />} />
+              <Route path="calculator-config" element={<AdminCalculatorConfig />} />
               <Route path="audit" element={<AdminAuditLogs />} />
               <Route path="api-management" element={<ApiManagement />} />
               <Route path="settings" element={<Settings />} />

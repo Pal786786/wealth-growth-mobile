@@ -236,7 +236,7 @@ export default function AdminCashbackEditor() {
   );
 }
 
-function Field({ label, value, onChange, type, step, min, max }: any) {
+function Field({ label, value, onChange, type, step, min, max }: { label: string; value: any; onChange: (v: string) => void; type?: string; step?: number; min?: number; max?: number }) {
   return (
     <div>
       <label className="text-[11px] font-bold uppercase text-slate-500 tracking-wide block mb-0.5">{label}</label>

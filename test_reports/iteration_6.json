@@ -1,0 +1,50 @@
+{
+  "summary": "Phase 1 Investment Calculator end-to-end verification PASSED. Backend (public + admin) API, admin web panel (sidebar + AdminCalculatorConfig page), and mobile (Invest tab CTA → /invest/calculator with 4 tabs, reinvest toggle, validation, SVG growth chart, back-to-invest CTA) all working. 7/7 pytest tests passed; admin panel save+revert worked; mobile compute & validation verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "calculator.tsx & invest.tsx", "issue": "React Native web warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\"' and '\"textShadow*\" style props are deprecated. Use \"textShadow\"'. Multiple call sites in calculator.tsx (tabs at ~191, results card at ~228, CTA shadow at ~262) and invest.tsx (CTA card). Non-blocking on native; web-only deprecation warning. Reference: /app/frontend/app/invest/calculator.tsx:191, 228, 242"},
+      {"component": "Animated/useNativeDriver", "issue": "Console warning 'Animated: useNativeDriver is not supported because the native animated module is missing. Falling back to JS-based animation' — comes from upstream libs on web preview; informational only."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_calculator.py",
+    "/app/test_reports/pytest/calculator_results.xml"
+  ],
+  "action_items": [
+    "(Optional polish) Replace deprecated shadow* style props with boxShadow on calculator.tsx and invest.tsx CTA card to silence RN-Web warnings.",
+    "(Optional) Add startup seed_config() call for calculator_config in server.py startup hook so the doc exists in DB on first boot (currently get_config falls back to DEFAULTS, which is functionally fine but inconsistent with tier_config that is seeded)."
+  ],
+  "critical_code_review_comments": [
+    "calculator_config.py: seed_config() is defined but never called from server.py startup. Public GET still works via DEFAULTS fallback, but seeding at boot would make admin GET return a persisted doc immediately.",
+    "Validation in update_cfg only checks min vs max when BOTH are present in the request; if a partial PUT sets min_amount=2000000 with existing max_amount=1000000, it will silently store an invalid range. Suggest fetching current doc to validate against effective values. Reference: /app/backend/calculator_config.py:83",
+    "Mobile calculator.tsx falls back to (minAmt=100, maxAmt=1000000) before cfg loads but ActivityIndicator gates rendering, so this is dead code — fine."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_calculator.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None. Tests are idempotent — they read current admin cfg, mutate, verify, and restore to original values.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend pytest file at /app/backend/tests/test_calculator.py covers public GET, admin GET (auth + no-auth), PUT persistence, and both validation rules (min>=max & return_min>=return_max). Admin login uses POST /api/admin/auth/login. Mobile login via /login screen uses identifier+password (first 2 inputs). Invest CTA testID='calculator-cta'. Calculator screen testIDs: tab-{onetime|sip|daily|compound}, calc-amount, calc-duration, calc-rate, reinvest-toggle, start-invest-btn, back-btn.",
+  "rca_of_issue": "N/A — Phase 1 verification only.",
+  "validation_results": {
+    "backend_pytest": "7 passed in 1.90s",
+    "mobile_compute_onetime_10000_12mo_12pct_no_reinvest": "profit=₹1,200 maturity=₹11,200 (expected)",
+    "mobile_compute_onetime_10000_12mo_12pct_with_reinvest": "profit=₹1,268.25 maturity=₹11,268.25 (matches (1+0.12/12)^12)",
+    "amount_validation_below_min": "Error shown ('Min ₹')",
+    "rate_validation_above_max": "Error shown ('Allowed')",
+    "svg_chart_renders": "yes (multiple <svg> nodes including growth chart)",
+    "reinvest_visibility": "OneTime=yes, SIP=no, Daily=yes, Compound=no (matches spec)",
+    "start_invest_cta_navigation": "router.push('/(tabs)/invest') → http://localhost:3000/invest (works)",
+    "admin_sidebar_entry": "'Calculator Settings' link present and routes to /#/calculator-config",
+    "admin_save_revert_flow": "Toggled Daily disabled → Save & Apply succeeded → re-toggled enabled → Save succeeded (button reverted to 'No changes')."
+  }
+}
