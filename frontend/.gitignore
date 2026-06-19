@@ -38,6 +38,8 @@ yarn-error.*
 
 app-example
 
-# Firebase config (uploaded via Emergent Publish flow)
-google-services.json
-GoogleService-Info.plist
+# Firebase config — google-services.json is safe to commit (ships in every Android APK).
+# GoogleService-Info.plist similarly safe for iOS. Removed exclusions so EAS Publish
+# can package these files into the build context.
+# google-services.json
+# GoogleService-Info.plist
