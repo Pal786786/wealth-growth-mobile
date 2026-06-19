@@ -492,8 +492,9 @@ async def create_topup_session(req: StripeCheckoutReq, user: Dict[str, Any] = De
 
     stripe.api_key = cfg["api_key"]
     amount_paise = int(round(req.amount * 100))
-    success_url = "https://wealth-growth-mobile.preview.emergentagent.com/wallet/topup-success?session_id={CHECKOUT_SESSION_ID}"
-    cancel_url = "https://wealth-growth-mobile.preview.emergentagent.com/wallet/topup-cancel"
+    app_url = os.environ.get("APP_URL", "http://localhost:3000").rstrip("/")
+    success_url = f"{app_url}/wallet/topup-success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{app_url}/wallet/topup-cancel"
     try:
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
