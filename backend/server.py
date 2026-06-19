@@ -991,6 +991,8 @@ import tier_config  # type: ignore
 tier_config.attach(api, db, admin_module.get_current_admin, admin_module._log_action)
 import calculator_config  # type: ignore
 calculator_config.attach(api, db, admin_module.get_current_admin, admin_module._log_action)
+import calculator_plans  # type: ignore
+calculator_plans.attach(api, db, get_current_user)
 import firebase_auth  # type: ignore
 firebase_auth.attach(api, db, lambda payload: create_token(payload["user_id"]), now_fn=now_utc)
 app.include_router(api)
@@ -1029,6 +1031,8 @@ async def startup():
     await db.bookings.create_index("booking_id", unique=True)
     await db.bookings.create_index([("status", 1), ("created_at", -1)])
     await db.bookings.create_index([("refund_status", 1), ("updated_at", -1)])
+    await db.saved_plans.create_index("plan_id", unique=True)
+    await db.saved_plans.create_index([("user_id", 1), ("created_at", -1)])
     # Seed tier config singleton if missing
     try:
         import tier_config as _tc  # type: ignore

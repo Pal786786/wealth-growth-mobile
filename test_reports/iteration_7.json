@@ -1,0 +1,69 @@
+{
+  "summary": "Phase 2 backend CRUD for saved plans FULLY PASSED (20/20 pytest cases). Phase 2 frontend BLOCKED by two defects in /app/frontend/app/invest/calculator.tsx: (1) duplicate corrupted trailing block at lines 394-423 caused SyntaxError 'Missing semicolon. (394:4)' breaking the entire Metro bundle — I removed this junk so the bundle now compiles; (2) component still crashes at runtime with 'ReferenceError: onShare is not defined' — the JSX at lines 286 (onShare), 291 (onExportPDF), 327 (snapshot), 339 (onSavePlan) references four identifiers that are never declared in CalculatorScreen. Save Plan modal, Share, PDF, and Saved-Plans-btn navigation cannot be exercised until E1 implements those handlers. Saved Plans screen empty state (testID: empty-cta, new-plan-btn) renders correctly. Deprecated 'shadow*' RN-Web warnings still present (carryover from Phase 1).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CalculatorScreen", "issue": "Runtime ReferenceError 'onShare is not defined' at app/invest/calculator.tsx:286. Also onExportPDF (line 291), onSavePlan (line 339), and snapshot (line 327) are referenced in JSX but never declared inside the component. The page crashes as soon as a valid result is computed (default inputs 10000/12/12 satisfy validation), so save-plan-btn / share-btn / export-pdf-btn / saved-plans-btn cannot be reached.", "testID": "save-plan-btn, share-btn, export-pdf-btn, saved-plans-btn, save-plan-name, confirm-save-btn", "priority": "CRITICAL"},
+      {"component": "CalculatorScreen", "issue": "File had a corrupted duplicated trailer (lines 394-423 — fragment of GrowthChart and a second `const s = StyleSheet.create(...)`) producing a Metro SyntaxError 'Missing semicolon. (394:4)' that broke the WHOLE app bundle (every route 500'd). Fixed by removing the duplicate block. Reference: /app/frontend/app/invest/calculator.tsx (file now ends at line 393).", "testID": "n/a", "priority": "CRITICAL (already fixed by tester)"}
+    ],
+    "integration_issues": [
+      {"flow": "Save Plan → Saved Plans list", "issue": "Cannot be tested via UI until CalculatorScreen handlers are implemented. Backend POST /api/calculator/plans + GET /api/calculator/plans verified independently and work (see pytest 20/20).", "affected_testIDs": ["save-plan-btn", "save-plan-name", "confirm-save-btn", "saved-plans-btn"]}
+    ],
+    "design_issues": [
+      {"screen": "Saved Plans (empty state)", "issues": ["Empty state CTA testID is 'empty-cta' but spec wording 'empty-state CTA links to calculator' verified — renders 'Open Calculator' button which routes to /invest/calculator. Visually clean on 390x844."]}
+    ],
+    "react_native_issues": [
+      {"component": "calculator.tsx", "issue": "React Native web warns 'shadow* style props are deprecated. Use boxShadow.' on the tab pills (~line 205) and the green CTA gradient card (~line 243). Carryover from Phase 1; non-blocking on native, only RN-Web warning. Reference: /app/frontend/app/invest/calculator.tsx:205,243"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_calculator_plans.py",
+    "/app/test_reports/pytest/calculator_plans_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Implement the four missing identifiers in CalculatorScreen (app/invest/calculator.tsx) — `onSavePlan` (POST /api/calculator/plans with current inputs + computed snapshot, close modal, alert success), `onShare` (call shareCalcText from /app/frontend/src/utils/calcExport.ts), `onExportPDF` (use calcPlanHTML + expo-print.printToFileAsync + Sharing.shareAsync, toggle `setExporting`), and `snapshot` (build a CalcSnapshot object from current tab/a/d/r/reinvest/result). Without these the entire calculator screen throws on render.",
+    "Verify retest after the four handlers land — backend already works end-to-end (validated via 20/20 pytest)."
+  ],
+  "critical_code_review_comments": [
+    "calculator.tsx had corrupted duplicate code at the end of the file (lines 394-423). Looks like a stray paste of GrowthChart's body + a second const s = StyleSheet.create() block. Removed by tester. Suggest E1 run a lint pass before commit (the JSX referencing undefined identifiers would have been flagged by eslint-no-undef).",
+    "calculator_plans.py — clean implementation. Per-user 50-plan cap is enforced (line 62-64). Plan response excludes Mongo `_id` via _serialize. Auth handled via injected get_current_user. Update endpoint correctly rejects empty patches with 400. All good.",
+    "plans.tsx — when GET /api/calculator/plans fails (e.g. user not logged in returns 401), the catch silently sets plans=[] and shows the empty state. Could mislead unauthenticated users; consider redirecting to /login or showing an auth-required notice instead of an empty state. Minor UX, not blocking. Reference: /app/frontend/app/invest/plans.tsx:40-46",
+    "50-plan cap test: not explicitly exercised (would need 51 inserts and slow down suite). Code path is straightforward count_documents check; documented but not pytest-validated. Tester chose to skip per the 'don't bloat suite' guideline.",
+    "calculator_plans.py PlanUpdate uses min_length=1 — a PUT with name='' would 422 (pydantic), not 400. The 'empty payload returns 400' test passes because we send {}. Spec says 'PUT updates name/notes only; 400 when nothing provided' — current behaviour aligns."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_calculator_plans.py (new, 20 tests)",
+    "/app/frontend/app/invest/calculator.tsx (removed corrupted trailing block lines 394-423 to unbreak Metro bundle; did NOT add missing handlers — left for E1 as they are business logic)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "0% — blocked by missing handler implementations in calculator.tsx"},
+  "seed_data_creation": "Tests create plans with TEST_ prefix and clean them up in session-scope fixture teardown. No residue.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After E1 lands the four missing handlers (onSavePlan, onShare, onExportPDF, snapshot) in /app/frontend/app/invest/calculator.tsx, retest the following flow on http://localhost:3000 with login demo@mfb.in / demo1234 (mobile viewport 390x844): (a) /invest/calculator renders without runtime errors when default inputs 10000/12/12 produce a result; (b) action row shows save-plan-btn, share-btn, export-pdf-btn AND start-invest-btn appears below; (c) saved-plans-btn (top right) routes to /invest/plans; (d) tap save-plan-btn → modal opens with save-plan-name input, submit empty disabled, fill 'My SIP Goal' and tap confirm-save-btn → backend POST returns 201, success alert; (e) /invest/plans shows the new card with name, type pill, invested/profit/maturity/growth row, and Share/PDF/Delete buttons (testID delete-{plan_id}); (f) delete confirm alert removes the plan from list. Backend pytest suite already comprehensive at /app/backend/tests/test_calculator_plans.py — re-run if any change touches calculator_plans.py. PDF/Share web fallback errors are acceptable per spec.",
+  "rca_of_issue": "Two independent regressions introduced together in Phase 2 edit of app/invest/calculator.tsx: (1) a copy-paste accident appended a partial duplicate of GrowthChart() + a second `const s = StyleSheet.create()` block after the proper EOF (lines 394-423), which is a hard babel parse error that bricks the entire web bundle (every screen 500's). (2) E1 wired up onPress={onShare}, onPress={onExportPDF}, onPress={onSavePlan}, and `{snapshot ? ... }` in the JSX but never actually wrote/imported these symbols inside CalculatorScreen. Result: even with the parse error removed, the component throws ReferenceError on render. Mitigation: tester removed the corrupted trailer; E1 must implement the four missing identifiers — once added, the existing backend (validated) will accept the POST and the rest of the Phase 2 flow should unblock.",
+  "validation_results": {
+    "backend_pytest": "20 passed in 5.24s (test_calculator_plans.py)",
+    "auth_no_token_post": "401 OK",
+    "auth_no_token_get_list": "401 OK",
+    "create_returns_plan_id_no_mongo_id": "OK",
+    "create_invalid_calc_type": "400 OK",
+    "create_amount_zero": "422 OK",
+    "create_amount_negative": "422 OK",
+    "create_duration_zero": "422 OK",
+    "list_sorted_desc_by_created_at": "OK (B created after A appears first)",
+    "get_missing_404": "OK",
+    "update_name_persists_via_get": "OK",
+    "update_notes_persists": "OK",
+    "update_empty_payload_400": "OK",
+    "update_missing_404": "OK",
+    "delete_then_re_delete_404": "OK ({ok:true} then 404)",
+    "delete_then_get_404": "OK",
+    "ownership_isolation_no_token": "401 OK",
+    "ownership_isolation_bad_token": "401 OK",
+    "frontend_calculator_loads": "FAIL — ReferenceError: onShare is not defined (lines 286,291,327,339)",
+    "frontend_saved_plans_empty_state": "PASS — folder icon, 'No saved plans yet' headline, 'Open Calculator' CTA visible at 390x844"
+  }
+}

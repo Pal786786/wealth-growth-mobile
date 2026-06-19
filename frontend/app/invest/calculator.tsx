@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Modal, Platform } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Calculator, TrendingUp, RefreshCw, ArrowRight, AlertTriangle } from "lucide-react-native";
+import { ChevronLeft, Calculator, TrendingUp, RefreshCw, ArrowRight, AlertTriangle, BookmarkPlus, Share2, FileDown, FolderOpen, X as XIcon } from "lucide-react-native";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import Svg, { Path, Circle, Line as SvgLine, Text as SvgText } from "react-native-svg";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { Screen } from "@/src/components/Screen";
 import { Card } from "@/src/components/Card";
 import { api } from "@/src/api/client";
 import { formatINR } from "@/src/utils/format";
+import { calcPlanHTML, shareCalcText, type CalcSnapshot } from "@/src/utils/calcExport";
 
 type TabId = "onetime" | "sip" | "daily" | "compound";
 type TypeCfg = { enabled: boolean; return_min: number; return_max: number; return_default: number; label: string };
@@ -113,6 +116,10 @@ export default function CalculatorScreen() {
   const [duration, setDuration] = useState("12");
   const [ratePct, setRatePct] = useState("12");
   const [reinvest, setReinvest] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [planName, setPlanName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -172,7 +179,15 @@ export default function CalculatorScreen() {
 
   return (
     <Screen>
-      <Pressable onPress={() => router.back()} style={s.back} testID="back-btn"><ChevronLeft color={palette.textPrimary} size={26} /></Pressable>
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <Pressable onPress={() => router.back()} style={s.back} testID="back-btn"><ChevronLeft color={palette.textPrimary} size={26} /></Pressable>
+        <View style={{ flex: 1 }} />
+        <Pressable onPress={() => router.push("/invest/plans")} testID="saved-plans-btn"
+          style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: palette.primary + "1A", borderWidth: 1, borderColor: palette.primary + "40" }}>
+          <FolderOpen color={palette.primary} size={14} />
+          <Text style={{ color: palette.primary, fontWeight: "800", fontSize: 12 }}>Saved Plans</Text>
+        </Pressable>
+      </View>
       <ScrollView contentContainerStyle={{ paddingBottom: 40, gap: 14 }} keyboardShouldPersistTaps="handled">
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }}>
           <Calculator color={palette.primary} size={26} />
@@ -261,17 +276,73 @@ export default function CalculatorScreen() {
 
         {/* CTA */}
         {result ? (
-          <Pressable onPress={() => router.push("/(tabs)/invest")} testID="start-invest-btn"
-            style={{ backgroundColor: palette.success, paddingVertical: 16, borderRadius: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}>
-            <Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>Start Investment Now</Text>
-            <ArrowRight color="#fff" size={18} />
-          </Pressable>
+          <>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable onPress={() => setSaveModalOpen(true)} testID="save-plan-btn"
+                style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: palette.primary, backgroundColor: palette.primary + "12" }}>
+                <BookmarkPlus color={palette.primary} size={16} />
+                <Text style={{ color: palette.primary, fontWeight: "800", fontSize: 13 }}>Save Plan</Text>
+              </Pressable>
+              <Pressable onPress={onShare} testID="share-btn"
+                style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: palette.border, backgroundColor: palette.surface }}>
+                <Share2 color={palette.textPrimary} size={16} />
+                <Text style={{ color: palette.textPrimary, fontWeight: "800", fontSize: 13 }}>Share</Text>
+              </Pressable>
+              <Pressable onPress={onExportPDF} disabled={exporting} testID="export-pdf-btn"
+                style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: palette.border, backgroundColor: palette.surface, opacity: exporting ? 0.5 : 1 }}>
+                {exporting ? <ActivityIndicator color={palette.textPrimary} size="small" /> : <FileDown color={palette.textPrimary} size={16} />}
+                <Text style={{ color: palette.textPrimary, fontWeight: "800", fontSize: 13 }}>PDF</Text>
+              </Pressable>
+            </View>
+            <Pressable onPress={() => router.push("/(tabs)/invest")} testID="start-invest-btn"
+              style={{ backgroundColor: palette.success, paddingVertical: 16, borderRadius: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}>
+              <Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>🚀 Start Investment Now</Text>
+              <ArrowRight color="#fff" size={18} />
+            </Pressable>
+          </>
         ) : null}
 
         <Text style={{ color: palette.textMuted, fontSize: 10, textAlign: "center", marginTop: 8, fontStyle: "italic" }}>
           Calculations are estimates only. Actual returns may vary.
         </Text>
       </ScrollView>
+
+      {/* Save Plan modal */}
+      <Modal visible={saveModalOpen} transparent animationType="fade" onRequestClose={() => setSaveModalOpen(false)}>
+        <Pressable onPress={() => setSaveModalOpen(false)} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 20 }}>
+          <Pressable onPress={(e) => e.stopPropagation()} style={{ backgroundColor: palette.background, borderRadius: 20, padding: 20, gap: 14, borderWidth: 1, borderColor: palette.border }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <BookmarkPlus color={palette.primary} size={20} />
+                <Text style={{ color: palette.textPrimary, fontSize: 18, fontWeight: "800" }}>Save Plan</Text>
+              </View>
+              <Pressable onPress={() => setSaveModalOpen(false)} hitSlop={10}><XIcon color={palette.textMuted} size={20} /></Pressable>
+            </View>
+            <Text style={{ color: palette.textSecondary, fontSize: 12 }}>Save this calculation to revisit, share, or compare later.</Text>
+            <View>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: palette.textSecondary, marginBottom: 4 }}>PLAN NAME</Text>
+              <TextInput value={planName} onChangeText={setPlanName} placeholder={`${TABS.find(t => t.id === tab)?.label} Plan`} placeholderTextColor={palette.textMuted} autoFocus testID="save-plan-name"
+                style={{ borderWidth: 1, borderColor: palette.border, borderRadius: 12, padding: 12, color: palette.textPrimary, backgroundColor: palette.surface, fontSize: 15, fontWeight: "700" }} />
+            </View>
+            {snapshot ? (
+              <View style={{ backgroundColor: palette.surface, padding: 12, borderRadius: 12, gap: 6 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={{ color: palette.textSecondary, fontSize: 11 }}>Invested</Text>
+                  <Text style={{ color: palette.textPrimary, fontSize: 12, fontWeight: "800" }}>{formatINR(snapshot.invested)}</Text>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={{ color: palette.textSecondary, fontSize: 11 }}>Maturity</Text>
+                  <Text style={{ color: palette.success, fontSize: 12, fontWeight: "800" }}>{formatINR(snapshot.maturity)}</Text>
+                </View>
+              </View>
+            ) : null}
+            <Pressable onPress={onSavePlan} disabled={saving || !planName.trim()} testID="confirm-save-btn"
+              style={{ backgroundColor: palette.primary, paddingVertical: 14, borderRadius: 12, alignItems: "center", opacity: saving || !planName.trim() ? 0.6 : 1 }}>
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "800", fontSize: 14 }}>Save Plan</Text>}
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
