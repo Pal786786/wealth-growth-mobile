@@ -370,6 +370,21 @@ async def test_connection(api_name: str, admin=Depends(get_current_admin)):
                 else:
                     provider = "msg91"
             try:
+                # Firebase Phone Auth — no balance check needed, validate by
+                # fetching Google's public certs endpoint + project_id presence
+                if provider == "firebase":
+                    project_id = (extra.get("firebase_project_id") or "").strip()
+                    if not project_id:
+                        return {"ok": False, "mode": "demo",
+                                "message": "Firebase needs 'firebase_project_id' (from google-services.json → project_info.project_id)."}
+                    async with httpx.AsyncClient(timeout=8) as http:
+                        r = await http.get("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com")
+                        if r.status_code == 200 and r.json():
+                            return {"ok": True, "mode": "live",
+                                    "message": f"Firebase Phone Auth ready. Project: {project_id}. Backend will verify ID tokens posted from mobile."}
+                        return {"ok": False, "mode": "demo",
+                                "message": "Could not reach Google's public-cert endpoint. Backend won't be able to verify Firebase ID tokens."}
+
                 async with httpx.AsyncClient(timeout=8) as http:
                     if provider == "msg91":
                         # MSG91 balance endpoint validates the key (no SMS sent)
