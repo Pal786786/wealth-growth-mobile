@@ -11,6 +11,7 @@ import { Card } from "@/src/components/Card";
 import { api } from "@/src/api/client";
 import { formatINR } from "@/src/utils/format";
 import { calcPlanHTML, shareCalcText, type CalcSnapshot } from "@/src/utils/calcExport";
+import { shadow, textGlow } from "@/src/utils/shadow";
 
 type TabId = "onetime" | "sip" | "daily" | "compound";
 type TypeCfg = { enabled: boolean; return_min: number; return_max: number; return_default: number; label: string };
@@ -259,11 +260,10 @@ export default function CalculatorScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 16 }}>
           {enabledTabs.map(t => (
             <Pressable key={t.id} onPress={() => setTab(t.id)} testID={`tab-${t.id}`}
-              style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22, borderWidth: 1,
+              style={[{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22, borderWidth: 1,
                 backgroundColor: tab === t.id ? palette.primary : palette.surface,
-                borderColor: tab === t.id ? palette.primary : palette.border,
-                shadowColor: tab === t.id ? palette.primary : "transparent",
-                shadowOpacity: tab === t.id ? 0.3 : 0, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } }}>
+                borderColor: tab === t.id ? palette.primary : palette.border },
+                tab === t.id ? shadow({ color: palette.primary, opacity: 0.3, radius: 8, offsetY: 4, elevation: 3 }) : null]}>
               <Text style={{ color: tab === t.id ? "#fff" : palette.textPrimary, fontWeight: "800", fontSize: 13 }}>{t.label}</Text>
             </Pressable>
           ))}
@@ -300,7 +300,7 @@ export default function CalculatorScreen() {
 
         {/* Results */}
         {result ? (
-          <View style={{ borderRadius: 20, padding: 18, backgroundColor: palette.primary, gap: 14, shadowColor: palette.primary, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}>
+          <View style={[{ borderRadius: 20, padding: 18, backgroundColor: palette.primary, gap: 14 }, shadow({ color: palette.primary, opacity: 0.3, radius: 14, offsetY: 8, elevation: 6 })]}>
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: "700" }}>TOTAL INVESTMENT</Text>
@@ -314,7 +314,7 @@ export default function CalculatorScreen() {
             <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.2)" }} />
             <View>
               <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: "700" }}>ESTIMATED PROFIT</Text>
-              <Text style={{ color: "#A7F3D0", fontSize: 32, fontWeight: "800", marginTop: 2, textShadowColor: "#10B981", textShadowRadius: 12, letterSpacing: -0.5 }}>{formatINR(animProfit)}</Text>
+              <Text style={[{ color: "#A7F3D0", fontSize: 32, fontWeight: "800", marginTop: 2, letterSpacing: -0.5 }, textGlow({ color: "#10B981", radius: 12, opacity: 0.7 })]}>{formatINR(animProfit)}</Text>
             </View>
             <View>
               <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: "700" }}>MATURITY VALUE</Text>

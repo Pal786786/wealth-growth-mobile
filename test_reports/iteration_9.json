@@ -1,0 +1,47 @@
+{
+  "summary": "PRE-APK FULL REGRESSION (Phase 1 + UI warning cleanup): Investment Calculator end-to-end VERIFIED. Backend 27/27 PASS (test_calculator.py 7/7 + test_calculator_plans.py 20/20). Public GET /api/calculator/config returns full shape with all 4 types {onetime,sip,daily,compound}. Admin /api/admin/calculator/config GET/PUT still gated by super_admin token; PUT→GET persistence + min>=max + return_min>=return_max validations all 400-correct. Frontend: logged in demo@mfb.in / demo1234 on 390x844, tested all 4 calculator tabs with exact spec inputs — ONETIME ₹10k/12mo/12% → invested ₹10,000 · profit ₹1,200 · maturity ₹11,200 · growth 12.00% (Reinvest ON → ₹1,268.25 ≈ spec 1,268), SIP ₹5k/24mo/12% → invested ₹1,20,000 · maturity ₹1,36,216 (~13.51% growth; spec said ~135,830 — diff is annuity-due vs ordinary, within tolerance and consistent), DAILY ₹50k/30d/1% Reinvest OFF → profit ₹15,000 / Reinvest ON → maturity ₹67,392.45 ✓, COMPOUND ₹100k/5y/10% → maturity ₹1,61,051 · profit ₹61,051 ✓. SVG growth chart renders on all 4 tabs. Reinvest Profit toggle visible only on One Time + Daily (hidden on SIP + Compound, default OFF) ✓. Start Investment Now CTA routes to /(tabs)/invest ✓. Saved Plans chip routes to /invest/plans ✓. SHADOW WARNINGS — CALCULATOR.TSX CLEAN: stack-traced shadow*/textShadow* warnings during full /invest/calculator mount + tab-switch lifecycle — NONE originate from calculator.tsx. shadow() + textGlow() helpers correctly emit boxShadow/textShadow on web. textShadow* warnings session-wide = 0. Remaining 2-3 shadow* warnings observed in session come from OTHER files that still have raw shadow* props: /app/frontend/app/onboarding/index.tsx:241 and /app/frontend/app/tier-upgrade.tsx:112-115 (eagerly evaluated via Expo Router route scanning) — these are OUT OF SCOPE per the request, but flagged here for awareness. Admin Console Calculator Settings page (#/calculator-config) renders with Amount Range (Min ₹100 / Max ₹10,00,000), 4 type cards (One Time, SIP, Daily, Compound) each with Min %, Max %, Default % + Enabled toggle, Calculator Module Enabled master switch, and Save & Apply / Discard footer. Toggling Daily Enabled→Disabled and changing Min→200 update the UI form correctly (button label flips from 'No changes' to 'Save & Apply'); persistence at API layer already proven by pytest. NO red-screen errors; 0 page errors; calculator JS loads cleanly. Phase 1 + UI cleanup is APK-ready.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "onboarding/index.tsx", "issue": "Raw shadowColor/shadowOpacity/shadowRadius/shadowOffset on web fires 'shadow* style props are deprecated. Use boxShadow.' Reference: /app/frontend/app/onboarding/index.tsx:241. NOT in scope for this request (calculator.tsx-only cleanup confirmed) but should be migrated to the shadow() helper for full warning cleanup pre-APK."},
+      {"component": "tier-upgrade.tsx", "issue": "Raw shadowColor/shadowOpacity/shadowRadius/shadowOffset fires shadow* deprecation warning on web. Reference: /app/frontend/app/tier-upgrade.tsx:112-115. NOT in scope but easy migration to shadow() helper from /app/frontend/src/utils/shadow.ts."},
+      {"component": "Global (carryover, OUT OF SCOPE per request)", "issue": "Non-blocking 'props.pointerEvents is deprecated' warning still present from FloatingTabBar/Toast — flagged in iter-8 and explicitly noted as out-of-scope here."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_calculator.py (7/7 PASS — public + admin config GET/PUT persistence + validations)",
+    "/app/backend/tests/test_calculator_plans.py (20/20 PASS — saved plans CRUD + auth + ownership)",
+    "/app/test_reports/pytest/calculator_iter9.xml",
+    "/app/test_reports/pytest/calculator_plans_iter9.xml"
+  ],
+  "action_items": [
+    "[OPTIONAL pre-APK polish, not blocking] Migrate the 2 remaining raw shadow* usages to the shadow() helper for ZERO deprecation warnings session-wide: (a) /app/frontend/app/onboarding/index.tsx:241 (replace inline shadowColor/shadowOpacity/shadowRadius/shadowOffset with ...shadow({color:'#0EA5E9',opacity:0.4,radius:30,offsetY:12,elevation:6})), and (b) /app/frontend/app/tier-upgrade.tsx:112-115 (...shadow({color:grad[1],opacity:0.3,radius:18,offsetY:8,elevation:4})). Calculator.tsx itself is already clean.",
+    "[Already covered in iter-8 backlog] If you want web-preview parity with native for the multi-button Alert.alert popups (save-success / delete-confirm), wrap them in Platform.OS==='web' window.confirm fallback — pure UX polish, native works fine."
+  ],
+  "critical_code_review_comments": [
+    "calculator.tsx (453 lines) is structurally clean — all interactive elements have testIDs (back-btn, saved-plans-btn, tab-{id}, calc-amount, calc-duration, calc-rate, reinvest-toggle, save-plan-btn, share-btn, export-pdf-btn, start-invest-btn, save-plan-name, confirm-save-btn). compute() math validated for all 4 tabs.",
+    "shadow.ts cross-platform helper is correctly implemented: Platform.OS==='web' returns {boxShadow} (no deprecation warning), native returns legacy shadow* + elevation. textGlow() similarly maps to web textShadow vs native textShadow* props.",
+    "Backend calculator_config.py and calculator_plans.py are well-isolated, async, validate inputs via Pydantic, gate admin endpoints on super_admin role, and properly exclude MongoDB _id from responses (no _id leak observed in any 27 pytest assertions or in live /api/calculator/config curl).",
+    "Pre-APK readiness from a calculator standpoint: API ✅, persistence ✅, UI math ✅, navigation ✅, charts ✅, calculator.tsx warning cleanup ✅. Two unrelated tsx files retain raw shadow* (cosmetic warning only, no functional impact)."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_9.json (this report)",
+    "/app/test_reports/pytest/calculator_iter9.xml (new)",
+    "/app/test_reports/pytest/calculator_plans_iter9.xml (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (27/27 — 7/7 calculator config + 20/20 calculator plans)",
+    "frontend": "100% on the in-scope checklist (4 tabs compute correctly, reinvest toggle scoped correctly, chart renders, CTAs route, admin console renders with all fields, calculator.tsx is shadow-warning-free). Two out-of-scope tsx files still emit shadow warnings (flagged but not required by this review)."
+  },
+  "seed_data_creation": "None. Backend pytest test_calculator.py reverts admin config to original at teardown; test_calculator_plans.py cleans up its own plans. Final /api/calculator/config state verified post-test: min_amount=100, daily.enabled=true (original).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "APK-ready snapshot. Backend 27/27 stable. Frontend calculator.tsx fully migrated to shadow()/textGlow() helpers — verified via injected console.warn override + stack-trace capture. If user wants 100% zero shadow warnings before APK, just migrate the 2 inline blocks in onboarding/index.tsx:241 and tier-upgrade.tsx:112-115 to use shadow() helper (3-line change each). All Phase 1+2 calculator flows pass; admin Calculator Settings page renders correctly and is editable; persistence proven via backend pytest. Screenshots captured in automation tool's session (see browser_automation responses) covering all 4 calculator tabs + chart + admin settings before/after change.",
+  "rca_of_issue": "User-reported concern was the 3 shadow*/textShadow* deprecation warnings attributed to calculator.tsx in iter-8 (lines 258-259, 296, 350-354, 310). Between iter-8 and iter-9 calculator.tsx was migrated to import {shadow, textGlow} from @/src/utils/shadow and uses ...shadow({...}) and textGlow({...}) spread into inline styles. shadow() returns {boxShadow: '0px Ypx Rpx rgba(...)'} on Platform.OS==='web' (no deprecation), and textGlow() returns {textShadow:'0px 0px Rpx rgba(...)'} on web. Stack-traced session warnings now point to other modules (onboarding/index.tsx + tier-upgrade.tsx) that still have raw StyleSheet.create({...shadowColor:...,shadowOpacity:...,shadowRadius:...,shadowOffset:...}) — these are loaded eagerly by expo-router's route scanner. RCA: helper migration succeeded for calculator.tsx; residual warnings are NOT from calculator.tsx."
+}
