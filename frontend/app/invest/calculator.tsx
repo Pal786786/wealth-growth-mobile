@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Modal, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Modal } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronLeft, Calculator, TrendingUp, RefreshCw, ArrowRight, AlertTriangle, BookmarkPlus, Share2, FileDown, FolderOpen, X as XIcon } from "lucide-react-native";
 import * as Print from "expo-print";
@@ -147,6 +147,59 @@ export default function CalculatorScreen() {
   const rateErr = tabCfg && (r < tabCfg.return_min || r > tabCfg.return_max) ? `Allowed ${tabCfg.return_min}–${tabCfg.return_max}%` : "";
   const inputsValid = !amountErr && !rateErr && a > 0 && d > 0;
   const result = useMemo(() => inputsValid ? compute(tab, a, d, r, reinvest) : null, [tab, a, d, r, reinvest, inputsValid]);
+
+  const snapshot: CalcSnapshot | null = result ? {
+    calc_type: tab, amount: a, duration: d, rate_pct: r, reinvest,
+    invested: result.invested, profit: result.profit, maturity: result.maturity, growth: result.growth,
+  } : null;
+
+  const onShare = async () => {
+    if (!snapshot) return;
+    try { await shareCalcText(snapshot); } catch (e: any) { Alert.alert("Share failed", String(e?.message || e)); }
+  };
+
+  const onExportPDF = async () => {
+    if (!snapshot) return;
+    setExporting(true);
+    try {
+      const html = calcPlanHTML({ ...snapshot, name: planName || `${TABS.find(t => t.id === tab)?.label} Plan` });
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: "Investment Plan PDF" });
+      } else {
+        Alert.alert("Saved", `PDF generated:\n${uri}`);
+      }
+    } catch (e: any) {
+      Alert.alert("Export failed", String(e?.message || e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const onSavePlan = async () => {
+    if (!snapshot) return;
+    const name = planName.trim();
+    if (!name) { Alert.alert("Name required", "Please enter a name for your plan."); return; }
+    setSaving(true);
+    try {
+      await api.post("/calculator/plans", { ...snapshot, name });
+      setSaving(false);
+      setSaveModalOpen(false);
+      setPlanName("");
+      Alert.alert(
+        "Plan saved",
+        `"${name}" was added to your saved plans.`,
+        [
+          { text: "OK", style: "default" },
+          { text: "View Plans", onPress: () => router.push("/invest/plans") },
+        ],
+      );
+    } catch (e: any) {
+      setSaving(false);
+      Alert.alert("Save failed", String(e?.response?.data?.detail || e?.message || e));
+    }
+  };
 
   const animInvested = useAnimatedNum(result?.invested || 0);
   const animProfit = useAnimatedNum(result?.profit || 0);
