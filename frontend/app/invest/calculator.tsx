@@ -187,14 +187,21 @@ export default function CalculatorScreen() {
       setSaving(false);
       setSaveModalOpen(false);
       setPlanName("");
-      Alert.alert(
-        "Plan saved",
-        `"${name}" was added to your saved plans.`,
-        [
-          { text: "OK", style: "default" },
-          { text: "View Plans", onPress: () => router.push("/invest/plans") },
-        ],
-      );
+      if (Platform.OS === "web") {
+        // eslint-disable-next-line no-alert
+        if (typeof window !== "undefined" && window.confirm(`"${name}" was saved.\n\nView your saved plans now?`)) {
+          router.push("/invest/plans");
+        }
+      } else {
+        Alert.alert(
+          "Plan saved",
+          `"${name}" was added to your saved plans.`,
+          [
+            { text: "OK", style: "default" },
+            { text: "View Plans", onPress: () => router.push("/invest/plans") },
+          ],
+        );
+      }
     } catch (e: any) {
       setSaving(false);
       Alert.alert("Save failed", String(e?.response?.data?.detail || e?.message || e));

@@ -1,8 +1,10 @@
-## Investment Calculator Module (Phase 1 — DONE)
-- Mobile: `/invest/calculator` with 4 tabs (One Time / SIP / Daily / Compound), animated counters, SVG growth chart, reinvest toggle (OneTime/Daily), "Start Investment Now" CTA. Reachable from a prominent CTA card at the top of the Invest → Portfolio view.
-- Backend: `calculator_config` collection (singleton `_id="active"`). `attach()` wires public `GET /api/calculator/config` + admin `GET/PUT /api/admin/calculator/config`. Seeded on startup.
-- Admin Web: New "Calculator Settings" sidebar route at `/calculator-config` — enables/disables module + each calc type, edits amount range and per-type return min/max/default %. Validates ranges. Live-applies to mobile.
-- Phase 2 (PDF export, share, save plan) — PENDING.
+## Investment Calculator Module (Phase 1 + Phase 2 — DONE)
+- Mobile: `/invest/calculator` with 4 tabs, animated counters, SVG growth chart, reinvest toggle, plus Save Plan / Share / PDF action row + "Saved Plans" header chip → `/invest/plans`.
+- Mobile: `/invest/plans` saved-plans list with cards (per-card Share/PDF/Delete), empty-state CTA, pull-to-refresh. Web fallback uses `window.confirm` for delete and save-success prompts.
+- Backend: `calculator_config` singleton + `saved_plans` collection. Endpoints: public `GET /api/calculator/config`, admin `GET/PUT /api/admin/calculator/config`, user `GET/POST/GET-one/PUT/DELETE /api/calculator/plans[/{id}]`. Per-user 50-plan cap.
+- Admin Web: `/calculator-config` page in sidebar.
+- PDF: `expo-print` → `expo-sharing` produces branded gradient-header PDF via `src/utils/calcExport.ts`.
+- Share: React Native `Share` API with plain-text snapshot.
 
 
 # My Funding Bank — PRD

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, Alert } from "react-native";
+import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, Alert, Platform } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { ChevronLeft, FolderOpen, Share2, FileDown, Trash2, Calculator } from "lucide-react-native";
 import * as Print from "expo-print";
@@ -71,21 +71,27 @@ export default function PlansScreen() {
   };
 
   const onDelete = (p: Plan) => {
+    const doDelete = async () => {
+      setBusyId(p.plan_id);
+      try {
+        await api.delete(`/calculator/plans/${p.plan_id}`);
+        setPlans((prev) => (prev || []).filter((x) => x.plan_id !== p.plan_id));
+      } catch (e: any) {
+        Alert.alert("Delete failed", String(e?.response?.data?.detail || e?.message || e));
+      } finally {
+        setBusyId(null);
+      }
+    };
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-alert
+      if (typeof window !== "undefined" && window.confirm(`Delete "${p.name}"?\n\nThis cannot be undone.`)) {
+        doDelete();
+      }
+      return;
+    }
     Alert.alert("Delete plan?", `"${p.name}" will be removed permanently.`, [
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete", style: "destructive", onPress: async () => {
-          setBusyId(p.plan_id);
-          try {
-            await api.delete(`/calculator/plans/${p.plan_id}`);
-            setPlans((prev) => (prev || []).filter((x) => x.plan_id !== p.plan_id));
-          } catch (e: any) {
-            Alert.alert("Delete failed", String(e?.response?.data?.detail || e?.message || e));
-          } finally {
-            setBusyId(null);
-          }
-        },
-      },
+      { text: "Delete", style: "destructive", onPress: doDelete },
     ]);
   };
 
