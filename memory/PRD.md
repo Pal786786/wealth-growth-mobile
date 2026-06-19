@@ -1,3 +1,10 @@
+## Investment Calculator Module (Phase 1 — DONE)
+- Mobile: `/invest/calculator` with 4 tabs (One Time / SIP / Daily / Compound), animated counters, SVG growth chart, reinvest toggle (OneTime/Daily), "Start Investment Now" CTA. Reachable from a prominent CTA card at the top of the Invest → Portfolio view.
+- Backend: `calculator_config` collection (singleton `_id="active"`). `attach()` wires public `GET /api/calculator/config` + admin `GET/PUT /api/admin/calculator/config`. Seeded on startup.
+- Admin Web: New "Calculator Settings" sidebar route at `/calculator-config` — enables/disables module + each calc type, edits amount range and per-type return min/max/default %. Validates ranges. Live-applies to mobile.
+- Phase 2 (PDF export, share, save plan) — PENDING.
+
+
 # My Funding Bank — PRD
 
 ## Product
@@ -54,6 +61,7 @@ insurance, and a rewards/referral program — built with FastAPI + MongoDB backe
 - `GET /api/insurance/plans`, `POST /api/insurance/buy?plan_id=...`, `GET /api/insurance/policies`
 - `GET /api/rewards`, `GET /api/referral/leaderboard`
 - `POST /api/profile/kyc`, `PUT /api/profile`
+- `GET /api/calculator/config` (public), `GET/PUT /api/admin/calculator/config` (admin)
 
 ## Mocked / Not-real
 - **Mobile OTP** is mocked (always `123456`)

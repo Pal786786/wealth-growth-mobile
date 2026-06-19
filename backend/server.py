@@ -1036,6 +1036,13 @@ async def startup():
         await _tc.seed_config()
     except Exception as _e:
         logger.warning(f"tier_config seed failed: {_e}")
+    # Seed calculator config singleton if missing
+    try:
+        import calculator_config as _cc  # type: ignore
+        _cc._db = db
+        await _cc.seed_config()
+    except Exception as _e:
+        logger.warning(f"calculator_config seed failed: {_e}")
     await admin_module.seed_admin(db, logger)
     await api_settings_module.seed_catalog()
     await super_app.seed_demo_catalogs()
