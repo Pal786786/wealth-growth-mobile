@@ -13,6 +13,7 @@ import { ArrowRight, ChevronRight } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { storage } from "@/src/utils/storage";
 import { BullLogo } from "@/src/components/BullLogo";
+import { shadow } from "@/src/utils/shadow";
 
 type Slide = {
   id: string;
@@ -238,8 +239,7 @@ const s = StyleSheet.create({
 
   imageGlow: {
     width: 280, height: 280, borderRadius: 40, padding: 14,
-    shadowColor: "#0EA5E9", shadowOpacity: 0.4, shadowRadius: 30, shadowOffset: { width: 0, height: 12 },
-    elevation: 10,
+    ...shadow({ color: "#0EA5E9", opacity: 0.4, radius: 30, offsetY: 12, elevation: 10 }),
   },
   title: {
     fontSize: 26, fontWeight: "800", color: "#F1F5F9",

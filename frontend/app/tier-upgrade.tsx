@@ -6,6 +6,7 @@ import { useTheme } from "@/src/theme/ThemeProvider";
 import { Screen } from "@/src/components/Screen";
 import { Card } from "@/src/components/Card";
 import { api } from "@/src/api/client";
+import { shadow } from "@/src/utils/shadow";
 
 const TIER_GRADIENT: Record<string, string[]> = {
   bronze:   ["#FBA74D", "#CD7F32"],
@@ -109,11 +110,7 @@ export default function TierUpgradeScreen() {
             backgroundColor: grad[1],
             alignItems: "center",
             gap: 8,
-            shadowColor: grad[1],
-            shadowOpacity: 0.3,
-            shadowRadius: 18,
-            shadowOffset: { width: 0, height: 8 },
-            elevation: 8,
+            ...shadow({ color: grad[1], opacity: 0.3, radius: 18, offsetY: 8, elevation: 8 }),
             overflow: "hidden",
           }}
         >
