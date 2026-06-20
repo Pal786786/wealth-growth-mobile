@@ -993,6 +993,14 @@ import calculator_config  # type: ignore
 calculator_config.attach(api, db, admin_module.get_current_admin, admin_module._log_action)
 import calculator_plans  # type: ignore
 calculator_plans.attach(api, db, get_current_user)
+# Forex paper trading
+from forex.feed import PriceFeed as _ForexFeed  # type: ignore  # noqa: E402
+from forex.engine import TradingEngine as _ForexEngine  # type: ignore  # noqa: E402
+from forex.routes import attach as _forex_attach, seed_settings as _forex_seed  # type: ignore  # noqa: E402
+forex_feed = _ForexFeed()
+forex_engine = _ForexEngine(db, forex_feed)
+_forex_attach(api, db, forex_feed, forex_engine, get_current_user,
+              admin_module.get_current_admin, admin_module._log_action)
 import firebase_auth  # type: ignore
 firebase_auth.attach(api, db, lambda payload: create_token(payload["user_id"]), now_fn=now_utc)
 app.include_router(api)
@@ -1033,6 +1041,12 @@ async def startup():
     await db.bookings.create_index([("refund_status", 1), ("updated_at", -1)])
     await db.saved_plans.create_index("plan_id", unique=True)
     await db.saved_plans.create_index([("user_id", 1), ("created_at", -1)])
+    await db.forex_balances.create_index("user_id", unique=True)
+    await db.forex_positions.create_index("position_id", unique=True)
+    await db.forex_positions.create_index([("user_id", 1), ("status", 1), ("opened_at", -1)])
+    await db.forex_positions.create_index([("status", 1), ("symbol_id", 1)])
+    await db.forex_orders.create_index([("user_id", 1), ("ts", -1)])
+    await db.forex_history.create_index([("user_id", 1), ("ts", -1)])
     # Seed tier config singleton if missing
     try:
         import tier_config as _tc  # type: ignore
@@ -1047,6 +1061,18 @@ async def startup():
         await _cc.seed_config()
     except Exception as _e:
         logger.warning(f"calculator_config seed failed: {_e}")
+    # Forex: seed settings + start price feed + engine
+    try:
+        await _forex_seed(db)
+        # Apply admin's saved live_mode/api_key
+        _fx_cfg = await db.forex_settings.find_one({"_id": "active"}) or {}
+        forex_feed.set_live_mode(bool(_fx_cfg.get("live_mode", False)),
+                                 td_api_key=_fx_cfg.get("twelve_data_api_key") or None)
+        await forex_feed.start()
+        await forex_engine.start()
+        logger.info("forex feed + engine started")
+    except Exception as _e:
+        logger.warning(f"forex startup failed: {_e}")
     await admin_module.seed_admin(db, logger)
     await api_settings_module.seed_catalog()
     await super_app.seed_demo_catalogs()

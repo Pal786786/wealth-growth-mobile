@@ -1,0 +1,43 @@
+{
+  "summary": "Forex Phase 1 — backend public+admin API and mobile flow all working after fixing one engine bug. Admin panel sidebar is missing the 'Forex Trading' link (blocks UI access to the settings page even though the page itself, route and API exist). Mobile chart shows the expected RN-WebView fallback message (acceptable per agent note). Binance HTTP 451 warnings are expected and ignored (simulated source is in use).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/forex/balance/reset", "issue": "Bug fixed during test — `reset_balance` upserted balance doc without `currency` field, so the subsequent GET /api/forex/balance crashed with KeyError: 'currency' (500). Added `currency: 'INR'` to the $set in forex/engine.py reset_balance(). Also backfilled the existing demo user doc in MongoDB."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminLayout sidebar (/app/admin/src/pages/Layout.tsx)", "issue": "The NAV array does NOT include `/forex-settings`. ROLE_NAV does include it and the route is wired in main.tsx, but because Layout filters NAV by allowed routes and NAV has no entry, no 'Forex Trading' link appears in the admin sidebar. Add `{ to: '/forex-settings', label: 'Forex Trading', icon: LineChart }` to the NAV array (LineChart is already imported on line 2). Then rebuild the admin UI (yarn --cwd /app/admin build).", "testID": "n/a", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/forex/symbol/[id]", "issues": ["TradingView chart area renders the RN WebView fallback text 'React Native WebView does not support this platform.' on Expo Web — expected per task note; verify a real chart loads on native build or use an <iframe> for web fallback."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_forex.py",
+    "/app/test_reports/pytest/forex_results.xml"
+  ],
+  "action_items": [
+    "Add Forex entry to NAV in /app/admin/src/pages/Layout.tsx (using the already-imported LineChart icon) and rebuild admin UI so the sidebar shows the link.",
+    "(Optional) Improve the symbol-detail web preview by rendering an <iframe> TradingView fallback when running on web so reviewers see a real chart instead of the WebView fallback text.",
+    "(Optional) Add a SPA catch-all so deep links like /api/admin-ui/forex-settings resolve to the admin index.html instead of FastAPI's 404. Currently only `/api/admin-ui/` (root) works and navigation must happen via the sidebar."
+  ],
+  "critical_code_review_comments": [
+    "forex/engine.py reset_balance() previously omitted `currency` on upsert — fixed in-place.",
+    "Admin sidebar config is split between ROLE_NAV (permissions) and NAV (visible items). When adding a new admin page, both lists must be updated; otherwise the page is unreachable through the UI even though ROLE_NAV allows it.",
+    "Lot preset chip values come from frontend hard-coded list (0.01, 0.1, 1, 5, 10) but admin can set min/max lot per symbol. Consider warning the user when the chosen preset is outside the admin range (currently the API will reject with 400 only after submit)."
+  ],
+  "updated_files": [
+    "/app/backend/forex/engine.py (added currency to reset_balance upsert)",
+    "/app/backend/tests/test_forex.py (new pytest module — 13 tests, all green)"
+  ],
+  "success_rate": {"backend": "100% (13/13 pytest)", "frontend": "Mobile ~90% (all flows visually verified — tab visible, balance hero, watchlist with 5 symbols, chips, symbol detail with BID/ASK/SPREAD, lot presets, BUY/SELL, TP/SL, order placement works, Closed list reachable). Admin Forex page: 0% reachable from UI (sidebar entry missing)."},
+  "seed_data_creation": "Reset the demo user's forex balance to ₹10,00,000 at the start of each test class; back-filled missing `currency` field on the existing demo balance doc in MongoDB.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend uses the simulated price feed (Binance returns HTTP 451 from this region — expected, ignore warnings). After the main agent adds the 'Forex Trading' entry to NAV in /app/admin/src/pages/Layout.tsx and rebuilds the admin SPA, re-run the admin smoke (sidebar shows entry → click → page loads with module toggles, defaults, 5-symbol table, API key input, diagnostics). The mobile flow is fully working. Test credentials: demo@mfb.in/demo1234 (mobile) and admin@mfb.in/Admin@MFB2026 (admin).",
+  "rca_of_issue": "Admin sidebar bug: /app/admin/src/pages/Layout.tsx imports LineChart on line 2 and lists `/forex-settings` in ROLE_NAV (lines 10-11) but the NAV array (lines 17-41) was not updated with the corresponding entry, so navItems.filter() yields zero forex entries even for super_admin. Fix: add `{ to: '/forex-settings', label: 'Forex Trading', icon: LineChart }` to NAV (e.g. right after the Calculator Settings entry on line 28) and run `yarn --cwd /app/admin build` to refresh /app/admin/dist/."
+}

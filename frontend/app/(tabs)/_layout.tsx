@@ -1,6 +1,6 @@
 import React from "react";
 import { Tabs } from "expo-router";
-import { Home, Wallet, TrendingUp, Plane, User } from "lucide-react-native";
+import { Home, Wallet, TrendingUp, Plane, User, LineChart } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { FloatingTabBar } from "@/src/components/FloatingTabBar";
 
@@ -26,6 +26,10 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="invest"
         options={{ title: "Invest", tabBarIcon: ({ color, size }) => <TrendingUp color={color} size={size} /> }}
+      />
+      <Tabs.Screen
+        name="forex"
+        options={{ title: "Forex", tabBarIcon: ({ color, size }) => <LineChart color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="travel"
