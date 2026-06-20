@@ -39,8 +39,42 @@ export function isFirebaseAvailable(): boolean {
 export async function sendFirebaseOtp(phoneE164: string): Promise<any> {
   const mod = loadModules();
   if (!mod) throw new Error("Firebase Phone Auth requires a dev/production build (not Expo Go).");
-  // signInWithPhoneNumber returns a confirmation object whose confirm(code) returns UserCredential
-  return await mod.auth().signInWithPhoneNumber(phoneE164);
+  try {
+    // signInWithPhoneNumber returns a confirmation object whose confirm(code) returns UserCredential
+    return await mod.auth().signInWithPhoneNumber(phoneE164);
+  } catch (e: any) {
+    // Re-throw with verbose error code/message so the UI can show a meaningful toast
+    const code = e?.code || "auth/unknown";
+    const message = e?.message || String(e);
+    const err = new Error(`Firebase OTP failed [${code}]: ${message}`);
+    (err as any).firebaseCode = code;
+    (err as any).original = e;
+    // eslint-disable-next-line no-console
+    console.warn("[firebase] signInWithPhoneNumber error:", code, message, e);
+    throw err;
+  }
+}
+
+export function describeFirebaseError(code?: string): string {
+  switch (code) {
+    case "auth/app-not-authorized":
+      return "This APK's SHA-1/SHA-256 fingerprint is not whitelisted in Firebase Console.";
+    case "auth/missing-client-identifier":
+      return "Firebase can't verify the app — google-services.json mismatch or missing SHA whitelisting.";
+    case "auth/network-request-failed":
+      return "Device has no network or Firebase is unreachable.";
+    case "auth/invalid-phone-number":
+      return "Phone number format is invalid (expected E.164 like +91XXXXXXXXXX).";
+    case "auth/too-many-requests":
+      return "Firebase rate limited — too many OTP attempts. Try again later.";
+    case "auth/quota-exceeded":
+      return "Firebase daily SMS quota exceeded (free tier = 10/day).";
+    case "auth/web-context-already-presented":
+    case "auth/web-context-cancelled":
+      return "Phone Auth challenge was cancelled by the user.";
+    default:
+      return code ? `Firebase error: ${code}` : "Unknown Firebase error.";
+  }
 }
 
 export async function confirmFirebaseOtp(confirmation: any, code: string): Promise<string> {

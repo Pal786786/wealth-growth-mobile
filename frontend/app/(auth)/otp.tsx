@@ -9,9 +9,9 @@ import { Button } from "@/src/components/Button";
 import { BullLogo } from "@/src/components/BullLogo";
 import { useToast } from "@/src/components/Toast";
 import { useAuth } from "@/src/auth/AuthProvider";
-import { api } from "@/src/api/client";
+import { api, describeAxiosError, isBackendConfigured } from "@/src/api/client";
 import {
-  isFirebaseAvailable, sendFirebaseOtp, confirmFirebaseOtp,
+  isFirebaseAvailable, sendFirebaseOtp, confirmFirebaseOtp, describeFirebaseError,
 } from "@/src/auth/firebase";
 
 export default function Otp() {
@@ -33,6 +33,10 @@ export default function Otp() {
   // Pre-flight: detect which OTP provider the backend has configured
   useEffect(() => {
     (async () => {
+      if (!isBackendConfigured()) {
+        show("error", "Backend URL not configured in this build. Tap the logo to view diagnostics.");
+        return;
+      }
       try {
         const { data } = await api.get("/auth/firebase/status");
         if (data?.enabled && isFirebaseAvailable()) {
@@ -40,13 +44,22 @@ export default function Otp() {
         } else {
           setProvider(data?.provider || "demo");
         }
-      } catch {}
+      } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.warn("[otp] pre-flight failed:", e);
+        show("error", `Pre-flight failed: ${describeAxiosError(e)}`);
+        setProvider("demo");
+      }
     })();
   }, []);
 
   const sendOtp = async () => {
     if (!/^[0-9]{10}$/.test(mobile)) {
       show("error", "Enter a valid 10-digit mobile number");
+      return;
+    }
+    if (!isBackendConfigured()) {
+      show("error", "⚠ Backend URL missing in this build. Open diagnostics (long-press the logo).");
       return;
     }
     setLoading(true);
@@ -66,12 +79,20 @@ export default function Otp() {
         setStep("otp");
       }
     } catch (e: any) {
-      const msg = e?.message || e?.response?.data?.detail || "Failed to send OTP";
+      // eslint-disable-next-line no-console
+      console.warn("[otp] sendOtp failed:", e);
+      let msg: string;
+      const fbCode = (e as any)?.firebaseCode;
+      if (fbCode) {
+        msg = `${describeFirebaseError(fbCode)}  (${fbCode})`;
+      } else {
+        msg = describeAxiosError(e);
+      }
       show("error", msg);
-      // If Firebase failed (e.g. Expo Go), gracefully degrade to backend OTP
+      // If Firebase failed, gracefully degrade to backend OTP
       if (provider === "firebase") {
         setProvider("demo");
-        show("info", "Falling back to backend OTP — retry now");
+        show("info", "Firebase not whitelisted yet — switched to backend OTP. Tap Send OTP again.");
       }
     } finally {
       setLoading(false);
@@ -123,7 +144,9 @@ export default function Otp() {
         </Pressable>
 
         <View style={s.header}>
-          <BullLogo size={64} />
+          <Pressable onLongPress={() => router.push("/(auth)/diagnostics")} delayLongPress={800} testID="logo-longpress">
+            <BullLogo size={64} />
+          </Pressable>
           <Text style={[s.title, { color: palette.textPrimary }]}>
             {step === "mobile" ? "Login with Mobile" : "Verify OTP"}
           </Text>
@@ -134,6 +157,21 @@ export default function Otp() {
                 ? `Code sent to +91 ${mobile}. (Demo mode — check admin logs for the code)`
                 : `Code sent to +91 ${mobile}. It expires in 5 minutes.`}
           </Text>
+          {!isBackendConfigured() ? (
+            <Pressable onPress={() => router.push("/(auth)/diagnostics")}
+              style={{ marginTop: 12, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: "#DC262620", borderWidth: 1, borderColor: "#DC2626" }}>
+              <Text style={{ color: "#DC2626", fontWeight: "800", fontSize: 12, textAlign: "center" }}>
+                ⚠ Backend URL missing in this build. Tap to open diagnostics.
+              </Text>
+            </Pressable>
+          ) : (
+          <Pressable onPress={() => router.push("/(auth)/diagnostics")} testID="diagnostics-link"
+              style={{ marginTop: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
+              <Text style={{ color: palette.textMuted, fontSize: 10, textDecorationLine: "underline" }}>
+                Provider: {provider}  ·  diagnostics
+              </Text>
+            </Pressable>
+          )}
         </View>
 
         <View style={s.form}>
