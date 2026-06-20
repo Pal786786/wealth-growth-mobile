@@ -274,10 +274,16 @@ async def list_users(
             {"user_id": q},
         ]
     rows = await _db.users.find(query, {"_id": 0, "password": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    # Attach wallet balance
-    for r in rows:
-        w = await _db.wallets.find_one({"user_id": r["user_id"]}, {"_id": 0, "balance": 1})
-        r["wallet_balance"] = w["balance"] if w else 0.0
+    # Batch-fetch wallet balances in a single query (avoids N+1)
+    if rows:
+        user_ids = [r["user_id"] for r in rows]
+        wallets = await _db.wallets.find(
+            {"user_id": {"$in": user_ids}},
+            {"_id": 0, "user_id": 1, "balance": 1},
+        ).to_list(len(user_ids))
+        wallet_map = {w["user_id"]: w.get("balance", 0.0) for w in wallets}
+        for r in rows:
+            r["wallet_balance"] = wallet_map.get(r["user_id"], 0.0)
     total = await _db.users.count_documents(query)
     return {"items": rows, "total": total}
 
