@@ -2,7 +2,7 @@
   "expo": {
     "name": "My Funding Bank",
     "slug": "my-funding-bank",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myfundingbank",
@@ -10,6 +10,7 @@
     "newArchEnabled": true,
     "android": {
       "package": "com.myfundingbank.app",
+      "versionCode": 3,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
@@ -29,6 +30,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.myfundingbank.app",
+      "buildNumber": "3",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan QR codes to send and receive payments",
