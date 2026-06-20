@@ -35,21 +35,27 @@ export default function ForexTab() {
   const [demoMode, setDemoMode] = useState(true);
 
   const loadAll = useCallback(async () => {
+    // Symbols are public; balance/positions require auth — run them independently
     try {
-      const [cfg, bal, op, cl] = await Promise.all([
-        forexApi.symbols(),
+      const cfg = await forexApi.symbols();
+      setSymbols(cfg.symbols.filter((s) => s.enabled));
+      setModuleEnabled(cfg.enabled);
+      setDemoMode(cfg.demo_mode);
+    } catch (e: any) {
+      show("error", e?.response?.data?.detail || e?.message || "Failed to load symbols");
+    }
+    try {
+      const [bal, op, cl] = await Promise.all([
         forexApi.balance(),
         forexApi.listPositions("open"),
         forexApi.listPositions("closed"),
       ]);
-      setSymbols(cfg.symbols.filter((s) => s.enabled));
-      setModuleEnabled(cfg.enabled);
-      setDemoMode(cfg.demo_mode);
       setBalance(bal.balance);
       setOpenPositions(op);
       setClosedPositions(cl);
     } catch (e: any) {
-      show("error", e?.response?.data?.detail || e?.message || "Failed to load forex");
+      // Likely not logged in — silently ignore so the watchlist still renders
+      console.warn("[forex] private data load failed:", e?.message || e);
     } finally {
       setRefreshing(false);
     }

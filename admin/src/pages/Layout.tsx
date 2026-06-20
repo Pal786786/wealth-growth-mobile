@@ -26,6 +26,7 @@ const NAV = [
   { to: "/push-logs", label: "Push Logs", icon: Activity },
   { to: "/investments", label: "Investments", icon: TrendingUp },
   { to: "/calculator-config", label: "Calculator Settings", icon: Calculator },
+  { to: "/forex-settings", label: "Forex Trading", icon: LineChart },
   { to: "/travel", label: "Travel", icon: Plane },
   { to: "/insurance", label: "Insurance", icon: Shield },
   { to: "/insurance/claims", label: "Insurance Claims", icon: FileSearch },
