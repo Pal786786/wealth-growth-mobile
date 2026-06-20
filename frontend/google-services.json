@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:640049486354:android:9702a2409216174e83d6cb",
+        "android_client_info": {
+          "package_name": "app.emergent.wealthgrowthmobile76f1c650"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAhjrPUW13v76cRFxntUwHfe8U0ovNEfzQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:640049486354:android:49eed7c54ee3bf0f83d6cb",
         "android_client_info": {
           "package_name": "com.myfundingbank.app"
