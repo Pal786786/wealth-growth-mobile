@@ -10,6 +10,7 @@ import { useToast } from "@/src/components/Toast";
 import { forexApi, ForexSymbol, Side } from "@/src/api/forex";
 import { useForexPrices } from "@/src/hooks/useForexPrices";
 import { formatINR } from "@/src/utils/format";
+import { ForexDemoBanner } from "@/src/components/ForexDemoBanner";
 
 const LOT_PRESETS = [0.01, 0.1, 1, 5, 10];
 
@@ -98,6 +99,7 @@ export default function SymbolDetail() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40, gap: 12, paddingTop: 12 }}>
+        <ForexDemoBanner compact />
         {/* TradingView chart */}
         <Card style={{ padding: 0, overflow: "hidden", height: 320, borderRadius: 16 }}>
           <WebView

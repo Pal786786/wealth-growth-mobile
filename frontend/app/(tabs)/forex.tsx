@@ -9,6 +9,7 @@ import { useToast } from "@/src/components/Toast";
 import { forexApi, ForexSymbol, Position } from "@/src/api/forex";
 import { useForexPrices } from "@/src/hooks/useForexPrices";
 import { formatINR } from "@/src/utils/format";
+import { ForexDemoBanner } from "@/src/components/ForexDemoBanner";
 
 type Tab = "watch" | "open" | "closed";
 
@@ -92,6 +93,8 @@ export default function ForexTab() {
             <Text style={{ color: palette.danger, fontWeight: "800" }}>Forex trading is currently disabled by admin.</Text>
           </Card>
         )}
+
+        <ForexDemoBanner />
 
         {/* Balance hero */}
         <Card style={s.hero}>
