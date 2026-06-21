@@ -30,6 +30,12 @@ next-env.d.ts
 dist/
 dist
 
+# Exception: Admin SPA build must ship to production deploy.
+# The backend mounts /api/admin-ui from /app/admin/dist (server.py:1008-1011),
+# so this directory MUST be committed to be present in the prod container.
+!admin/dist/
+!admin/dist/**
+
 # Environment files (comprehensive coverage)
 
 *token.json*
