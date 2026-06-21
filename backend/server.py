@@ -1005,10 +1005,20 @@ import firebase_auth  # type: ignore
 firebase_auth.attach(api, db, lambda payload: create_token(payload["user_id"]), now_fn=now_utc)
 app.include_router(api)
 
-# Serve built admin SPA (after admin app is built) at /api/admin-ui/
-ADMIN_DIST = Path("/app/admin/dist")
-if ADMIN_DIST.exists():
+# Serve built admin SPA at /api/admin-ui/
+# Production deploy only ships /app/backend, so the SPA build is bundled inside
+# backend/static/admin-ui (committed). Preview also has /app/admin/dist as
+# fallback for legacy local-dev workflows.
+ADMIN_DIST_CANDIDATES = [
+    Path(__file__).parent / "static" / "admin-ui",   # /app/backend/static/admin-ui (PROD)
+    Path("/app/admin/dist"),                         # legacy local-dev location
+]
+ADMIN_DIST = next((p for p in ADMIN_DIST_CANDIDATES if p.exists() and (p / "index.html").exists()), None)
+if ADMIN_DIST is not None:
     app.mount("/api/admin-ui", StaticFiles(directory=str(ADMIN_DIST), html=True), name="admin-ui")
+    logger.info(f"Admin SPA mounted at /api/admin-ui/ from {ADMIN_DIST}")
+else:
+    logger.warning("Admin SPA dist not found — /api/admin-ui/ will 404. Run `cd /app/admin && yarn build` and copy dist/* to /app/backend/static/admin-ui/")
 
 app.add_middleware(
     CORSMiddleware,
