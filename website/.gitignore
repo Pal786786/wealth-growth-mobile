@@ -1,0 +1,14 @@
+# deps
+node_modules
+
+# build
+.next
+# DO NOT ignore out/ — it must be committed for prod deploy
+# (mirrors the admin/dist pattern we use for /api/admin-ui)
+
+# misc
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+.env*.local

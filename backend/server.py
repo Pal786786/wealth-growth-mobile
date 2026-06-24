@@ -1020,6 +1020,14 @@ if ADMIN_DIST is not None:
 else:
     logger.warning("Admin SPA dist not found — /api/admin-ui/ will 404. Run `cd /app/admin && yarn build` and copy dist/* to /app/backend/static/admin-ui/")
 
+# Serve corporate marketing website (Next.js static export) at /api/site/
+WEBSITE_DIST = Path(__file__).parent / "static" / "website"
+if WEBSITE_DIST.exists() and (WEBSITE_DIST / "index.html").exists():
+    app.mount("/api/site", StaticFiles(directory=str(WEBSITE_DIST), html=True), name="marketing-site")
+    logger.info(f"Marketing site mounted at /api/site/ from {WEBSITE_DIST}")
+else:
+    logger.warning("Marketing site dist not found — /api/site/ will 404. Run `cd /app/website && SITE_BASE_PATH=/api/site yarn build` and copy out/* to /app/backend/static/website/")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
