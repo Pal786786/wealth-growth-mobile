@@ -8,6 +8,7 @@ import Layout from "./pages/Layout";
 import Dashboard from "./pages/Dashboard";
 import Users from "./pages/Users";
 import KYC from "./pages/KYC";
+import AdminKYCDashboard from "./pages/AdminKYCDashboard";
 import Transactions from "./pages/Transactions";
 import Wallet from "./pages/Wallet";
 import { Notifications, InvestmentManager, ContentManager, Reports, Settings } from "./pages/AdminExtras";
@@ -51,7 +52,8 @@ createRoot(document.getElementById("root")!).render(
               <Route path="users" element={<Users />} />
               <Route path="user-security" element={<AdminUserSecurity />} />
               <Route path="demo-otps" element={<AdminDemoOtps />} />
-              <Route path="kyc" element={<KYC />} />
+              <Route path="kyc" element={<AdminKYCDashboard />} />
+              <Route path="kyc-legacy" element={<KYC />} />
               <Route path="transactions" element={<Transactions />} />
               <Route path="wallet" element={<Wallet />} />
               <Route path="notifications" element={<Notifications />} />

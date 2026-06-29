@@ -26,6 +26,7 @@ import super_app
 import push as push_module
 import security_extras
 import wallet_module
+import kyc_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -1007,6 +1008,10 @@ firebase_auth.attach(api, db, lambda payload: create_token(payload["user_id"]), 
 # Wallet v2 — double-entry ledger, payments, analytics, admin
 wallet_module.attach(api, db, get_current_user,
                      admin_module.get_current_admin, admin_module._log_action)
+# KYC & Compliance — extends users w/o touching auth. Provides require_kyc_approved gate.
+kyc_module.attach(api, db, get_current_user,
+                  admin_module.get_current_admin, admin_module._log_action,
+                  send_push=security_extras.send_push_logged)
 app.include_router(api)
 
 # Serve built admin SPA at /api/admin-ui/
