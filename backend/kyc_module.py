@@ -212,17 +212,32 @@ async def _notify(user_id: str, title: str, message: str, deeplink: str = "/kyc"
 async def require_kyc_approved(user: Dict[str, Any]) -> None:
     """Call from invest/withdraw/gold endpoints to enforce KYC.
 
-    Raises 403 with structured message if not approved."""
+    Raises 403 with structured message if not approved.
+    Honors admin bypass list (kyc_bypasses collection)."""
     if _db is None:
         return  # module not yet attached; skip in tests
-    p = await _db.kyc_profiles.find_one({"user_id": user["user_id"]}, {"_id": 0, "status": 1})
+    uid = user["user_id"]
+    # Admin bypass check (super_admin can grant temporary overrides)
+    bypass = await _db.kyc_bypasses.find_one({
+        "user_id": uid, "active": True,
+        "$or": [{"expires_at": None}, {"expires_at": {"$gt": _now()}}],
+    })
+    if bypass:
+        # Log usage for audit
+        await _db.kyc_bypass_usage.insert_one({
+            "user_id": uid, "bypass_id": bypass.get("bypass_id"),
+            "used_at": _now(),
+        })
+        return
+    p = await _db.kyc_profiles.find_one({"user_id": uid}, {"_id": 0, "status": 1})
     status = (p or {}).get("status", "not_started")
     if status != "approved":
         raise HTTPException(403, {
             "code": "KYC_REQUIRED",
-            "message": "KYC verification is required to use this feature.",
+            "message": "KYC verification required before using this service.",
             "current_status": status,
             "action_url": "/kyc",
+            "completion_required": True,
         })
 
 
@@ -670,3 +685,69 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
 
     api.include_router(user)
     api.include_router(admin)
+
+
+# ============================================================================
+# Admin override / bypass management — appended below the main attach() above.
+# Exposed by importing kyc_module from outside.
+# ============================================================================
+def attach_bypass_routes(api: APIRouter, db, get_current_admin, log_action):
+    """Adds /api/admin/kyc/bypass/* endpoints. Super-admin only.
+
+    Bypass usage is audit-logged. Use sparingly (testing / VIP only).
+    """
+    r = APIRouter(prefix="/admin/kyc-bypass", tags=["kyc-bypass"])
+
+    @r.get("")
+    async def list_bypasses(adm=Depends(get_current_admin)):
+        items = await db.kyc_bypasses.find({}, {"_id": 0}).sort("granted_at", -1).limit(200).to_list(200)
+        return {"items": items, "active": sum(1 for x in items if x.get("active"))}
+
+    @r.post("/grant")
+    async def grant(body: Dict[str, Any] = Body(...), adm=Depends(get_current_admin)):
+        if adm["role"] != "super_admin":
+            raise HTTPException(403, "Only super_admin can grant KYC bypass")
+        uid = body.get("user_id")
+        reason = (body.get("reason") or "").strip()
+        if not uid or not reason:
+            raise HTTPException(400, "user_id and reason required")
+        days = int(body.get("expires_in_days", 7))
+        bypass = {
+            "bypass_id": _gen("byp"), "user_id": uid, "active": True,
+            "reason": reason, "granted_by": adm["admin_id"],
+            "granted_at": _now(),
+            "expires_at": _now() + timedelta(days=days) if days > 0 else None,
+        }
+        await db.kyc_bypasses.insert_one(bypass)
+        await log_action(adm["admin_id"], "kyc.bypass.grant", target=uid,
+                         meta={"reason": reason, "expires_in_days": days})
+        await _timeline(uid, "kyc_bypass_granted", f"admin:{adm['admin_id']}",
+                        meta={"reason": reason, "expires_in_days": days})
+        bypass.pop("_id", None)
+        return {"ok": True, "bypass": bypass}
+
+    @r.post("/revoke/{bypass_id}")
+    async def revoke(bypass_id: str, adm=Depends(get_current_admin)):
+        if adm["role"] != "super_admin":
+            raise HTTPException(403, "Only super_admin can revoke KYC bypass")
+        b = await db.kyc_bypasses.find_one({"bypass_id": bypass_id})
+        if not b:
+            raise HTTPException(404, "Bypass not found")
+        await db.kyc_bypasses.update_one({"bypass_id": bypass_id},
+            {"$set": {"active": False, "revoked_at": _now(), "revoked_by": adm["admin_id"]}})
+        await log_action(adm["admin_id"], "kyc.bypass.revoke", target=b["user_id"],
+                         meta={"bypass_id": bypass_id})
+        await _timeline(b["user_id"], "kyc_bypass_revoked", f"admin:{adm['admin_id']}")
+        return {"ok": True}
+
+    @r.get("/stats")
+    async def bypass_stats(adm=Depends(get_current_admin)):
+        return {
+            "active_bypasses": await db.kyc_bypasses.count_documents({"active": True}),
+            "total_grants": await db.kyc_bypasses.count_documents({}),
+            "total_uses": await db.kyc_bypass_usage.count_documents({}),
+            "blocked_attempts_24h": await db.kyc_blocked_attempts.count_documents(
+                {"at": {"$gte": _now() - timedelta(hours=24)}}) if "kyc_blocked_attempts" in await db.list_collection_names() else 0,
+        }
+
+    api.include_router(r)

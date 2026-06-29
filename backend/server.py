@@ -405,6 +405,7 @@ async def get_transactions(user: Dict[str, Any] = Depends(get_current_user), lim
 
 @api.post("/wallet/send")
 async def send_money(req: SendMoneyReq, user: Dict[str, Any] = Depends(get_current_user)):
+    await kyc_module.require_kyc_approved(user)
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Invalid amount")
     w = await db.wallets.find_one({"user_id": user["user_id"]}, {"_id": 0})
@@ -424,6 +425,7 @@ async def send_money(req: SendMoneyReq, user: Dict[str, Any] = Depends(get_curre
 
 @api.post("/wallet/recharge")
 async def recharge(req: RechargeReq, user: Dict[str, Any] = Depends(get_current_user)):
+    await kyc_module.require_kyc_approved(user)
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Invalid amount")
     w = await db.wallets.find_one({"user_id": user["user_id"]}, {"_id": 0})
@@ -446,6 +448,7 @@ async def recharge(req: RechargeReq, user: Dict[str, Any] = Depends(get_current_
 
 @api.post("/wallet/billpay")
 async def bill_pay(req: BillPayReq, user: Dict[str, Any] = Depends(get_current_user)):
+    await kyc_module.require_kyc_approved(user)
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Invalid amount")
     w = await db.wallets.find_one({"user_id": user["user_id"]}, {"_id": 0})
@@ -474,6 +477,7 @@ async def _stripe_cfg() -> Dict[str, Any]:
 
 @api.post("/wallet/topup/create-session")
 async def create_topup_session(req: StripeCheckoutReq, user: Dict[str, Any] = Depends(get_current_user)):
+    await kyc_module.require_kyc_approved(user)
     if req.amount < 10 or req.amount > 100000:
         raise HTTPException(status_code=400, detail="Amount must be between ₹10 and ₹1,00,000")
 
@@ -1012,6 +1016,8 @@ wallet_module.attach(api, db, get_current_user,
 kyc_module.attach(api, db, get_current_user,
                   admin_module.get_current_admin, admin_module._log_action,
                   send_push=security_extras.send_push_logged)
+kyc_module.attach_bypass_routes(api, db, admin_module.get_current_admin,
+                                admin_module._log_action)
 app.include_router(api)
 
 # Serve built admin SPA at /api/admin-ui/
