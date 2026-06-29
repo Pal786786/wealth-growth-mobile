@@ -7,9 +7,9 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
 const ROLE_NAV: Record<string, string[]> = {
-  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
-  admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings"],
-  finance_manager: ["/", "/users", "/transactions", "/wallet", "/insurance/claims", "/rewards", "/tier-upgrades", "/reports", "/audit"],
+  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
+  admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings"],
+  finance_manager: ["/", "/users", "/transactions", "/wallet", "/wallet-analytics", "/insurance/claims", "/rewards", "/tier-upgrades", "/reports", "/audit"],
   support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications", "/push-logs", "/travel", "/insurance", "/insurance/claims", "/tier-upgrades"],
   investment_manager: ["/", "/users", "/investments", "/calculator-config", "/content"],
 };
@@ -22,6 +22,7 @@ const NAV = [
   { to: "/kyc", label: "KYC Review", icon: FileCheck2 },
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { to: "/wallet", label: "Wallet Adjust", icon: Wallet },
+  { to: "/wallet-analytics", label: "Wallet Analytics", icon: Activity },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/push-logs", label: "Push Logs", icon: Activity },
   { to: "/investments", label: "Investments", icon: TrendingUp },

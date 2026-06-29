@@ -25,6 +25,7 @@ import ai_invest
 import super_app
 import push as push_module
 import security_extras
+import wallet_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -1003,6 +1004,9 @@ _forex_attach(api, db, forex_feed, forex_engine, get_current_user,
               admin_module.get_current_admin, admin_module._log_action)
 import firebase_auth  # type: ignore
 firebase_auth.attach(api, db, lambda payload: create_token(payload["user_id"]), now_fn=now_utc)
+# Wallet v2 — double-entry ledger, payments, analytics, admin
+wallet_module.attach(api, db, get_current_user,
+                     admin_module.get_current_admin, admin_module._log_action)
 app.include_router(api)
 
 # Serve built admin SPA at /api/admin-ui/
