@@ -27,22 +27,60 @@ export default function NotifPrefsScreen() {
   const { show } = useToast();
   const [prefs, setPrefs] = useState<NotifPrefs | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try { const d = await notifApi.getPrefs(); setPrefs(d.preferences); }
-    finally { setLoading(false); }
-  }, []);
+    setLoadError(null);
+    try {
+      const d = await notifApi.getPrefs();
+      setPrefs(d.preferences);
+    } catch (e: any) {
+      // NEVER let this promise become an unhandled rejection. On Android
+      // release Hermes this used to hang the screen on an infinite spinner
+      // because `loading` was set false in finally but `prefs` stayed null,
+      // so the render guard `if (loading || !prefs)` never released.
+      const msg = e?.response?.data?.detail || e?.message || "Failed to load preferences";
+      setLoadError(String(msg));
+      show("error", "Couldn't load notification preferences");
+    } finally {
+      setLoading(false);
+    }
+  }, [show]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const toggle = async (k: keyof NotifPrefs, v: boolean) => {
     if (!prefs) return;
     setPrefs({ ...prefs, [k]: v });
     try { await notifApi.putPrefs({ [k]: v } as any); show("success", `${k.replace(/_/g, " ")} → ${v ? "ON" : "OFF"}`); }
-    catch (e: any) { show("error", "Failed to update"); setPrefs({ ...prefs, [k]: !v }); }
+    catch { show("error", "Failed to update"); setPrefs({ ...prefs, [k]: !v }); }
   };
 
-  if (loading || !prefs) return (
+  if (loading) return (
     <Screen><ActivityIndicator color={palette.primary} style={{ marginTop: 40 }} /></Screen>
+  );
+
+  if (!prefs) return (
+    <Screen>
+      <View style={[s.hdr, { borderBottomColor: palette.border }]}>
+        <Pressable onPress={() => router.back()} hitSlop={12}><ChevronLeft color={palette.textPrimary} size={26} /></Pressable>
+        <Text style={[s.title, { color: palette.textPrimary }]}>Preferences</Text>
+      </View>
+      <View style={{ alignItems: "center", paddingTop: 60, gap: 12 }}>
+        <Bell color={palette.textMuted} size={40} />
+        <Text style={{ color: palette.textPrimary, fontWeight: "700", fontSize: 15 }}>
+          Preferences unavailable
+        </Text>
+        <Text style={{ color: palette.textMuted, fontSize: 13, textAlign: "center", paddingHorizontal: 32 }}>
+          {loadError || "We couldn't load your notification preferences. Please try again."}
+        </Text>
+        <Pressable
+          onPress={() => { setLoading(true); load(); }}
+          style={{ marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: palette.primary }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "800" }}>Retry</Text>
+        </Pressable>
+      </View>
+    </Screen>
   );
 
   return (

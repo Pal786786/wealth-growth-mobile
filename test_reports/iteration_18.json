@@ -1,0 +1,27 @@
+{
+  "summary": "Iter18 P0 retest — VERIFIED. The catch+Retry fallback fix in /app/frontend/app/notifications/preferences.tsx works exactly as designed. UNAUTH path: navigating to /notifications/preferences without logging in now renders the 'Preferences unavailable' + 'Missing token' + 'Retry' fallback screen (screenshot /tmp/prefs_unauth.png). No infinite spinner. Zero uncaught page errors (page.on 'pageerror' fired 0 times). Toast api/client warning is logged but the promise is now properly caught by the added catch block. AUTH path: with mfb_token seeded into localStorage, /notifications/preferences renders all 6 category toggles (Wallet/Investment/AI/Marketing/Security/System) + all 3 channel toggles (Push/Email/SMS). Toggling wallet_alerts fires PUT /api/notifications/preferences and shows the success toast 'wallet alerts → ON' (screenshot /tmp/prefs_toggle.png). Zero crashes. SMOKE of 6 stabilization landings all PASS: /(root) → onboarding renders; /forex/symbol/XAUUSD → FeedChart + BID/ASK/SELL/BUY trade ticket; /advisor → renders + tapping 'Analyze my portfolio' unauth gracefully shows '⚠️ Couldn't reach the AI. Please try again.' bubble (no white-screen); /kyc → 'NOT STARTED' + STATUS_MAP guard OK; /notifications → 'Nothing here yet' empty state; /market → Dashboard/Watchlist/News/Calendar tabs render. Zero ErrorBoundary triggers, zero UnmatchedRoute screens, zero JS page errors across all 8 target routes. Backend smoke: POST /api/auth/login → 200, GET /api/notifications/preferences (no auth) → 401 (expected), GET (with token) → 200 with full preferences object, PUT (with token) → 200 with ok:true. Sprint P0 verified — safe to close.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_stabilization_iter17.py (reused from previous iter — still current)",
+    "/app/test_reports/pytest/iter17_stabilization.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GOOD — /app/frontend/app/notifications/preferences.tsx now has proper catch block (line 37-44). Catch surfaces the API error message via setLoadError() and toast('error','Couldn\\'t load notification preferences'). Finally block still resets loading=false so the render guards `if (loading) return <Spinner />` and `if (!prefs) return <FallbackUI />` correctly release. The fallback UI provides a working Retry button (line 76-81) that re-triggers load(). This is the exact stabilization pattern the sprint targets — soft-lock trap is eliminated.",
+    "GOOD — Toggle handler (line 51-56) already had try/catch with rollback (`setPrefs({ ...prefs, [k]: !v })` on failure). No changes needed there.",
+    "MINOR (non-blocking) — The fallback shows the raw API error message 'Missing token' as the body text when unauth. Consider mapping 401 → 'Please sign in to view your preferences' for a friendlier UX. But this is not a bug and does not block sprint closure."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (4/4 endpoint checks)", "frontend": "100% (2/2 preferences flows + 6/6 smoke landings)"},
+  "seed_data_creation": "None — reused demo@mfb.in / demo1234. Wallet_alerts pref was toggled ON during test; benign state change.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter18 closes the P0 sprint. /app/frontend/app/notifications/preferences.tsx now has correct try/catch/finally + Retry fallback. All 6 stabilization landings (/, /forex/symbol/XAUUSD, /advisor, /kyc, /notifications, /market) remain green. Only followup left from iter17 that main agent may want to address in a future sprint is P1 — Bills/Insurance are not registered under app/(tabs)/ (see iter17 report), but they are actually top-level routes /bills and /insurance per main agent's iter17 note (false positive confirmed). No blockers.",
+  "rca_of_issue": "N/A — regression from iter17 is fixed. Root cause was: try/finally without catch → uncaught 401 rejection + soft-lock (prefs stayed null, loading toggled false in finally, render guard `if (loading || !prefs) return <ActivityIndicator />` stuck as !prefs was still true → infinite spinner on Android release). Fix (iter18): added catch that setLoadError() + shows toast; split render guards into (a) `if (loading)` → spinner, (b) `if (!prefs)` → Fallback UI with Retry button. Retry button explicitly re-sets loading=true and calls load() again. Verified unauth path fires the fallback UI and auth path renders full toggles."
+}
