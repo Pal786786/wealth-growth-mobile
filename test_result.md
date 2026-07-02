@@ -369,3 +369,28 @@ Latest APK crashes on real Android device. Modules affected: Push Notification s
 
 ### Next step for the user
 Publish a fresh APK via Emergent → install → reproduce the previous crash scenarios. The likelihood of white-screen crashes should be dramatically reduced. If a crash still occurs, the new ErrorBoundary will display the stack trace on-screen (paste that back to us).
+
+## Objects-as-React-child crash — 2026-07-02
+
+### Root cause (surfaced by iter17 ErrorBoundary)
+Backend returned KYC_REQUIRED payload as an OBJECT under `response.data.detail`:
+```
+{ code, message, current_status, action_url, completion_required }
+```
+Every screen used the pattern `show("error", e?.response?.data?.detail || "...")` — passing the object to the Toast, which then rendered `<Text>{toast.message}</Text>` and crashed React with **"Objects are not valid as a React child"**.
+
+### Fix — 4-layer defense
+1. **utils/errors.ts** (new) — exports `safeStr()` and `errText()` for safe stringification of any value. Understands FastAPI validation arrays, KYC_REQUIRED objects, plain axios errors and unknown shapes.
+2. **kycGate interceptor** — after emitting KYC_REQUIRED event, REWRITES `response.data.detail` from object → string (`message` field extracted, or JSON-stringified fallback). Original object preserved under `response.data.detailRaw`. This means every downstream `catch` handler receives a **string** in `detail`, so no other file needs to change.
+3. **Toast.show** — coerces any incoming `message` via `safeStr()` before storing in state. Belt-and-braces so even if some future call site bypasses the interceptor, we still won't crash.
+4. **Stateful `<Text>{err}</Text>` renderers** — wrapped in `safeStr(err)` at the call sites in `kyc/index.tsx` and `(auth)/forgot-password.tsx`. Their `setErr` calls updated to use `errText(e)`.
+
+### Files modified
+- `app/frontend/src/utils/errors.ts` (new)
+- `app/frontend/src/api/kycGate.ts` (interceptor normalization)
+- `app/frontend/src/components/Toast.tsx` (defensive coerce)
+- `app/frontend/app/kyc/index.tsx` (safeStr + errText)
+- `app/frontend/app/(auth)/forgot-password.tsx` (safeStr + errText)
+
+### Testing plan
+- testing_agent to reproduce the KYC_REQUIRED path: attempt a gated action (e.g. `POST /api/forex/positions` as a non-KYC user) and verify the response now surfaces the KycRequiredModal AND the toast shows `payload.message` (string) — no React crash.

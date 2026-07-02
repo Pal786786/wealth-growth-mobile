@@ -5,6 +5,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Shield, ArrowRight, CheckCircle2, Clock, XCircle, AlertTriangle, RefreshCw, ChevronRight, FileWarning } from "lucide-react-native";
 import { kycApi, type KycProfile, type KycStatus } from "@/src/api/kyc";
+import { safeStr, errText } from "@/src/utils/errors";
 
 const STEP_LABELS = ["Personal", "Address", "PAN", "Aadhaar", "Selfie", "Bank", "Nominee"];
 
@@ -31,7 +32,7 @@ export default function KycStatusScreen() {
       const p = await kycApi.status();
       setProfile(p);
     } catch (e: any) {
-      setErr(e?.response?.data?.detail || "Unable to load KYC status");
+      setErr(errText(e, "Unable to load KYC status"));
     } finally {
       setLoading(false); setRefreshing(false);
     }
@@ -70,7 +71,7 @@ export default function KycStatusScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#D4AF37" />}>
 
-        {err && <View style={styles.errCard}><Text style={styles.errText}>{err}</Text></View>}
+        {err ? <View style={styles.errCard}><Text style={styles.errText}>{safeStr(err)}</Text></View> : null}
 
         {/* Progress bar */}
         <View style={styles.progCard}>

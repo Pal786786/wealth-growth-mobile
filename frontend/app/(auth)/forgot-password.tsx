@@ -6,6 +6,7 @@ import { ArrowLeft, Mail, Smartphone, KeyRound, ShieldCheck } from "lucide-react
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { api } from "@/src/api/client";
 import { Card } from "@/src/components/Card";
+import { errText, safeStr } from "@/src/utils/errors";
 
 export default function ForgotPassword() {
   const { palette } = useTheme();
@@ -28,7 +29,7 @@ export default function ForgotPassword() {
       setMsg("If the account exists, a reset code has been sent. Check your email or SMS.");
       setStep("reset");
     } catch (e: any) {
-      setErr(e?.response?.data?.detail || "Could not send reset code");
+      setErr(errText(e, "Could not send reset code"));
     } finally { setLoading(false); }
   };
 
@@ -41,7 +42,7 @@ export default function ForgotPassword() {
       setMsg("Password reset successfully! Please log in with your new password.");
       setTimeout(() => router.replace("/(auth)/welcome"), 1500);
     } catch (e: any) {
-      setErr(e?.response?.data?.detail || "Reset failed");
+      setErr(errText(e, "Reset failed"));
     } finally { setLoading(false); }
   };
 
@@ -138,7 +139,7 @@ export default function ForgotPassword() {
         ) : null}
         {err ? (
           <View style={[s.alert, { backgroundColor: palette.dangerBg, borderColor: palette.danger }]}>
-            <Text style={{ flex: 1, color: palette.danger, fontSize: 12 }}>{err}</Text>
+            <Text style={{ flex: 1, color: palette.danger, fontSize: 12 }}>{safeStr(err)}</Text>
           </View>
         ) : null}
       </ScrollView>

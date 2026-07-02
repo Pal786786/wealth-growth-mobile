@@ -27,12 +27,40 @@ export function installKycInterceptor(instance: AxiosInstance) {
     r => r,
     (err: AxiosError<any>) => {
       const status = err.response?.status;
-      const detail: any = err.response?.data && typeof err.response.data === "object"
+      const raw = err.response?.data && typeof err.response.data === "object"
         ? (err.response.data as any).detail
         : null;
-      if (status === 403 && detail && detail.code === "KYC_REQUIRED") {
-        emitKycRequired(detail as KycRequiredPayload);
+      const isKycObject = raw && typeof raw === "object" && raw.code === "KYC_REQUIRED";
+      if (status === 403 && isKycObject) {
+        emitKycRequired(raw as KycRequiredPayload);
       }
+
+      // CRITICAL: FastAPI returns `detail` as either a string, a validation
+      // array, or a structured object (e.g. KYC_REQUIRED). Screens across the
+      // app do `show("error", e?.response?.data?.detail || "...")` which used
+      // to pass the raw object into <Text> and crash React with
+      //   "Objects are not valid as a React child".
+      // Normalize `detail` to a plain string here so every downstream catch
+      // handler receives a safe value. We keep the original object under
+      // `detailRaw` in case any advanced screen needs the structured payload.
+      try {
+        const data: any = err.response?.data;
+        if (data && typeof data === "object" && "detail" in data) {
+          const d = data.detail;
+          if (d !== null && typeof d === "object") {
+            data.detailRaw = d;
+            if (typeof d.message === "string") data.detail = d.message;
+            else if (typeof d.msg === "string") data.detail = d.msg;
+            else if (Array.isArray(d)) {
+              // FastAPI validation array [{msg,type,loc}, ...]
+              data.detail = d.map((x: any) => x?.msg || "invalid").join("; ") || "Validation error";
+            } else {
+              try { data.detail = JSON.stringify(d); } catch { data.detail = "Request failed"; }
+            }
+          }
+        }
+      } catch { /* never let normalization itself throw */ }
+
       return Promise.reject(err);
     },
   );

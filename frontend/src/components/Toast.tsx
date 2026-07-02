@@ -4,12 +4,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { CircleCheck, CircleAlert, Info } from "lucide-react-native";
 import { shadow } from "@/src/utils/shadow";
+import { safeStr } from "@/src/utils/errors";
 
 type ToastType = "success" | "error" | "info";
 
 type Toast = { id: string; type: ToastType; message: string };
 
-const Ctx = createContext<{ show: (type: ToastType, message: string) => void } | null>(null);
+const Ctx = createContext<{ show: (type: ToastType, message: any) => void } | null>(null);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null);
@@ -18,9 +19,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const { palette } = useTheme();
   const timeoutRef = useRef<any>(null);
 
-  const show = useCallback((type: ToastType, message: string) => {
+  const show = useCallback((type: ToastType, message: any) => {
+    // DEFENSIVE: coerce any incoming value to a string so <Text> never
+    // receives an object. Root cause of "Objects are not valid as a React
+    // child" crashes in production when backends returned structured error
+    // payloads (e.g. KYC_REQUIRED { code, message, ... }).
+    const safeMessage = safeStr(message, "Something went wrong");
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setToast({ id: Math.random().toString(36), type, message });
+    setToast({ id: Math.random().toString(36), type, message: safeMessage });
     Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
     timeoutRef.current = setTimeout(() => {
       Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
