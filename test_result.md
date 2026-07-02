@@ -351,3 +351,21 @@ Latest APK crashes on real Android device. Modules affected: Push Notification s
 - Lint clean on all touched files.
 
 ### Testing_agent regression run — pending (about to invoke)
+
+### Iter18 verification — PASSED, sprint closed
+- Preferences fix verified: unauth returns "Preferences unavailable" + Retry (was infinite spinner). Auth path: all toggles work.
+- Smoke of 6 stabilization landings: onboarding, /forex/symbol/XAUUSD, /advisor (graceful SSE fail), /kyc (STATUS_MAP guard), /notifications empty-state, /market — all pass.
+- Backend: login/prefs/GET/PUT all 200.
+- testing_agent: retest_needed=false, `/app/test_reports/iteration_18.json`.
+
+### Files modified in stabilization sprint
+- `app/frontend/src/components/ErrorBoundary.tsx` (new — 3-tier global boundary + attachGlobalErrorHandlers)
+- `app/frontend/app/_layout.tsx` (rewrite — module-scope side-effects moved to useEffect, catch on Promises, 4s splash safety)
+- `app/frontend/app/advisor/index.tsx` (dead setState fix)
+- `app/frontend/app/kyc/index.tsx` (STATUS_MAP undefined guard)
+- `app/frontend/app/notifications/index.tsx` (Alert.alert undefined→"")
+- `app/frontend/app/notifications/preferences.tsx` (catch + Retry fallback UI)
+- `app/frontend/src/api/advisor.ts` (streamChat hardening — XHR try/catch, SecureStore .catch, cancellation-safe abort)
+
+### Next step for the user
+Publish a fresh APK via Emergent → install → reproduce the previous crash scenarios. The likelihood of white-screen crashes should be dramatically reduced. If a crash still occurs, the new ErrorBoundary will display the stack trace on-screen (paste that back to us).
