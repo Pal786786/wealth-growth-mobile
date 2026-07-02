@@ -277,3 +277,36 @@ agent_communication_v2:
 - SELL 0.01 BTCUSD with TP=90000/SL=110000 → entry 101769.05 ✅
 - `/api/forex/candles/XAUUSD` returns rolling price history ✅
 
+
+## Forex Regression Iter16 — Sprint 6 GA Sign-off — 2026-07-02
+
+### Additional cleanup this round
+- Removed `_tv_symbol()` helper from `/app/backend/forex/routes.py`
+- Removed `tradingview_symbol` field from `/api/forex/symbols` response
+- Removed `tradingview_symbol` from `ForexSymbol` TS type
+- Removed dead `tradingViewHTML` stub from `symbol/[id].tsx`
+- Added new **GET /api/forex/equity** endpoint → `{balance, unrealized_pnl, equity, margin_used, free_margin, open_position_count, currency}`
+- Added `forexApi.equity()` client method
+
+### Testing_agent iter16 result — retest_needed: false
+- Backend: **41/42 pass** (1 non-deterministic skip for TP auto-close on random walk)
+- Frontend: 100% pass on iter16 changes
+- All 6 price read points on symbol detail confirmed synchronized (chart, marker, BID, ASK, SELL btn, BUY btn) 
+- Equity math reconciles: `equity == balance + unrealized_pnl`; `free_margin == equity - margin_used`
+- Zero "tradingview" mentions in any API response
+- Zero console errors during full BUY→open→close flow
+- No regressions in wallet, kyc, ai advisor, notifications, market dashboard, admin panel
+
+### Signed off checklist (user-requested)
+- [x] BUY order executes
+- [x] SELL order executes
+- [x] No blank/white screen / crash
+- [x] Watchlist = Order screen = Chart = P&L = Equity = Trade History (same feed)
+- [x] Margin, spread, TP, SL, balance, equity, floating P&L math correct
+- [x] Open positions live-update
+- [x] Close position works
+- [x] Trade history records all completed trades
+- [x] Refresh preserves open positions & history (persisted in MongoDB)
+- [x] No console/API/React errors
+
+**Sprint 6 (Live Market Intelligence Dashboard) — READY to be marked complete.**
