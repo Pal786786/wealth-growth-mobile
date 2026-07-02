@@ -1,0 +1,54 @@
+{
+  "summary": "Iter17 Stabilization Sprint P0 verification — BOOT + NAV + SCREEN-OPEN focus. RESULT: 10/10 backend endpoints pass (login, firebase status, forex prices, forex equity auth-gated, notifications list, notif prefs, kyc status, ai suggestions, wallet, market dashboard). Frontend: 12/12 target routes render WITHOUT white screen and WITHOUT ErrorBoundary fallback triggering. AI Advisor SSE hardening VERIFIED — clicking a suggested question with no auth shows the graceful '⚠️ Couldn't reach the AI. Please try again.' message rather than white-screening or crashing. All /forex/symbol/{XAUUSD,EURUSD,BTCUSD} render even when unauthenticated. KYC renders even without a token (STATUS_MAP guard OK — showed 'NOT STARTED'). Notifications list renders empty-state. Market renders Dashboard/Watchlist/News/Calendar tabs. Total uncaught page errors during the full sweep = 1, and it comes from a single screen: /notifications/preferences (details below). Zero React Native red-screens, zero white-screens across all 12 target routes.\n\nONE REAL REGRESSION FOUND: /app/frontend/app/notifications/preferences.tsx `load()` uses `try { ... } finally { setLoading(false) }` with NO catch clause. When the getPrefs() API call fails (e.g. 401 when unauthenticated, or any network hiccup on Android release), the promise rejection becomes UNCAUGHT and on web/dev surfaces as a LogBox 'Uncaught Error — Request failed with status code 401'. On Android release this would go through attachGlobalErrorHandlers() (logged) but the screen would remain stuck on ActivityIndicator forever (prefs stays null, loading stays false after finally, `if (loading || !prefs) return <ActivityIndicator />` — actually loading becomes false but prefs stays null, so `loading || !prefs` is TRUE => infinite spinner). This is the EXACT class of bug this sprint is meant to eliminate.\n\nTWO MISSING ROUTES: /(tabs)/bills and /(tabs)/insurance return Expo Router 'Unmatched Route — Page could not be found' — the review request lists Bills and Insurance as bottom tabs but they are NOT registered under app/(tabs)/. Bottom-tab bar visible on /profile has 7 slots (Home/Wallet/Forex/Invest/Travel-plane-icon/Rocket-icon/Profile) but two of them route nowhere in the current app/(tabs) folder.\n\nDeprecated packages check: no expo-av / expo-barcode-scanner / expo-background-fetch imports detected in _layout.tsx or the touched files.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/notifications/preferences.tsx",
+        "issue": "load() has try { await notifApi.getPrefs() } finally { setLoading(false) } — NO catch. When the API returns 401 (unauth) or any network error, the promise rejection is uncaught and surfaces as LogBox 'Uncaught Error' on web/dev. On Android release the screen will spin forever because prefs stays null and the guard `if (loading || !prefs) return <ActivityIndicator />` never releases. Reference: /app/frontend/app/notifications/preferences.tsx:31-34",
+        "testID": "n/a",
+        "priority": "HIGH"
+      },
+      {
+        "component": "app/(tabs)/ route group",
+        "issue": "Bottom-tab set listed in review request (Home, Wallet, Forex, Invest, Bills, Insurance, Profile) is incomplete. /(tabs)/bills and /(tabs)/insurance render Expo Router 'Unmatched Route — Page could not be found'. Either remove them from the bottom-tab bar or add the routes. Reference: /app/frontend/app/(tabs)/_layout.tsx (missing bills.tsx and insurance.tsx)",
+        "testID": "n/a",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_stabilization_iter17.py (new — 10 pytest cases, all pass)",
+    "/app/test_reports/pytest/iter17_stabilization.xml"
+  ],
+  "action_items": [
+    "P0 — Add a catch block to /app/frontend/app/notifications/preferences.tsx `load()`: `try { const d = await notifApi.getPrefs(); setPrefs(d.preferences); } catch (e) { show('error','Failed to load preferences'); } finally { setLoading(false); }`. Additionally, when prefs remains null after loading, render an empty/error state with a Retry button instead of an infinite ActivityIndicator (the current `if (loading || !prefs) return <ActivityIndicator />` guard is a soft-lock trap).",
+    "P1 — Either add `app/(tabs)/bills.tsx` and `app/(tabs)/insurance.tsx` route files OR remove Bills/Insurance from the bottom-tab bar in `app/(tabs)/_layout.tsx`. Currently they resolve to 'Unmatched Route' and would ship as dead tabs on Android release.",
+    "P3 — Consider adding a defensive .catch on the advisorApi.profile() call inside `advisor/index.tsx` load() as well (currently uses .catch(() => null) which is fine, but analytics is silently dropped — no visible feedback)."
+  ],
+  "critical_code_review_comments": [
+    "GOOD — /app/frontend/app/_layout.tsx cleanly moves ALL expo-notifications setup inside useNotificationsBootstrap() useEffect. setNotificationChannelAsync return value is checked for a .catch method before attaching, so a shape change won't crash boot. On web the entire block is a no-op via Platform.OS === 'web' short-circuit. The Notifications import is `require`d inside try/catch so a missing native module (Expo Go) is non-fatal.",
+    "GOOD — /app/frontend/src/components/ErrorBoundary.tsx exposes THREE nested boundaries (Root, Providers, Navigator) in _layout.tsx which limits the blast-radius of any single crash. attachGlobalErrorHandlers() correctly wires both ErrorUtils.setGlobalHandler and HermesInternal.enablePromiseRejectionTracker with idempotency guard (__mfb_error_handlers_attached).",
+    "GOOD — /app/frontend/app/advisor/index.tsx streamChat error path is verified working: unauthenticated tap on 'Analyze my portfolio' → 'error' event → toast + '⚠️ Couldn't reach the AI. Please try again.' bubble; no page error, no white-screen. This is the exact stabilization outcome we wanted.",
+    "BUG — /app/frontend/app/notifications/preferences.tsx line 31-34: `try {...} finally {}` with no catch. This is exactly the anti-pattern the stabilization sprint targets. Fix per action item P0.",
+    "MINOR — The KYC screen shows 'Missing token' as UI copy when unauthenticated (see body preview). Not a crash but worth adding a proper 'Please sign in to view KYC' empty-state so the surfaced text isn't developer-facing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_stabilization_iter17.py (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10)",
+    "frontend": "92% — 11/12 target routes clean; /notifications/preferences leaks an uncaught 401 promise rejection when the user is unauthenticated"
+  },
+  "seed_data_creation": "None — this iteration only READ endpoints (login, notifications list, kyc status, forex prices/equity, ai suggestions, market dashboard, wallet). Existing demo user data from iter16 (~₹9,98,603.94 balance, 0 open forex positions, KYC=approved) is unchanged.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter17 stabilization sprint verified. Boot + navigation + screen-open loop is stable across all 12 target routes (/, /(tabs)/forex, /forex/symbol/{XAUUSD,EURUSD,BTCUSD}, /advisor, /notifications, /notifications/preferences, /kyc, /market, /profile, /(tabs)/profile) and 5 additional auth tabs (/(tabs)/, /wallet, /forex, /invest, /profile). ErrorBoundary + attachGlobalErrorHandlers + notifications-in-useEffect + advisor SSE try/catch all work as designed. TWO followups remain: (1) add catch to notifications/preferences load(), (2) create or remove Bills+Insurance tab routes. Re-run test_stabilization_iter17.py after any backend touch. Backend base URL and demo creds are in /app/frontend/.env and /app/memory/test_credentials.md respectively.",
+  "rca_of_issue": "Root cause of /notifications/preferences LogBox 'Uncaught Error': the async load() function in /app/frontend/app/notifications/preferences.tsx wraps only setPrefs() in try/finally with no catch. notifApi.getPrefs() throws an AxiosError on 401 (the demo user was not logged in during this deep-link test). Because there's no catch, the rejected promise propagates up the microtask queue, is picked up by React's error surface + HermesInternal promise-rejection tracker, and shown as 'Uncaught Error' via LogBox on web/dev. On Android release: the screen renders an infinite ActivityIndicator (loading toggles false in finally, but prefs stays null → `if (loading || !prefs) return <ActivityIndicator />` never releases because !prefs is true), which is a soft-hang from the user's perspective. Reproduction: 1) log out (or open the app in an incognito browser), 2) navigate to /notifications/preferences, 3) observe LogBox on web or infinite spinner on Android release. Mitigation: add a catch clause that (a) shows a toast, (b) sets prefs to a sensible default OR renders a Retry button, and (c) sets loading=false explicitly."
+}

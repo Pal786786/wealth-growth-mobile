@@ -57,7 +57,7 @@ export default function NotificationsIndex() {
     if (n.deeplink && n.deeplink !== "/") { try { router.push(n.deeplink as any); } catch { /* invalid route */ } }
   };
 
-  const del = (nid: string) => Alert.alert("Delete notification?", undefined, [
+  const del = (nid: string) => Alert.alert("Delete notification?", "", [
     { text: "Cancel", style: "cancel" },
     { text: "Delete", style: "destructive", onPress: async () => {
       try { await notifApi.delete(nid); setItems((xs) => xs.filter((x) => x.notif_id !== nid)); }

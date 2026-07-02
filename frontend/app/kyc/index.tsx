@@ -42,7 +42,9 @@ export default function KycStatusScreen() {
     return <SafeAreaView style={styles.container}><ActivityIndicator size="large" color="#D4AF37" style={{ marginTop: 80 }} /></SafeAreaView>;
   }
   const s = profile?.status || "not_started";
-  const info = STATUS_MAP[s];
+  // Guard against server returning a status we don't know about — never let
+  // an unknown enum crash the whole screen. Falls back to a safe default.
+  const info = STATUS_MAP[s] || STATUS_MAP.not_started;
   const canEdit = !profile?.locked && !(["approved", "under_review", "submitted"] as KycStatus[]).includes(s);
   const done = s === "approved";
 

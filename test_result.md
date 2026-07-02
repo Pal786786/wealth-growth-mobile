@@ -310,3 +310,44 @@ agent_communication_v2:
 - [x] No console/API/React errors
 
 **Sprint 6 (Live Market Intelligence Dashboard) — READY to be marked complete.**
+
+## Project Stabilization Sprint (P0) — 2026-07-02
+
+### User report
+Latest APK crashes on real Android device. Modules affected: Push Notification screen, AI Advisor, Forex, "multiple other". Previous APK was more stable. User asked for full-code stabilization sweep (proceed blind — no logcat available).
+
+### Root causes identified
+1. **NO GLOBAL ERROR BOUNDARY.** Any component throw in `app/_layout.tsx` tree caused whole-tree unmount → white screen. Root cause of the majority of reported "crashes".
+2. **Module-scope unhandled Promise** in `_layout.tsx`: `Notifications.setNotificationChannelAsync()` was called at module scope with no `.catch()`. On Android Hermes release builds this bubbles up as an unhandled rejection during bundle boot and can whitescreen the app.
+3. **Deprecated `shouldShowAlert: true`** flag on expo-notifications ≥ 0.32. Some builds throw instead of warn.
+4. **`advisor/index.tsx` dead setState** — `x.message_id === ev` compared string ID to event object → no-op that also broke unmount cleanup timing. Also caused an incorrect wasted render on every delta.
+5. **`kyc/index.tsx` STATUS_MAP guard missing** — if server returned an unknown status enum, `info` was `undefined` → `info.Icon` / `info.color` crashed the entire KYC screen render.
+6. **`notifications/index.tsx` Alert.alert** — passed `undefined` as message. Some Android release builds throw TypeError on undefined args.
+7. **`streamChat` fragility** — SecureStore promise had no `.catch()`; XHR constructor errors were unhandled; SSE parse errors could bubble.
+
+### Fixes applied
+- Added `/app/frontend/src/components/ErrorBoundary.tsx` with three-tier nesting (Root, Providers, Navigator) + `attachGlobalErrorHandlers()` that installs an ErrorUtils global handler and Hermes unhandled-rejection tracker.
+- Rewrote `/app/frontend/app/_layout.tsx`:
+  - Notifications setup now runs post-mount inside `useNotificationsBootstrap()` (never at module scope).
+  - `setNotificationChannelAsync` Promise has `.catch()`.
+  - Deprecated `shouldShowAlert` removed — only modern `shouldShowBanner`+`shouldShowList` remain.
+  - Every native call defensively wrapped so a Promise chain never surfaces to the boot path.
+  - 4-second splash-screen safety timeout so users never see a stuck splash.
+- Fixed `/app/frontend/app/advisor/index.tsx` delta handling.
+- Guarded `/app/frontend/app/kyc/index.tsx` STATUS_MAP against unknown enums.
+- Fixed `/app/frontend/app/notifications/index.tsx` Alert.alert to pass `""` not `undefined`.
+- Hardened `/app/frontend/src/api/advisor.ts` streamChat with try/catch around XHR init, SecureStore `.catch()`, SSE parse guards, and cancellation-safe abort.
+
+### Files modified
+- `app/frontend/src/components/ErrorBoundary.tsx` (new)
+- `app/frontend/app/_layout.tsx` (rewrite)
+- `app/frontend/app/advisor/index.tsx`
+- `app/frontend/app/kyc/index.tsx`
+- `app/frontend/app/notifications/index.tsx`
+- `app/frontend/src/api/advisor.ts`
+
+### Post-fix boot check
+- Web preview boots cleanly to Onboarding screen — no white screen, no ErrorBoundary triggered.
+- Lint clean on all touched files.
+
+### Testing_agent regression run — pending (about to invoke)

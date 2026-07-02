@@ -68,38 +68,71 @@ export function streamChat(
 ): { abort: () => void } {
   const backend = (process.env.EXPO_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
   const url = `${backend}/api/ai/chat/stream`;
-  const xhr = new XMLHttpRequest();
-  xhr.open("POST", url, true);
-  xhr.setRequestHeader("content-type", "application/json");
+  let xhr: XMLHttpRequest | null = null;
+  let aborted = false;
+
+  try {
+    xhr = new XMLHttpRequest();
+    xhr.open("POST", url, true);
+    xhr.setRequestHeader("content-type", "application/json");
+  } catch (e: any) {
+    // If XHR itself can't be constructed (shouldn't happen), fail gracefully
+    // so the calling component doesn't crash the whole screen.
+    setTimeout(() => onEvent({ type: "error", error: e?.message || "XHR init failed" }), 0);
+    return { abort: () => { aborted = true; } };
+  }
+
   SecureStore.getItemAsync("mfb_token").then((raw) => {
+    if (aborted || !xhr) return;
     let tok: string | null = null;
     if (raw) { try { tok = JSON.parse(raw); } catch { tok = raw; } }
-    if (tok) xhr.setRequestHeader("Authorization", `Bearer ${tok}`);
+    try { if (tok) xhr.setRequestHeader("Authorization", `Bearer ${tok}`); } catch { /* header errors shouldn't kill the screen */ }
     let idx = 0;
     xhr.onprogress = () => {
-      const raw = xhr.responseText;
-      const chunk = raw.slice(idx);
-      idx = raw.length;
-      // parse SSE events (event: ...\ndata: ...\n\n)
-      const blocks = (chunk || "").split("\n\n");
-      for (const b of blocks) {
-        if (!b.trim()) continue;
-        let event = "";
-        let data = "";
-        for (const line of b.split("\n")) {
-          if (line.startsWith("event: ")) event = line.slice(7).trim();
-          else if (line.startsWith("data: ")) data += line.slice(6);
+      try {
+        if (!xhr) return;
+        const raw = xhr.responseText;
+        const chunk = raw.slice(idx);
+        idx = raw.length;
+        // parse SSE events (event: ...\ndata: ...\n\n)
+        const blocks = (chunk || "").split("\n\n");
+        for (const b of blocks) {
+          if (!b.trim()) continue;
+          let event = "";
+          let data = "";
+          for (const line of b.split("\n")) {
+            if (line.startsWith("event: ")) event = line.slice(7).trim();
+            else if (line.startsWith("data: ")) data += line.slice(6);
+          }
+          if (!event || !data) continue;
+          try {
+            const parsed = JSON.parse(data);
+            onEvent({ type: event as any, ...(parsed || {}) });
+          } catch { /* skip incomplete block */ }
         }
-        if (!event || !data) continue;
-        try {
-          const parsed = JSON.parse(data);
-          onEvent({ type: event as any, ...(parsed || {}) });
-        } catch { /* skip incomplete block */ }
+      } catch (e) {
+        // Never let SSE parse errors crash the whole app.
+        // eslint-disable-next-line no-console
+        console.warn("[streamChat] onprogress parse error", e);
       }
     };
     xhr.onerror = () => onEvent({ type: "error", error: "Network error" });
-    xhr.onreadystatechange = () => { if (xhr.readyState === 4 && xhr.status >= 400) onEvent({ type: "error", error: `HTTP ${xhr.status}` }); };
-    xhr.send(JSON.stringify(opts));
+    xhr.onreadystatechange = () => { if (xhr && xhr.readyState === 4 && xhr.status >= 400) onEvent({ type: "error", error: `HTTP ${xhr.status}` }); };
+    try {
+      xhr.send(JSON.stringify(opts));
+    } catch (e: any) {
+      onEvent({ type: "error", error: e?.message || "Send failed" });
+    }
+  }).catch((e) => {
+    // SecureStore rejected — surface as a proper stream error rather than
+    // an unhandled promise rejection at module scope.
+    onEvent({ type: "error", error: `Auth read failed: ${String(e).slice(0, 100)}` });
   });
-  return { abort: () => { try { xhr.abort(); } catch { /* ignore */ } } };
+
+  return {
+    abort: () => {
+      aborted = true;
+      try { xhr?.abort(); } catch { /* ignore */ }
+    },
+  };
 }

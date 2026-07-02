@@ -56,11 +56,10 @@ export default function AdvisorChat() {
           : x.message_id === tempAsst.message_id ? { ...x, message_id: ev.assistant_message_id } : x));
         if (ev.profile_snapshot) setAnalytics(ev.profile_snapshot);
       } else if (ev.type === "delta") {
-        setMessages((m) => m.map((x) => x.message_id === ev && (x as any).streaming ? x : x));
         setMessages((m) => {
           const copy = [...m];
           const idx = copy.findIndex((x) => x.streaming);
-          if (idx >= 0) copy[idx] = { ...copy[idx], content: (copy[idx].content || "") + ev.text };
+          if (idx >= 0) copy[idx] = { ...copy[idx], content: (copy[idx].content || "") + (ev.text || "") };
           return copy;
         });
         scrollToEnd();
