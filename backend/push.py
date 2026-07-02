@@ -106,7 +106,7 @@ def attach(api: APIRouter, db, get_current_user):
             return {"status": "stored_local", "push_enabled": True, "relay": "failed"}
         return {"status": "registered", "push_enabled": True}
 
-    @api.get("/notifications/preferences")
+    @api.get("/notifications/preferences-legacy", include_in_schema=False)
     async def get_prefs(user: dict = Depends(get_current_user)):
         doc = await _db.notification_prefs.find_one({"user_id": user["user_id"]}, {"_id": 0})
         if not doc:
@@ -119,7 +119,7 @@ def attach(api: APIRouter, db, get_current_user):
             "push_enabled": PUSH_ENABLED,
         }
 
-    @api.put("/notifications/preferences")
+    @api.put("/notifications/preferences-legacy", include_in_schema=False)
     async def update_prefs(body: CategoryPrefs, user: dict = Depends(get_current_user)):
         update = {k: v for k, v in body.model_dump().items() if v is not None}
         update["user_id"] = user["user_id"]

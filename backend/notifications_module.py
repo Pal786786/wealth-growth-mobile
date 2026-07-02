@@ -57,6 +57,14 @@ PRIORITIES = ["low", "normal", "high", "critical"]
 def _now() -> datetime: return datetime.utcnow()
 
 
+def _as_naive(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 # ================= Public helper: emit(...) — called from other modules =================
 async def emit(
     user_id: str, *,
@@ -354,14 +362,16 @@ async def admin_compose(body: ComposeReq, admin: Dict[str, Any] = Depends(_admin
         raise HTTPException(status_code=400, detail=f"Invalid category. Choose from {CATEGORIES}")
     target_ids = await _resolve_target(body)
     campaign_id = f"cmp_{secrets.token_hex(6)}"
-    scheduled = body.schedule_at is not None and body.schedule_at > _now()
+    sched = _as_naive(body.schedule_at)
+    exp = _as_naive(body.expires_at)
+    scheduled = sched is not None and sched > _now()
     doc = {
         "campaign_id": campaign_id, "title": body.title, "body": body.body,
         "category": body.category, "priority": body.priority,
         "deeplink": body.deeplink, "image": body.image, "action_label": body.action_label,
         "target_type": body.target_type, "target_segment": body.target_segment,
         "target_user_id": body.target_user_id, "target_user_ids": target_ids,
-        "schedule_at": body.schedule_at, "expires_at": body.expires_at, "send_push": body.send_push,
+        "schedule_at": sched, "expires_at": exp, "send_push": body.send_push,
         "status": "scheduled" if scheduled else "sending",
         "created_at": _now(),
         "created_by": (admin or {}).get("admin_id") or (admin or {}).get("user_id") or "admin",
@@ -370,8 +380,8 @@ async def admin_compose(body: ComposeReq, admin: Dict[str, Any] = Depends(_admin
     await _db.notification_campaigns.insert_one(doc)
     if _log_action:
         try:
-            await _log_action(user_id=doc["created_by"], action="notif_campaign_create",
-                              meta={"campaign_id": campaign_id, "target_type": body.target_type, "count": len(target_ids)})
+            await _log_action(doc["created_by"], "notif_campaign_create",
+                              None, {"campaign_id": campaign_id, "target_type": body.target_type, "count": len(target_ids)})
         except Exception:
             pass
 
@@ -421,8 +431,8 @@ async def resend_campaign(cid: str, admin: Dict[str, Any] = Depends(_admin_dep))
     r = await _dispatch_campaign(cid)
     if _log_action:
         try:
-            await _log_action(user_id=(admin or {}).get("admin_id") or "admin",
-                              action="notif_campaign_resend", meta={"campaign_id": cid, **r})
+            await _log_action((admin or {}).get("admin_id") or "admin",
+                              "notif_campaign_resend", None, {"campaign_id": cid, **r})
         except Exception: pass
     return {"ok": True, **r}
 
@@ -477,9 +487,9 @@ async def analytics(days: int = 7, admin: Dict[str, Any] = Depends(_admin_dep)):
 
 @admin_router.get("/audit")
 async def audit_logs(limit: int = 50, admin: Dict[str, Any] = Depends(_admin_dep)):
-    items = await _db.audit_logs.find(
+    items = await _db.admin_audit.find(
         {"action": {"$regex": "^notif_"}}, {"_id": 0}
-    ).sort("ts", -1).limit(limit).to_list(limit)
+    ).sort("at", -1).limit(limit).to_list(limit)
     return {"items": items}
 
 
