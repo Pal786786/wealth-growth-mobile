@@ -394,3 +394,13 @@ Every screen used the pattern `show("error", e?.response?.data?.detail || "...")
 
 ### Testing plan
 - testing_agent to reproduce the KYC_REQUIRED path: attempt a gated action (e.g. `POST /api/forex/positions` as a non-KYC user) and verify the response now surfaces the KycRequiredModal AND the toast shows `payload.message` (string) — no React crash.
+
+### Iter19 verification — PASSED
+- **Layer 1**: `safeStr` + `errText` never throw across all input shapes.
+- **Layer 2**: `Toast.show(any)` coerces via `safeStr`.
+- **Layer 3**: `kycGate` interceptor rewrites `detail` object → string, preserves original at `detailRaw`.
+- **Layer 4**: `kyc/index.tsx` + `forgot-password.tsx` `<Text>` sites wrap in `safeStr`.
+- **E2E**: 0 occurrences of "Objects are not valid as a React child", 0 ErrorBoundary triggers, 0 white screens.
+- pytest: `/app/backend/tests/test_kyc_gate_iter19.py` 3/3 pass. Full report `/app/test_reports/iteration_19.json`.
+
+Stabilization sprint fully closed. Ready for a fresh APK build.
