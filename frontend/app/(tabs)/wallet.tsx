@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, FlatList } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
-import { Send, Plus, QrCode, ArrowDownLeft, ArrowUpRight, History, Wallet as WalletIcon } from "lucide-react-native";
+import { Send, Plus, QrCode, ArrowDownLeft, ArrowUpRight, History, Wallet as WalletIcon, ArrowUpFromLine } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { api } from "@/src/api/client";
@@ -41,6 +41,7 @@ export default function WalletTab() {
   const actions = [
     { icon: Plus, label: "Add Money", route: "/wallet/topup" as const, color: palette.success },
     { icon: Send, label: "Send", route: "/wallet/send" as const, color: palette.primary },
+    { icon: ArrowUpFromLine, label: "Withdraw", route: "/withdrawals" as const, color: palette.warning },
     { icon: QrCode, label: "Receive", route: "/wallet/qr" as const, color: palette.secondary },
   ];
 

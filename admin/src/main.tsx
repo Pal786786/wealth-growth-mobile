@@ -27,6 +27,7 @@ import AdminCashbackEditor from "./pages/AdminCashbackEditor";
 import AdminCalculatorConfig from "./pages/AdminCalculatorConfig";
 import AdminForexSettings from "./pages/AdminForexSettings";
 import AdminWalletAnalytics from "./pages/AdminWalletAnalytics";
+import AdminWithdrawals from "./pages/AdminWithdrawals";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -70,6 +71,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="calculator-config" element={<AdminCalculatorConfig />} />
               <Route path="forex-settings" element={<AdminForexSettings />} />
               <Route path="wallet-analytics" element={<AdminWalletAnalytics />} />
+              <Route path="withdrawals" element={<AdminWithdrawals />} />
               <Route path="audit" element={<AdminAuditLogs />} />
               <Route path="api-management" element={<ApiManagement />} />
               <Route path="settings" element={<Settings />} />

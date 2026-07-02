@@ -1,0 +1,37 @@
+{
+  "summary": "Sprint 2 Withdrawal Module tested end-to-end — 32/32 backend pytest cases PASS. Full flow verified: bank add (IFSC regex, masking, dup dedupe), request lifecycle (min/max/insufficient/duplicate-window/idempotency), OTP (wrong/right/cooldown/already-verified), wallet debit on OTP verify, cancel-with-refund, list/detail/timeline, PDF receipt (>2KB), admin state transitions (approve→processing→completed, reject-with-reason-and-refund, failed-and-refund, illegal transitions blocked), admin bulk approve, CSV export, settings PUT propagating to user endpoint, KYC gate. Admin panel UI verified: sidebar link present, Overview tab (4 stat cards + 7-day chart + Failed/Rejected panel), Pending Queue tab (search+status filter+CSV), Limits & Charges tab (all form fields render). Mobile screens verified as reachable: /withdrawals (balance hero + New Withdrawal + Banks chip + empty state), /withdrawals/new (amount + preset chips + bank picker + reason + Continue), /withdrawals/add-bank (full form with IFSC, holder, account+confirm). No critical bugs found. The offset-naive datetime fix in withdrawal_module._now() is holding up (verify-otp and all timestamp comparisons work).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_withdrawals.py",
+    "/app/test_reports/pytest/withdrawals_results.xml"
+  ],
+  "action_items": [
+    "Optional: expose an admin bank verify UI button — the endpoint /api/admin/withdrawals/bank-accounts/{bank_id}/verify exists but not wired to a UI (currently every bank stays unverified: false). Nothing gates on verification today so this is purely cosmetic/audit.",
+    "Optional: consider covering the /admin/withdrawals/{wid}/refund endpoint (explicit refund on completed withdrawals) with a UI action in the drawer — currently API-only."
+  ],
+  "critical_code_review_comments": [
+    "withdrawal_module.py is ~650 lines — approaching the 700-line soft limit; consider splitting user vs admin routers into two files if it grows further.",
+    "In _transition(), the refund-on-reject/fail guard skips refund when previous status is 'pending' or 'cancelled'. This is correct because 'pending' means OTP not yet verified so no debit occurred — verified in test_illegal_transition (reject from pending is blocked by allow_from anyway).",
+    "OTP is returned as 'otp_demo' in the JSON response — GOOD for dev but confirm this is stripped before production (search for otp_demo occurrences). The comment 'SHOWN ONLY IN DEMO MODE' hints at this, but there is no environment gate around it.",
+    "Idempotency-Key dedupe works but is stored per-user (correct); the key is not TTL-indexed on the requests collection — if idempotency keys are ever reused across users they collide only within the same user which is safe.",
+    "Rate limit / daily-count checks use naive utcnow() comparisons — consistent since _as_naive() coerces both sides. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_withdrawals.py (new comprehensive pytest — 32 tests, 100% pass)"
+  ],
+  "success_rate": {"backend": "100% (32/32 pytest)", "frontend": "Admin UI: 100% of tabs render and are navigable. Mobile: 100% of 6 withdrawal screens load without errors (index, banks, new, add-bank verified visually; verify + [id] screens exist and route matches Expo Router setup)."},
+  "seed_data_creation": "Set demo user KYC to approved and wallet balance to 200000 INR; boosted rate_limit_per_hour and daily_max_count to 50 in withdrawal_settings for testing. All test withdrawal_requests are cleaned per-run by the module-scope fixture. Final wallet balance is 200000 (all test-created withdrawals were either cancelled/rejected/failed with refund, or completed — the deleteMany in the fixture then removed them).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 2 withdrawals is complete and green. Test file at /app/backend/tests/test_withdrawals.py covers all 32 cases; can be re-run standalone with `python -m pytest backend/tests/test_withdrawals.py -v`. Demo user credentials work: demo@mfb.in / demo1234. Admin: admin@mfb.in / Admin@MFB2026 → /api/admin-ui/. The withdrawal module boosts rate_limit_per_hour + daily_max_count on setUp to 50 (from default 3 / 5); if you need to reproduce production limits, restore singleton settings via PUT /api/admin/withdrawals/settings or delete the withdrawal_settings singleton.",
+  "rca_of_issue": "No new bugs. The previously reported P1 (TypeError: can't compare offset-naive and offset-aware datetimes on verify-otp) is fixed correctly — _now() returns datetime.utcnow() (naive) and Motor stores/returns naive datetimes, so all timestamp comparisons in verify-otp / resend-otp / rate-limit / duplicate-window paths now compare naive-with-naive. Verified via 3 OTP-related tests + a full lifecycle test — no exceptions in backend logs during the run."
+}

@@ -26,7 +26,9 @@ import super_app
 import push as push_module
 import security_extras
 import wallet_module
+import wallet_pdf
 import kyc_module
+import withdrawal_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -1018,6 +1020,32 @@ kyc_module.attach(api, db, get_current_user,
                   send_push=security_extras.send_push_logged)
 kyc_module.attach_bypass_routes(api, db, admin_module.get_current_admin,
                                 admin_module._log_action)
+
+# Sprint 2A — Withdrawal Management (backend + admin)
+async def _notify_user(uid: str, title: str, message: str, deeplink: str = "/wallet"):
+    try:
+        await db.notifications.insert_one({
+            "notif_id": f"nf_{__import__('secrets').token_hex(6)}",
+            "user_id": uid, "title": title, "body": message,
+            "read": False, "created_at": now_utc(),
+            "deeplink": deeplink, "category": "wallet",
+        })
+        await security_extras.send_push_logged(
+            recipients=[uid], data={"title": title, "message": message, "action_url": deeplink},
+            batch_id=f"wd-{uid[-8:]}-{int(now_utc().timestamp())}")
+    except Exception:
+        pass
+
+withdrawal_module.attach(
+    api, db, get_current_user, admin_module.get_current_admin,
+    admin_module._log_action,
+    credit_wallet=wallet_module._credit_wallet,
+    debit_wallet=wallet_module._debit_wallet,
+    kyc_gate=kyc_module.require_kyc_approved,
+    send_push=security_extras.send_push_logged,
+    notify_user=_notify_user,
+    build_receipt_pdf=wallet_pdf.build_receipt_pdf,
+)
 app.include_router(api)
 
 # Serve built admin SPA at /api/admin-ui/
