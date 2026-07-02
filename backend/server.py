@@ -31,6 +31,7 @@ import kyc_module
 import withdrawal_module
 import ai_advisor_module
 import notifications_module
+import market_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -1063,6 +1064,11 @@ notifications_module.attach(
     get_current_admin=admin_module.get_current_admin,
     send_push=security_extras.send_push_logged,
     log_action=admin_module._log_action, logger=logger,
+)
+
+market_module.attach(
+    api, db=db, get_current_user=get_current_user,
+    get_current_admin=admin_module.get_current_admin, logger=logger,
 )
 app.include_router(api)
 

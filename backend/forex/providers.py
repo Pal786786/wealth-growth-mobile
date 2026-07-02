@@ -183,7 +183,8 @@ class BinanceProvider:
             return
         url = f"{self.WS_URL}/btcusdt@ticker"
         backoff = 1.0
-        while not self._stop.is_set():
+        blocked = False  # HTTP 451 = region-locked; stop retrying to reduce log spam
+        while not self._stop.is_set() and not blocked:
             try:
                 async with websockets.connect(url, ping_interval=20, close_timeout=5) as ws:
                     backoff = 1.0
@@ -199,6 +200,13 @@ class BinanceProvider:
                             break
             except Exception as e:
                 self.last_error = str(e)[:160]
+                # HTTP 451 or 403 = region-blocked (e.g. cloud pod in restricted region).
+                # No point retrying — this would just fill the logs forever.
+                if "451" in self.last_error or "403" in self.last_error:
+                    blocked = True
+                    logger.warning("binance ws region-blocked (%s) — disabling until restart",
+                                   self.last_error)
+                    break
                 logger.warning("binance ws error: %s — retrying in %ss", self.last_error, backoff)
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=backoff)

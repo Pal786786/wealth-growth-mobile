@@ -135,6 +135,23 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
             out.append({**q.to_dict(), "display": spec["display"], "price_decimals": spec["price_decimals"]})
         return {"prices": out, "ts_now": _now_iso(), "diagnostics": feed.diagnostics()}
 
+    @public.get("/candles/{symbol_id}")
+    async def get_candles(symbol_id: str, limit: int = 100):
+        """Return recent (ts, mid) points from our simulated feed so the mobile
+        chart is guaranteed to match the watchlist + order screen prices."""
+        feed = _feed
+        if not feed:
+            raise HTTPException(503, "feed not running")
+        sym_id = symbol_id.upper()
+        if sym_id not in SYMBOL_INDEX:
+            raise HTTPException(404, "unknown symbol")
+        pts = feed.get_history(sym_id, limit=min(max(limit, 10), 300))
+        return {
+            "symbol_id": sym_id,
+            "points": pts,
+            "price_decimals": SYMBOL_INDEX[sym_id]["price_decimals"],
+        }
+
     @public.get("/balance")
     async def get_balance(user=Depends(_get_current_user)):
         bal = await _engine.get_or_init_balance(user["user_id"])

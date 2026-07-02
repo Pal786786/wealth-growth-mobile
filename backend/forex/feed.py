@@ -9,10 +9,16 @@ import logging
 import time
 from typing import Dict, Optional
 
+from collections import deque
+
 from .symbols import SYMBOLS
 from .providers import Quote, SimulatedProvider, TwelveDataProvider, BinanceProvider
 
 logger = logging.getLogger("forex.feed")
+
+# Ring-buffer size for chart history (kept per symbol).
+# 2s tick × 300 points ≈ last 10 minutes of price history.
+HISTORY_MAXLEN = 300
 
 
 class PriceFeed:
@@ -23,6 +29,11 @@ class PriceFeed:
         self._td: Optional[TwelveDataProvider] = None
         self._binance = BinanceProvider()
         self._cache: Dict[str, Quote] = {}
+        # Rolling price history per symbol — used by the mobile chart so that
+        # the watchlist, order screen and chart all share ONE price source.
+        self._history: Dict[str, "deque"] = {
+            s["id"]: deque(maxlen=HISTORY_MAXLEN) for s in SYMBOLS
+        }
         self._stop = asyncio.Event()
         self._poll_task: Optional[asyncio.Task] = None
         self.last_td_error: Optional[str] = None
@@ -51,9 +62,16 @@ class PriceFeed:
     async def start(self):
         if self._poll_task and not self._poll_task.done():
             return
-        # Seed cache immediately with simulated quotes so first /prices call works
+        # Seed cache immediately with simulated quotes so first /prices call works,
+        # and pre-populate a small history so the chart renders on first render.
+        base_ts = time.time() - 120  # 60 points × 2s = ~2 minutes of priors
         for sym in SYMBOLS:
-            self._cache[sym["id"]] = self._sim.tick(sym["id"])
+            for i in range(60):
+                q = self._sim.tick(sym["id"])
+                self._history[sym["id"]].append((base_ts + i * 2.0, q.mid))
+            latest = self._sim.tick(sym["id"])
+            self._cache[sym["id"]] = latest
+            self._history[sym["id"]].append((latest.ts, latest.mid))
         # Binance WS only attempted in live mode (avoids region-blocked retry spam)
         if self.live_mode:
             await self._binance.start()
@@ -96,8 +114,11 @@ class PriceFeed:
                             ts=now,
                             source="binance",
                         )
+                        self._history["BTCUSD"].append((now, binance_px))
                         continue
-                self._cache[sym["id"]] = self._sim.tick(sym["id"])
+                q = self._sim.tick(sym["id"])
+                self._cache[sym["id"]] = q
+                self._history[sym["id"]].append((q.ts, q.mid))
 
             # Twelve Data refresh (only in live mode)
             if self.live_mode and self._td and (now - last_td_poll) >= td_interval:
@@ -123,6 +144,15 @@ class PriceFeed:
 
     def get_all_quotes(self) -> Dict[str, Quote]:
         return dict(self._cache)
+
+    def get_history(self, symbol_id: str, limit: int = 100) -> list:
+        """Return the last N (timestamp, mid) points captured for this symbol."""
+        buf = self._history.get(symbol_id.upper())
+        if not buf:
+            return []
+        limit = max(1, min(limit, HISTORY_MAXLEN))
+        pts = list(buf)[-limit:]
+        return [{"ts": ts, "mid": mid} for ts, mid in pts]
 
     def diagnostics(self) -> Dict:
         return {

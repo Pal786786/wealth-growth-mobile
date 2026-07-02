@@ -232,3 +232,48 @@ agent_communication_v2:
       Creds: demo@mfb.in / demo1234 (mobile); admin@mfb.in / Admin@MFB2026 (admin).
       Verify: (1) endpoint returns full JSON shape; (2) 2nd call cached=true <200ms; (3) ?refresh=true bypasses cache; (4) mobile teaser → AI Coach screen renders; (5) existing flows unaffected.
 
+
+## Forex Regression Fix — 2026-07-02
+
+**User-reported issues:**
+1. Blank white screen after tapping BUY/SELL on symbol detail
+2. Orders not being placed
+3. Price inconsistency: Watchlist (2343) vs Order screen (2341) vs TradingView chart (4074)
+
+**Root causes & fixes:**
+
+1. **Symbol detail infinite spinner (blank white screen)**  
+   Root cause: `Promise.all([symbols(), balance()])` in `/app/frontend/app/forex/symbol/[id].tsx` — if `balance()` returned 401 (auth expired) or any error, the whole promise rejected and `setSymbol()` was never called → `symbol` stayed `null` → infinite `<ActivityIndicator>` → looked like a blank white screen.  
+   Fix: Split `loadSymbol()` (public, must succeed) from `loadBalance()` (silently ignores failure). Added a retry CTA if symbol lookup itself errors.
+
+2. **Price inconsistency (2343 vs 4074)**  
+   Root cause: Watchlist + Order used our simulated feed with June-2024 starting anchors (`XAUUSD: 2340.50`, `BTCUSD: 67400`), while the chart embedded a TradingView WebView pointing at OANDA:XAUUSD which shows LIVE 2026 market prices (~$4070). Two different data sources = guaranteed mismatch.  
+   Fix:  
+   - Updated starting prices in `/app/backend/forex/symbols.py` to realistic June-2026 anchors (XAUUSD=4070, BTCUSD=102000, EURUSD=1.145, GBPUSD=1.345, USDJPY=158.5).  
+   - Added an in-memory ring buffer (300 pts, ~10 min at 2s tick) to `PriceFeed` capturing every tick.  
+   - New public endpoint `GET /api/forex/candles/{symbol_id}?limit=100` returning `[{ts,mid}]`.  
+   - Replaced the TradingView `WebView` with a new `<FeedChart />` (React Native SVG) which pulls history + appends live `quote.mid` on every 2s tick. **Watchlist, order screen and chart now share ONE source of truth.**  
+   - Updated the watchlist arrow anchor map in `/app/frontend/app/(tabs)/forex.tsx` to match new starting prices.
+
+3. **Orders not placing (symptom cascade of #1)**  
+   Root cause: with `symbol=null` the trade ticket never rendered; and even after login the BUY/SELL button was disabled because `canTrade = q && lot > 0 && balance >= margin` — with balance stuck at 0 the button stayed disabled.  
+   Fix: symbol now renders even when balance fails, so button becomes enabled once auth loads.
+
+4. **Log noise:** Binance WS retries every 30s on region-blocked pods. Detected HTTP 451/403 → stop retrying instead of exponential backoff forever.
+
+**Files touched:**
+- `/app/backend/forex/symbols.py` — starting prices
+- `/app/backend/forex/feed.py` — ring buffer + seeded history + `get_history`
+- `/app/backend/forex/routes.py` — `GET /api/forex/candles/{symbol_id}`
+- `/app/backend/forex/providers.py` — Binance region-block short-circuit
+- `/app/frontend/src/api/forex.ts` — `candles()` client
+- `/app/frontend/src/components/FeedChart.tsx` — new SVG chart
+- `/app/frontend/app/forex/symbol/[id].tsx` — split loads + FeedChart
+- `/app/frontend/app/(tabs)/forex.tsx` — updated arrow anchor map
+
+**Verified via curl on the demo user (KYC-approved):**
+- BUY 0.1 XAUUSD → entry 3936.79, margin ₹100 ✅
+- Close position → P&L computed −₹1660 ✅
+- SELL 0.01 BTCUSD with TP=90000/SL=110000 → entry 101769.05 ✅
+- `/api/forex/candles/XAUUSD` returns rolling price history ✅
+

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, ScrollView, Pressable, ActivityIndicator, TextInput, StyleSheet, Alert, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { WebView } from "react-native-webview";
 import { ChevronLeft, TrendingUp, TrendingDown, Info } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { Screen } from "@/src/components/Screen";
@@ -11,17 +10,19 @@ import { forexApi, ForexSymbol, Side } from "@/src/api/forex";
 import { useForexPrices } from "@/src/hooks/useForexPrices";
 import { formatINR } from "@/src/utils/format";
 import { ForexDemoBanner } from "@/src/components/ForexDemoBanner";
+import { FeedChart } from "@/src/components/FeedChart";
 
 const LOT_PRESETS = [0.01, 0.1, 1, 5, 10];
 
 export default function SymbolDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { palette, mode } = useTheme();
+  const { palette } = useTheme();
   const router = useRouter();
   const { show } = useToast();
   const { quotes } = useForexPrices(2000);
 
   const [symbol, setSymbol] = useState<ForexSymbol | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [balance, setBalance] = useState<number>(0);
   const [marginPerLot, setMarginPerLot] = useState<number>(1000);
   const [side, setSide] = useState<Side>("buy");
@@ -30,23 +31,58 @@ export default function SymbolDetail() {
   const [sl, setSl] = useState("");
   const [placing, setPlacing] = useState(false);
 
-  const load = useCallback(async () => {
+  // Load symbol (public) — must always succeed; balance is loaded separately so an
+  // auth/network failure never leaves the screen stuck on a spinner.
+  const loadSymbol = useCallback(async () => {
     try {
-      const [cfg, bal] = await Promise.all([forexApi.symbols(), forexApi.balance()]);
+      const cfg = await forexApi.symbols();
       const sym = cfg.symbols.find((s) => s.id.toUpperCase() === String(id).toUpperCase()) || null;
       setSymbol(sym);
       setMarginPerLot(cfg.margin_per_lot);
-      setBalance(bal.balance);
+      if (!sym) setLoadError(`Symbol ${id} is not enabled.`);
     } catch (e: any) {
+      setLoadError(e?.message || "Failed to load symbol");
       show("error", e?.message || "Failed to load symbol");
     }
   }, [id, show]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadBalance = useCallback(async () => {
+    try {
+      const bal = await forexApi.balance();
+      setBalance(bal.balance);
+    } catch (e: any) {
+      // Silent — user might not be logged in yet. UI shows a login CTA below.
+      console.warn("[forex] balance load failed:", e?.message || e);
+    }
+  }, []);
+
+  useEffect(() => { loadSymbol(); loadBalance(); }, [loadSymbol, loadBalance]);
 
   if (!symbol) {
     return (
-      <Screen><View style={{ paddingTop: 60, alignItems: "center" }}><ActivityIndicator color={palette.primary} /></View></Screen>
+      <Screen>
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+          <Pressable onPress={() => router.back()} hitSlop={10} testID="back-btn">
+            <ChevronLeft color={palette.textPrimary} size={26} />
+          </Pressable>
+          <Text style={{ marginLeft: 4, fontSize: 18, fontWeight: "800", color: palette.textPrimary }}>
+            {String(id || "").toUpperCase()}
+          </Text>
+        </View>
+        <View style={{ paddingTop: 80, alignItems: "center", gap: 12 }}>
+          {loadError ? (
+            <>
+              <Info color={palette.danger} size={28} />
+              <Text style={{ color: palette.textPrimary, fontWeight: "800" }}>{loadError}</Text>
+              <Pressable onPress={loadSymbol} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: palette.primary }}>
+                <Text style={{ color: "#fff", fontWeight: "800" }}>Retry</Text>
+              </Pressable>
+            </>
+          ) : (
+            <ActivityIndicator color={palette.primary} />
+          )}
+        </View>
+      </Screen>
     );
   }
 
@@ -65,8 +101,7 @@ export default function SymbolDetail() {
       });
       show("success", `${side.toUpperCase()} ${lot} lot ${symbol.display} @ ${pos.entry_price}`);
       // Refresh balance, then navigate back
-      const bal = await forexApi.balance();
-      setBalance(bal.balance);
+      await loadBalance();
       setTp(""); setSl("");
       if (Platform.OS === "web") {
         if (typeof window !== "undefined" && window.confirm(`Position opened.\n\n${side.toUpperCase()} ${lot} ${symbol.display} @ ${pos.entry_price}\n\nView open positions?`)) {
@@ -100,18 +135,8 @@ export default function SymbolDetail() {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40, gap: 12, paddingTop: 12 }}>
         <ForexDemoBanner compact />
-        {/* TradingView chart */}
-        <Card style={{ padding: 0, overflow: "hidden", height: 320, borderRadius: 16 }}>
-          <WebView
-            originWhitelist={["*"]}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsInlineMediaPlayback
-            scrollEnabled={false}
-            style={{ backgroundColor: "transparent" }}
-            source={{ html: tradingViewHTML(symbol.tradingview_symbol, mode) }}
-          />
-        </Card>
+        {/* Custom SVG chart — driven by the SAME feed used by watchlist + order screen */}
+        <FeedChart symbolId={symbol.id} quote={q} priceDecimals={symbol.price_decimals} height={220} />
 
         {/* Quote summary */}
         {q && (
@@ -229,30 +254,12 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function tradingViewHTML(symbol: string, mode: "light"|"dark"): string {
-  const theme = mode === "dark" ? "dark" : "light";
-  return `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body,#tv{margin:0;padding:0;height:100%;background:${theme === "dark" ? "#0F172A" : "#FFFFFF"};}</style></head>
-<body><div id="tv"></div>
-<script src="https://s3.tradingview.com/tv.js"></script>
-<script>
-new TradingView.widget({
-  "autosize": true,
-  "symbol": "${symbol}",
-  "interval": "15",
-  "timezone": "Etc/UTC",
-  "theme": "${theme}",
-  "style": "1",
-  "locale": "en",
-  "toolbar_bg": "${theme === "dark" ? "#0F172A" : "#F5F5F5"}",
-  "enable_publishing": false,
-  "hide_top_toolbar": true,
-  "hide_legend": false,
-  "save_image": false,
-  "container_id": "tv",
-  "allow_symbol_change": false
-});
-</script></body></html>`;
+function tradingViewHTML(_symbol: string, _mode: "light" | "dark"): string {
+  // deprecated (see FeedChart)
+  return "";
 }
+// keep unused reference to avoid dead-code warnings — do not remove without checking imports
+void tradingViewHTML;
 
 const t = StyleSheet.create({
   sideBtn: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1.5 },

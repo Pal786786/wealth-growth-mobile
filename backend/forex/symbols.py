@@ -9,7 +9,10 @@ from typing import Dict, List, Optional, Any
 
 USD_INR = 83.0  # display conversion (admin will be able to override later)
 
-# Spec: 1 lot trades `contract_size` units; P&L_USD = (close-open) * contract_size * lot_size * dir
+# NOTE: Starting prices are approximate mid-2026 spot values. They only anchor
+# the simulated random-walk; once the feed is running they drift naturally.
+# Reason: the mobile chart is rendered from THIS feed, so we want believable
+# starting anchors that match what a user would expect to see.
 SYMBOLS: List[Dict[str, Any]] = [
     {
         "id": "XAUUSD",
@@ -20,7 +23,7 @@ SYMBOLS: List[Dict[str, Any]] = [
         "binance": None,
         "pip_size": 0.01,
         "contract_size": 100,        # 100 oz per lot
-        "starting_price": 2340.50,
+        "starting_price": 4070.00,
         "volatility": 0.0008,
         "spread_pips": 15,            # default spread (admin editable)
         "price_decimals": 2,
@@ -34,7 +37,7 @@ SYMBOLS: List[Dict[str, Any]] = [
         "binance": None,
         "pip_size": 0.0001,
         "contract_size": 100000,
-        "starting_price": 1.0850,
+        "starting_price": 1.1450,
         "volatility": 0.00025,
         "spread_pips": 1,
         "price_decimals": 5,
@@ -48,7 +51,7 @@ SYMBOLS: List[Dict[str, Any]] = [
         "binance": None,
         "pip_size": 0.0001,
         "contract_size": 100000,
-        "starting_price": 1.2680,
+        "starting_price": 1.3450,
         "volatility": 0.00030,
         "spread_pips": 2,
         "price_decimals": 5,
@@ -62,7 +65,7 @@ SYMBOLS: List[Dict[str, Any]] = [
         "binance": None,
         "pip_size": 0.01,
         "contract_size": 100000,
-        "starting_price": 157.20,
+        "starting_price": 158.50,
         "volatility": 0.00025,
         "spread_pips": 1,
         "price_decimals": 3,
@@ -76,7 +79,7 @@ SYMBOLS: List[Dict[str, Any]] = [
         "binance": "btcusdt",
         "pip_size": 1.0,
         "contract_size": 1,
-        "starting_price": 67400.0,
+        "starting_price": 102000.0,
         "volatility": 0.0025,
         "spread_pips": 25,
         "price_decimals": 2,

@@ -1,0 +1,47 @@
+{
+  "summary": "Forex Trading regression suite — ALL 3 user-reported bugs verified FIXED. Backend: 29/29 pytest cases green (13 existing test_forex.py + 16 new test_forex_regression.py covering /candles endpoint, new 2026 price bands, entry-price-from-live-feed, TP/SL storage, sibling module reachability). Frontend: (1) Watchlist shows XAU/USD ≈ 3957–4013 (2026 band) — NOT the old 2340 range ✓, (2) /forex/symbol/XAUUSD renders correctly WITHOUT a blank white screen even when unauthenticated — header + FeedChart with DEMO FEED · LIVE badge + BID/ASK/SPREAD cards + full trade ticket (SELL/BUY buttons, lot presets 0.01/0.1/1/5/10, TP/SL inputs, order summary, submit button) all visible ✓, (3) After logging in as demo@mfb.in/demo1234, BUY 0.1 XAU/USD order placed successfully — balance ₹9,99,754.75 → ₹9,99,654.75 (₹100 margin), Open tab shows the position with entry 3974.01, current 3954.57, live P&L -₹17,297.2, Close Position button ✓, (4) Chart y-axis gridvalues (4051.84 / 4021.57 / 3991.30 / current 3974.32) are consistent with BID/ASK cards (3974.25 / 3974.40) — chart, watchlist row and order screen all share the SAME simulated feed ✓, (5) NO TradingView iframe present in DOM (only one src=None dev overlay) ✓. Sibling modules unaffected: /api/wallet, /api/kyc/status, /api/ai/suggestions, /api/notifications, /api/market/dashboard all reachable. No P0/P1 regressions found in Forex.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/forex/symbol/[id] & /forex", "issues": ["Web-platform post-order confirm() dialog uses window.confirm — on native mobile this branch is replaced by Alert.alert which is correct. On the web preview Playwright auto-dismisses confirms so router.replace('/(tabs)/forex') doesn't fire; user still sees the order-placed screen with toast. Minor UX polish — consider Toast-only or auto-redirect after 1.5s on web."]}
+    ],
+    "react_native_issues": [
+      {"component": "console warnings", "issue": "Non-blocking dev warnings observed: 'shadow*' style props deprecated (use boxShadow), props.pointerEvents deprecated (use style.pointerEvents), useNativeDriver not supported (Animated fallback). These do NOT break functionality on web but should be cleaned up as part of RN 0.75+ hygiene. Reference: any Card/Button component using shadowColor/shadowOffset/shadowOpacity/shadowRadius."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_forex.py (existing — 13 tests, all pass)",
+    "/app/backend/tests/test_forex_regression.py (new — 16 tests, all pass)",
+    "/app/test_reports/pytest/forex_all_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL P3 — Replace `window.confirm()` in /app/frontend/app/forex/symbol/[id].tsx:107 with a Toast-only success + auto router.replace after ~1.5s (matches native Alert flow better and keeps web UX consistent).",
+    "OPTIONAL P3 — Migrate `shadow*` style props to `boxShadow` in card/button components to silence RN Web deprecation warnings.",
+    "P4 — Deferred per user request: Sprint 6 Market Intelligence Dashboard remains untested. /api/market/dashboard is reachable (200 OK unauth) but functional testing is outside this iteration's scope."
+  ],
+  "critical_code_review_comments": [
+    "GOOD — /app/backend/forex/feed.py uses a per-symbol deque(maxlen=HISTORY_MAXLEN=300) plus a pre-populated 60-point warm-up so the mobile chart renders on first mount without waiting 2s of ticks. Elegant fix for the blank-chart problem.",
+    "GOOD — /app/frontend/app/forex/symbol/[id].tsx splits loadSymbol() and loadBalance() into two separate try/catch blocks. Prior Promise.all made a 401 balance error reject the whole thing and left setSymbol never called → blank screen. Root cause fix confirmed.",
+    "GOOD — /app/backend/forex/routes.py:138 /candles endpoint sourced directly from feed._history (the SAME dict updated on every /prices tick) — guarantees chart/watchlist/order screen show identical numbers. This is exactly what the user asked for.",
+    "MINOR — /app/backend/forex/symbols.py:26 XAUUSD starting_price=4070 (2026 anchor). The random walk may drift outside the 3900-4200 band over long uptimes (currently at ~3958). If drift becomes an issue, add a mean-reversion term in SimulatedProvider.tick(). Not a bug — the request only asked for ~2026 realistic prices, and we're inside band.",
+    "MINOR — /app/frontend/app/forex/symbol/[id].tsx:257 contains a dead helper `tradingViewHTML` retained with `void tradingViewHTML;` to silence linters. Should be removed cleanly once the migration is fully confirmed rather than kept behind a `void`.",
+    "MINOR — /app/backend/forex/feed.py:105 BTC preference for Binance is fine, but since Binance is region-blocked (HTTP 451) in this cloud pod, BTC always falls through to Simulated — matches the observed source='simulated' in /prices for BTCUSD. Not a bug, just worth documenting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_forex_regression.py (new — 16 pytest cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (29/29 forex pytest cases pass; 13 existing + 16 new regression)",
+    "frontend": "100% for the 3 reported user bugs — blank-screen fix, order placement, price consistency across watchlist/chart/order screen"
+  },
+  "seed_data_creation": "Test suite opened & closed multiple XAU/EUR/BTC positions on demo user (usr_f360e39107bf) via test_full_trade_lifecycle + test_buy_xauusd_entry_price_matches_ask + test_sell_btcusd_with_tp_sl_stored. Also opened one BUY XAUUSD 0.1 lot manually via the mobile UI which is currently OPEN (position visible in Open tab, ~₹100 margin locked). Balance after suite: ₹9,99,754.75. Closed (8) history entries visible. If clean state needed for next run: `POST /api/forex/balance/reset` with the demo user's token — this also cancels open positions.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Forex is stable and all three user-reported bugs are FIXED. The critical wiring is: SimulatedProvider ticks every 2s → writes to feed._cache (used by /api/forex/prices) AND appends to feed._history (used by /api/forex/candles/{id}). The mobile chart component /app/frontend/src/components/FeedChart.tsx loads history on mount then appends live points from useForexPrices(). Result: watchlist, chart y-axis grid, chart last-price marker, BID/ASK cards, and order entry_price all trace back to the SAME cache. Verified numerically: chart current 3974.32 == mid of BID 3974.25 & ASK 3974.40. XAU/USD in the 3900-4200 range as required. If any future testing wants to re-verify: (a) `curl BASE/api/forex/candles/XAUUSD?limit=5` and compare last point.mid to `curl BASE/api/forex/prices | jq '.prices[] | select(.symbol_id==\"XAUUSD\") | .mid'` — they must be within 0.5% (both drift 2s tick apart). (b) Symbol detail page must render even when /api/forex/balance returns 401 — verified. (c) Sprint 6 Market Dashboard testing was intentionally DEFERRED per user instruction. Auth: demo@mfb.in / demo1234 works via POST /api/auth/login {identifier, password}. Admin: admin@mfb.in / Admin@MFB2026 via POST /api/admin/login {email, password}. BASE_URL is EXPO_PUBLIC_BACKEND_URL from frontend/.env.",
+  "rca_of_issue": "All three reported bugs traced and confirmed fixed by code inspection + runtime verification:\n\n(1) BLANK WHITE SCREEN AFTER BUY/SELL — Root cause was in prior /forex/symbol/[id].tsx which used Promise.all([forexApi.symbols(), forexApi.balance()]). When unauthenticated the /balance call rejects with 401 and Promise.all short-circuits, so setSymbol(cfg.symbols.find(...)) was never called, leaving symbol=null which shows the loading spinner forever. Fix (verified in current code L36-59): loadSymbol() and loadBalance() are separate try/catch callbacks and useEffect runs both independently — balance failure now only logs a warning and shows balance=0 in the UI. Reproduce (pre-fix): open /forex/symbol/XAUUSD in incognito → white screen. Post-fix reproduce: same URL → renders header + chart + trade ticket immediately (verified).\n\n(2) ORDERS NOT BEING PLACED — This turned out to be a downstream effect of bug (1): because the trade ticket never rendered, users could never tap SELL/BUY. Fix (1) resolves this too. Verified by placing BUY 0.1 XAU/USD as demo user → returned 200 with position_id, entry_price=3974.01000, margin_inr=100.0, and balance decremented from ₹9,99,754.75 to ₹9,99,654.75. Position visible in Open tab with live P&L updating every 2s.\n\n(3) PRICE INCONSISTENCY ACROSS WATCHLIST vs ORDER vs CHART — Root cause was that the previous chart was an embedded TradingView iframe (using OANDA/FX/BINANCE feeds) while our own /api/forex/prices was a simulated random-walk. Two disjoint data sources → always mismatched (e.g. TV showed 4074.935 while our feed showed 2343.11). Fix: TradingView iframe replaced by /app/frontend/src/components/FeedChart.tsx which reads from the SAME simulated feed via GET /api/forex/candles/{symbol_id} (new endpoint at /app/backend/forex/routes.py:138) and appends live points from useForexPrices. Also starting_price for XAUUSD bumped to 4070 (from 2340) and BTCUSD to 102000 for 2026 realism. Verified: chart grid values, chart last-marker, BID/ASK cards, and watchlist row for XAU/USD are all within one 2s tick of each other (drift <0.5% between separate HTTP calls, exact match on same page render)."
+}

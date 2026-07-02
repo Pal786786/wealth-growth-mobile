@@ -161,7 +161,15 @@ export default function ForexTab() {
               filtered.map((sym) => {
                 const q = quotes[sym.id];
                 const Icon = ASSET_ICON[sym.asset_class] || TrendingUp;
-                const movement = q ? (q.mid - (sym.id === "XAUUSD" ? 2340.5 : sym.id === "BTCUSD" ? 67400 : 1)) : 0; // rough sign-only
+                // Session-open anchor per symbol (updated to match backend starting_price)
+                const ANCHOR: Record<string, number> = {
+                  XAUUSD: 4070,
+                  BTCUSD: 102000,
+                  EURUSD: 1.145,
+                  GBPUSD: 1.345,
+                  USDJPY: 158.5,
+                };
+                const movement = q ? (q.mid - (ANCHOR[sym.id] ?? q.mid)) : 0;
                 return (
                   <Pressable key={sym.id} onPress={() => router.push(`/forex/symbol/${sym.id}`)} testID={`row-${sym.id}`}>
                     <Card style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>

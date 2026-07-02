@@ -66,6 +66,8 @@ export const forexApi = {
   symbols: async (): Promise<ForexConfig> => (await api.get("/forex/symbols")).data,
   prices: async (): Promise<{ prices: ForexQuote[]; ts_now: string; diagnostics: any }> =>
     (await api.get("/forex/prices")).data,
+  candles: async (symbolId: string, limit = 100): Promise<{ symbol_id: string; points: { ts: number; mid: number }[]; price_decimals: number }> =>
+    (await api.get(`/forex/candles/${encodeURIComponent(symbolId)}`, { params: { limit } })).data,
   balance: async (): Promise<{ balance: number; currency: string }> =>
     (await api.get("/forex/balance")).data,
   resetBalance: async (): Promise<{ balance: number; currency: string }> =>

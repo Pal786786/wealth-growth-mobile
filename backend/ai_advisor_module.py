@@ -338,8 +338,13 @@ async def _stream_chat_reply(user_id: str, conversation_id: str, user_text: str,
         "created_at": _now(),
     })
 
-    # build the profile & system prompt
     profile = await build_user_profile(user_id)
+    # Sprint 6: inject live market snapshot for smarter advice
+    try:
+        import market_module as _mm
+        profile["market"] = await _mm.get_market_snapshot(6)
+    except Exception:
+        pass
     system_prompt = (settings.get("system_prompt") or DEFAULT_SETTINGS["system_prompt"]) + "\n\n" + _profile_prompt_snippet(profile)
 
     # signal start to client — include user message id + assistant id + profile analytics summary
