@@ -50,7 +50,7 @@ export default function AdminAIAdvisor() {
   const [toast, setToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   const flash = (type: "success" | "error", msg: string) => {
-    setToast({ type, msg }); setTimeout(() => setToast(null), 2600);
+    setToast({ type, msg }); setTimeout(() => setToast(null), 4000);
   };
 
   useEffect(() => {
@@ -90,9 +90,9 @@ export default function AdminAIAdvisor() {
 
   return (
     <div className="space-y-6">
-      {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-bold ${toast.type === "success" ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"}`}>{toast.msg}</div>
-      )}
+        {toast && (
+          <div aria-live="polite" className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-bold ${toast.type === "success" ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"}`}>{toast.msg}</div>
+        )}
 
       {/* HERO */}
       <div className="rounded-3xl bg-gradient-to-br from-indigo-700 via-blue-800 to-slate-900 p-6 text-white relative overflow-hidden">
