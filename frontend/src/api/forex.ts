@@ -18,7 +18,6 @@ export type ForexSymbol = {
   spread_pips: number;
   min_lot: number;
   max_lot: number;
-  tradingview_symbol: string;
 };
 
 export type ForexConfig = {
@@ -70,6 +69,8 @@ export const forexApi = {
     (await api.get(`/forex/candles/${encodeURIComponent(symbolId)}`, { params: { limit } })).data,
   balance: async (): Promise<{ balance: number; currency: string }> =>
     (await api.get("/forex/balance")).data,
+  equity: async (): Promise<{ balance: number; unrealized_pnl: number; equity: number; margin_used: number; free_margin: number; open_position_count: number; currency: string }> =>
+    (await api.get("/forex/equity")).data,
   resetBalance: async (): Promise<{ balance: number; currency: string }> =>
     (await api.post("/forex/balance/reset")).data,
   openPosition: async (p: {

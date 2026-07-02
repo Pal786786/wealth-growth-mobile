@@ -254,13 +254,6 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function tradingViewHTML(_symbol: string, _mode: "light" | "dark"): string {
-  // deprecated (see FeedChart)
-  return "";
-}
-// keep unused reference to avoid dead-code warnings — do not remove without checking imports
-void tradingViewHTML;
-
 const t = StyleSheet.create({
   sideBtn: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1.5 },
   label: { fontSize: 10, fontWeight: "700", letterSpacing: 1 },

@@ -111,7 +111,6 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
                 "spread_pips": sc.get("spread_pips", spec["spread_pips"]),
                 "min_lot": sc.get("min_lot", cfg.get("min_lot", 0.01)),
                 "max_lot": sc.get("max_lot", cfg.get("max_lot", 100.0)),
-                "tradingview_symbol": _tv_symbol(spec["id"]),
             })
         return {
             "enabled": cfg.get("enabled", True),
@@ -156,6 +155,27 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
     async def get_balance(user=Depends(_get_current_user)):
         bal = await _engine.get_or_init_balance(user["user_id"])
         return {"balance": bal["balance"], "currency": bal["currency"]}
+
+    @public.get("/equity")
+    async def get_equity(user=Depends(_get_current_user)):
+        """Real-time account state: balance + floating P&L (marked-to-market
+        using our simulated feed). Same data source as /prices and /candles,
+        so equity/P&L is guaranteed consistent with what the chart shows."""
+        bal = await _engine.get_or_init_balance(user["user_id"])
+        open_positions = await _engine.list_positions(user["user_id"], status="open", limit=500)
+        unrealized = sum(float(p.get("pnl_inr") or 0) for p in open_positions)
+        margin_used = sum(float(p.get("margin_inr") or 0) for p in open_positions)
+        balance = float(bal["balance"])
+        equity = balance + unrealized
+        return {
+            "balance": balance,
+            "unrealized_pnl": round(unrealized, 2),
+            "equity": round(equity, 2),
+            "margin_used": round(margin_used, 2),
+            "free_margin": round(max(equity - margin_used, 0.0), 2),
+            "open_position_count": len(open_positions),
+            "currency": bal["currency"],
+        }
 
     @public.post("/balance/reset")
     async def reset_balance(user=Depends(_get_current_user)):
@@ -278,17 +298,6 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
 
     api.include_router(public)
     api.include_router(admin)
-
-
-def _tv_symbol(symbol_id: str) -> str:
-    """Map our internal id to a TradingView symbol used by their widgets."""
-    return {
-        "XAUUSD": "OANDA:XAUUSD",
-        "EURUSD": "FX:EURUSD",
-        "GBPUSD": "FX:GBPUSD",
-        "USDJPY": "FX:USDJPY",
-        "BTCUSD": "BINANCE:BTCUSDT",
-    }.get(symbol_id.upper(), symbol_id)
 
 
 def _now_iso() -> str:

@@ -35,8 +35,12 @@ class TestForexSymbols:
         ids = [s["id"] for s in data["symbols"]]
         assert set(ids) == set(EXPECTED_SYMBOLS), f"unexpected symbols: {ids}"
         for s in data["symbols"]:
-            for k in ("enabled", "spread_pips", "min_lot", "max_lot", "tradingview_symbol"):
+            for k in ("enabled", "spread_pips", "min_lot", "max_lot"):
                 assert k in s, f"{s['id']} missing {k}"
+            # Iteration 16: tradingview_symbol MUST be fully removed
+            assert "tradingview_symbol" not in s, (
+                f"{s['id']} still exposes deprecated tradingview_symbol field"
+            )
 
 
 class TestForexPrices:
