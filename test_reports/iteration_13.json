@@ -1,0 +1,43 @@
+{
+  "summary": "Sprint 4 — AI Wealth Advisor (Claude Sonnet 4.5) tested end-to-end. Backend: 23/23 pytest cases PASS (0 fail). Full user surface verified: /api/ai/suggestions (6 items), /api/ai/profile (all 9 required keys incl. analytics.health_score/risk_bucket/confidence_pct), conversation CRUD, SSE streaming chat (hello + start + multi-delta + done events with user/assistant msg ids + profile_snapshot), MULTI-TURN CONTEXT WORKS (turn-2 references turn-1 via <recent_conversation> stitching, verified by keyword continuation), auto-conversation creation when no cid, /api/ai/portfolio/analyze structured insights (headline/highlights/recommendations/risks/disclaimer + 15-min cache — second call under 2s), goals CRUD for ALL 6 types (house/car/retirement/education/emergency/custom) each returning recommended_monthly_sip>0 + expected_return_pct + probability_pct + ai_notes, feedback POST (with -1/0/1 rating + note), rate-limit enforcement (3rd request → 429 after limit=2 set via admin), feature toggle enforcement (chat=false → user chat 403; re-enable → 200), Bearer auth 401 for all user endpoints. Admin: dashboard stats (total_conv, msgs_24h, tokens_7d, est_cost_usd_7d, feedback up/down, active_users_7d, 7-entry chart, top_users), conversations list + search (?q=), conversation detail with messages + user, feedback list, GET/PUT settings (partial patches — features / temperature / model / suggested_questions), and CONFIRMED suggested_questions PUT propagates to /api/ai/suggestions after 30s cache TTL. Admin UI (React + Vite): all 4 tabs render (Overview with 4 stat cards + 7-day chart bars + Top Users + Feedback counts; Conversations with 4 rows and Open drawer showing user info + message bubbles; Feedback tab; Settings with 4 animated feature toggles, provider/model/temperature/max_tokens fields, system prompt textarea, suggested-questions add/remove, rate limits/context inputs, Save All Settings button). No P0/P1 bugs found. Live Claude Sonnet 4.5 via EMERGENT_LLM_KEY is producing real investment-relevant streaming responses (verified in test_chat_stream by matching kwds like ₹, portfolio, SIP, risk). AI goal ai_notes returned as structured JSON with strategy/asset_mix/tips/disclaimer.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminAIAdvisor Settings save toast", "issue": "Success toast (flash 'success','Settings saved') auto-dismisses in 2600ms — was not visible in verification screenshot taken ~3s after click. PUT itself succeeded (backend 200). Consider extending to ~4s or adding an aria-live region + testId=\"admin-toast\" for reliable QA detection.", "testID": "(none)", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AdminAIAdvisor (all tabs)", "issues": ["No data-testid attributes on tab buttons, feature toggles, stat cards, or Save button — testing had to rely on text/CSS selectors. Adding testIDs (e.g., ai-tab-overview, ai-toggle-chat, ai-save-settings) would harden automation."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ai_advisor.py",
+    "/app/test_reports/pytest/ai_advisor_results.xml",
+    "/app/test_reports/pytest/ai_advisor_ratelimit.xml"
+  ],
+  "action_items": [
+    "(Optional / LOW) Add data-testid attributes to AdminAIAdvisor.tsx tab buttons, feature toggles, and Save All Settings button for more robust E2E automation.",
+    "(Optional / LOW) Extend admin flash toast timeout from 2600ms to ~4000ms or add aria-live region for accessibility & test detection.",
+    "(Note / not a bug) The 30-second module-level settings cache (_settings_cache) in ai_advisor_module.py means feature-toggle & rate_limit PUT changes only propagate to user requests after up to 30s. Backend correctly force-refreshes on admin GET/PUT for the settings response, but user endpoints read from the cache. Tests wait 32s to observe propagation. Consider a pub/sub or an internal cache-bust on PUT if propagation-latency ever becomes a UX concern."
+  ],
+  "critical_code_review_comments": [
+    "ai_advisor_module.py is 873 lines — over the 700 soft limit. Consider splitting user_router + admin_router into two files (ai_user.py, ai_admin.py) and moving the profile builder + LLM helpers into ai_common.py.",
+    "In build_user_profile the returns multiplier is hardcoded per asset_type ({'mutual_fund': 1.12, 'stock': 1.08, ...}) — this is illustrative, not derived from live NAV/quotes. Fine for advisory MVP, but the disclaimer in system_prompt covers it. Consider labelling these as 'demo current values' if the mobile UI ever shows them raw.",
+    "SSE endpoint returns 200 immediately even if downstream LLM will fail — errors are surfaced only as a delta text 'having trouble reaching the AI service'. Consider emitting event: error with structured payload so mobile client can distinguish and retry.",
+    "The rate-limit counter uses ai_messages.count where role='user' in the last hour. Correct. Note: if a user starts a stream but disconnects mid-flight, the user message IS persisted (before yield of first delta), so it still counts — good (prevents abuse).",
+    "Admin PUT /settings returns the freshly merged settings, but the user-facing /suggestions endpoint continues to serve stale values for up to 30s because of _settings_cache. Verified via test that force-waits 32s to see propagation. Not a bug — documented above."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ai_advisor.py (new — 23 pytest cases, 100% pass)"
+  ],
+  "success_rate": {
+    "backend": "100% (23/23 pytest — 21 quick + 2 rate-limit/toggle)",
+    "frontend": "Admin UI 100% functional: all 4 tabs render, Conversations drawer opens with message history, Settings shows all controls (4 toggles + provider/model/temp/max_tokens + system prompt + suggested questions add/remove + rate limits/context + Save), Save PUT succeeds (verified 200 in backend logs)."
+  },
+  "seed_data_creation": "Test suite creates 6 TEST_-prefixed goals (all types) and deletes them at end, plus a few TEST_-titled conversations left behind for admin-detail view. No cleanup of the conversations was needed for pass criteria; admin conversations tab now shows 4 rows including TEST_hi again, TEST_admin_view, and one real 4-msg conv. Settings restored to defaults (rate_limit=40, all features enabled) in a session-scope autouse fixture.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 4 AI advisor is green. Run backend regression with `python -m pytest backend/tests/test_ai_advisor.py -v` (~4 min because rate-limit + feature-toggle tests each wait 32s to bust the 30s settings cache; you can `-k 'not FeatureAndRate'` to skip these when doing a fast smoke). Live Claude Sonnet 4.5 is billed per call — the full suite issues ~10 LLM streams (chat×3, portfolio×1, goals×6). Admin UI at /api/admin-ui/#/ai-advisor is fully functional; use `button:has-text('X')` selectors since no testIDs are wired. Demo user demo@mfb.in / demo1234 works. Admin admin@mfb.in / Admin@MFB2026. Backend endpoint is /api/admin/login (NOT /api/admin/auth/login).",
+  "rca_of_issue": "No production bugs discovered. Only minor observations: (a) admin settings PUT propagates to user endpoints with up to 30s latency due to _settings_cache TTL — expected behaviour; (b) success toast on admin Settings save auto-hides within ~2.6s — cosmetic only. All 23 automated tests pass consistently."
+}

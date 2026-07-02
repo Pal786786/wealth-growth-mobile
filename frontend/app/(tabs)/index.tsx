@@ -5,7 +5,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import {
   Bell, Send, Plus, QrCode, Smartphone, Receipt, Wallet as WalletIcon,
   Plane, TrendingUp, ShieldCheck, Gift, ChevronRight, ArrowDownLeft, ArrowUpRight, Eye, EyeOff, TrendingDown,
-  AlertTriangle
+  AlertTriangle, Bot
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
@@ -66,6 +66,7 @@ export default function HomeTab() {
     { icon: Smartphone, label: "Recharge", route: "/recharge", color: palette.warning },
     { icon: Receipt, label: "Bills", route: "/bills", color: "#8B5CF6" },
     { icon: TrendingUp, label: "Invest", route: "/(tabs)/invest", color: palette.success },
+    { icon: Bot, label: "AI Advisor", route: "/advisor", color: "#4F46E5" },
     { icon: Plane, label: "Travel", route: "/(tabs)/travel", color: palette.primary },
     { icon: ShieldCheck, label: "Insurance", route: "/insurance", color: palette.danger },
   ];

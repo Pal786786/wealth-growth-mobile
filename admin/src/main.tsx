@@ -28,6 +28,7 @@ import AdminCalculatorConfig from "./pages/AdminCalculatorConfig";
 import AdminForexSettings from "./pages/AdminForexSettings";
 import AdminWalletAnalytics from "./pages/AdminWalletAnalytics";
 import AdminWithdrawals from "./pages/AdminWithdrawals";
+import AdminAIAdvisor from "./pages/AdminAIAdvisor";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -73,6 +74,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="wallet-analytics" element={<AdminWalletAnalytics />} />
               <Route path="withdrawals" element={<AdminWithdrawals />} />
               <Route path="audit" element={<AdminAuditLogs />} />
+              <Route path="ai-advisor" element={<AdminAIAdvisor />} />
               <Route path="api-management" element={<ApiManagement />} />
               <Route path="settings" element={<Settings />} />
               <Route path="admins" element={<AdminUsers />} />

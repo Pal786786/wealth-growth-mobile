@@ -29,6 +29,7 @@ import wallet_module
 import wallet_pdf
 import kyc_module
 import withdrawal_module
+import ai_advisor_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -1045,6 +1046,15 @@ withdrawal_module.attach(
     send_push=security_extras.send_push_logged,
     notify_user=_notify_user,
     build_receipt_pdf=wallet_pdf.build_receipt_pdf,
+)
+
+ai_advisor_module.attach(
+    api,
+    db=db,
+    get_current_user=get_current_user,
+    get_current_admin=admin_module.get_current_admin,
+    log_action=admin_module._log_action,
+    logger=logger,
 )
 app.include_router(api)
 
