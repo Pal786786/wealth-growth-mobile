@@ -9,6 +9,7 @@ import * as Linking from "expo-linking";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { ThemeProvider } from "@/src/theme/ThemeProvider";
+import KycRequiredModal from "@/src/components/KycRequiredModal";
 import { AuthProvider } from "@/src/auth/AuthProvider";
 import { ToastProvider } from "@/src/components/Toast";
 
@@ -94,6 +95,7 @@ export default function RootLayout() {
                   contentStyle: { backgroundColor: "transparent" },
                 }}
               />
+              <KycRequiredModal />
             </ToastProvider>
           </AuthProvider>
         </ThemeProvider>

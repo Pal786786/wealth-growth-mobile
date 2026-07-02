@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosInstance } from "axios";
 import { storage } from "@/src/utils/storage";
+import { installKycInterceptor } from "./kycGate";
 
 const RAW_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 
@@ -63,6 +64,9 @@ export async function getAuthToken(): Promise<string | null> {
   const t = await storage.secureGet<string>("mfb_token", "");
   return t || null;
 }
+
+// Install KYC 403 interceptor so KycRequiredModal pops up automatically anywhere.
+installKycInterceptor(api);
 
 /**
  * Lightweight, dependency-free axios formatter for human-readable toasts.
