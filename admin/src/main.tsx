@@ -29,6 +29,7 @@ import AdminForexSettings from "./pages/AdminForexSettings";
 import AdminWalletAnalytics from "./pages/AdminWalletAnalytics";
 import AdminWithdrawals from "./pages/AdminWithdrawals";
 import AdminAIAdvisor from "./pages/AdminAIAdvisor";
+import AdminNotificationCenter from "./pages/AdminNotificationCenter";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -58,7 +59,8 @@ createRoot(document.getElementById("root")!).render(
               <Route path="kyc-legacy" element={<KYC />} />
               <Route path="transactions" element={<Transactions />} />
               <Route path="wallet" element={<Wallet />} />
-              <Route path="notifications" element={<Notifications />} />
+              <Route path="notifications" element={<AdminNotificationCenter />} />
+              <Route path="notifications-old" element={<Notifications />} />
               <Route path="push-logs" element={<AdminPushLogs />} />
               <Route path="investments" element={<InvestmentManager />} />
               <Route path="content" element={<ContentManager />} />
