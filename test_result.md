@@ -523,3 +523,32 @@ Every other module already had NO KYC gate — /invest/buy, /forex/positions, /w
   - Frontend: 0 favorites-load warnings on unauth load, LIVE badge + prices streaming.
   - Regression: forex/notifications/kyc/advisor all clean; non-KYC forex 200, non-KYC withdrawal 403.
   - Report: `/app/test_reports/iteration_23.json` — `retest_needed: false`
+
+## Sprint 7B.1 — Copy Trading Foundation (Discover & Follow)
+
+### Ships
+- **28 deterministic trader personas** with realistic profiles (name/country/style/bio/experience/verified). Same numbers across restarts — driven by `random.Random(persona.seed)` throughout `traders.py`.
+- **Statistics generator** (deterministic) — Total/Monthly/Weekly/Annual ROI, Win Rate, Profit Factor, Sharpe, Recovery Factor, Max DD, Avg Holding, Avg Lot, Followers, AUM, Expectancy, Avg Win/Loss.
+- **Risk Engine** — 1–10 score + tier (Conservative/Moderate/Aggressive), derived from drawdown, win rate, volatility, position size, holding time.
+- **Equity + Balance curves** (12 months, daily). **Monthly ROI** array (12 months).
+- **Open + Closed trade history** (deterministic per persona).
+- **Copy Engine** — Mongo-persisted `copy_relationships` per (user, trader): status (active/paused/stopped), settings (mode, fixed_lot, multiplier, equity_percent, max_daily_loss_pct, max_drawdown_pct, max_open_trades, equity_protection_pct, auto_close_on_stop).
+- **Broker Adapter abstraction** — `BrokerAdapter` base + `PaperBroker` default + placeholder classes for MetaTrader 5, DXtrade, cTrader, MatchTrader, Custom.
+- **Server-side sorting** — sort=total_roi/monthly_roi/win_rate/followers/risk/new + search + verified filter + risk range.
+- **HTTP endpoints** under `/api/copy_trading/*`:
+  - GET `/traders` (leaderboard, paginated), `/traders/{id}` (profile), `/open-trades`, `/closed-trades`
+  - GET `/my/copies`, `/traders/{id}/copy`
+  - POST `/copy/start`, `/copy/pause`, `/copy/resume`, `/copy/stop`
+  - PUT `/copy/settings`
+  - GET `/meta`
+- **Mobile UI** — `/traders` leaderboard (sort chips, search, verified toggle, ranked list with avatars + flags + stats) + `/traders/[id]` profile (hero, 12-stat grid, gradient equity curve, monthly bars, Overview/Open/History tabs, bottom Copy CTA + settings modal).
+- **Home tab** — new "Copy Traders" quick-action tile.
+
+### No regression
+- backend/{forex, wallet, notifications, kyc, market_module, market_data}.py — untouched.
+- KYC still enforced only on `/wallet/withdrawals/request`.
+
+### Curl verification
+- 28 traders, sort works, determinism (identical stats on repeat call).
+- Copy lifecycle: start → pause → stop reflected in DB.
+- Screenshots verified — leaderboard and profile pages render, avatars/flags/curves visible.

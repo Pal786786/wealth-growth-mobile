@@ -1,0 +1,45 @@
+{
+  "summary": "Sprint 7B.1 Copy Trading — backend + frontend E2E tested. 27/27 backend pytest cases PASS including P0 determinism-across-restart. Frontend leaderboard, filters (search 'india', Lowest Risk chip, Verified pill), profile page (avatar/flag/bio/12-cell stats grid/gradient equity curve/monthly bars/tabs), copy lifecycle (start->pause->resume->stop with toast + CTA morph), and home 'Copy Traders' quick-action all verified end-to-end. Regression: /forex /notifications /advisor /market all render without errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/traders/[id] — Copy Settings sheet", "issues": [
+        "When user starts fresh (no prior copy relationship), backend still returns status:'stopped' with default settings, so the modal button shows 'Update Settings' instead of 'Start Copying'. The action itself still calls copyApi.startCopy() and the toast/CTA morph work correctly, but the button label logic in TraderProfile.tsx checks 'initial ? Update Settings : Start Copying' — since a stopped record is still returned from GET /copy, initial is truthy. Consider gating on initial.status === 'active' || 'paused' instead of !!initial."
+      ]}
+    ],
+    "react_native_issues": [
+      {"component": "useNativeDriver warning", "issue": "Multiple warnings 'Animated: useNativeDriver is not supported because the native animated module is missing' on login + settings sheet screens. Harmless on web preview but should be silenced by removing useNativeDriver:true from web-only code paths or wrapping in Platform.OS !== 'web'. Reference: emitted by react-native Animated on web."},
+      {"component": "shadow* deprecation", "issue": "Console warns \"shadow*\" style props are deprecated. Use \"boxShadow\". Multiple RN components still using shadowColor/shadowOpacity/shadowRadius/shadowOffset."},
+      {"component": "pointerEvents deprecation", "issue": "Console warns 'props.pointerEvents is deprecated. Use style.pointerEvents' — likely inside Modal/BottomSheet used by CopySettings sheet."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_copy_trading_iter24.py",
+    "/app/test_reports/pytest/iter24_copy_trading.xml"
+  ],
+  "action_items": [
+    "(low) Fix Copy Settings sheet button label — show 'Start Copying' when relationship status is 'stopped' or missing, 'Update Settings' only when active/paused. File: /app/frontend/app/traders/[id].tsx around the CopySettingsSheet primary button.",
+    "(low) Silence RN web deprecation warnings: replace shadow* props with boxShadow, replace props.pointerEvents with style.pointerEvents, guard useNativeDriver behind Platform.OS !== 'web'.",
+    "(optional) Add testID props to interactive elements in /app/frontend/app/traders/index.tsx and [id].tsx (search input, sort chips, verified toggle, row press, Copy CTA, Pause/Resume/Stop, Mode buttons, Start Copying) for future test stability. Currently tests rely on text selectors which work but are fragile to i18n."
+  ],
+  "critical_code_review_comments": [
+    "Determinism confirmed: _rng() seeded per-persona, generator functions are pure w.r.t. seed, _CACHE is in-process only and gets rebuilt on restart with identical output. No time.time()/uuid inside RNG path. P0 determinism-across-restart test PASSED.",
+    "PaperBroker.open_position()/close_position() return only stub 'queued' dicts — 7B.1 execution intentionally deferred to 7B.2 per problem statement. Verified.",
+    "engine.update_settings() correctly retains existing settings while only patching provided keys (verified: multiplier updated to 1.5, max_daily_loss_pct=3 retained).",
+    "list_copies() enrichment in routes.py works — /my/copies returns trader summary attached (verified: trader.name == 'Marcus Wolfe').",
+    "Small style nit: engine.py line 153 assigns float for int field max_open_trades when value comes in as float — condition is `float(v) if isinstance(v, float) or k != 'max_open_trades' else int(v)`. Reads as intended but is confusing; consider a `NUMERIC_INT_KEYS = {'max_open_trades'}` set.",
+    "traders.py file is 400 lines — under 700 threshold, acceptable. routes.py is 158 lines — clean.",
+    "MongoDB _id excluded correctly via projection {'_id': 0} in engine.get_settings and list_copies."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_copy_trading_iter24.py (new)"
+  ],
+  "success_rate": {"backend": "100% (27/27)", "frontend": "100% (all critical flows)"},
+  "seed_data_creation": "None. Backend uses purely deterministic in-process seeded personas. Copy relationship for demo@mfb.in was created and then cleanly stopped during the lifecycle test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "For copy_trading backend tests, use test_copy_trading_iter24.py — pass EXPO_PUBLIC_BACKEND_URL env. The Determinism test restarts backend via `sudo supervisorctl restart backend` and waits up to 40s. If running back-to-back, allow ~10s between full suite runs so the restart-recovery test succeeds cleanly. Login helper: POST /api/auth/login with {identifier, password} — token is in response.access_token.",
+  "rca_of_issue": "No blocking issues. Only cosmetic RN web warnings and one minor UX label logic quirk documented in design_issues."
+}

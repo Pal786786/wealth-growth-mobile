@@ -1087,6 +1087,14 @@ try:
 except Exception as _e:
     logger.warning(f"market_data attach failed: {_e}")
 
+# ------ Sprint 7B.1: Copy Trading (traders + leaderboard + copy engine) ------
+try:
+    import copy_trading as _copy_trading
+    _copy_trading.attach(app, db=db, get_current_user=get_current_user)
+    logger.info("copy_trading subsystem attached")
+except Exception as _e:
+    logger.warning(f"copy_trading attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as
