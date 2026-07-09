@@ -1,29 +1,36 @@
-"""Copy Trading routes — Sprint 7B.1
+"""Copy Trading routes — Sprint 7B.2 (extends 7B.1)
 
-Public: /api/copy_trading/*
-Admin:  (Slice 7B.3 will add)
+Public:
+  Leaderboard/profile     — /api/copy_trading/traders[...]
+  My relationships        — /api/copy_trading/my/copies + traders/{id}/copy/*
+  Copy execution history  — /api/copy_trading/my/trades, /my/summary
+  Bulk actions            — /api/copy_trading/my/copies/pause-all|resume-all|close-all
+
+Admin:
+  Simulation control      — /api/copy_trading/admin/simulation/*
+  Config defaults         — /api/copy_trading/admin/config
+  Master trades listing   — /api/copy_trading/admin/master-trades
 """
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from . import traders as tmod
-from .engine import CopyEngine, PaperBroker, DEFAULT_SETTINGS, VALID_MODES
-
+from .engine import CopyEngine
+from .config import DEFAULT_SETTINGS, VALID_MODES
 
 _engine: Optional[CopyEngine] = None
-_db = None
+_simulator = None
 
 
-# Sort key extractors — server-side sorting so pagination is stable
 _SORT_KEYS = {
     "total_roi":    lambda t: t["stats"]["total_roi_pct"],
     "monthly_roi":  lambda t: t["stats"]["monthly_roi_pct"],
     "win_rate":     lambda t: t["stats"]["win_rate_pct"],
     "followers":    lambda t: t["stats"]["followers"],
-    "risk":         lambda t: -t["risk"]["risk_score"],  # LOWER risk first
+    "risk":         lambda t: -t["risk"]["risk_score"],
     "new":          lambda t: -t["joined_days_ago"],
 }
 
@@ -37,24 +44,45 @@ class CopySettingsIn(BaseModel):
     max_drawdown_pct: Optional[float] = None
     max_open_trades: Optional[int] = None
     equity_protection_pct: Optional[float] = None
-    auto_close_on_stop: Optional[bool] = None
+    auto_close_on_equity_protection: Optional[bool] = None
+    auto_pause_on_daily_loss: Optional[bool] = None
+    resume_mode: Optional[str] = None
+    max_lot_size: Optional[float] = None
+    min_lot_size: Optional[float] = None
+    slippage_pips: Optional[float] = None
+    auto_copy_new_trades: Optional[bool] = None
+    copy_existing_open_trades: Optional[bool] = None
 
 
 class StartCopyIn(BaseModel):
     settings: Optional[CopySettingsIn] = None
 
 
-def attach(app, db, get_current_user):
-    global _engine, _db
-    _db = db
-    _engine = CopyEngine(db=db, broker=PaperBroker())
+class SimSpeedIn(BaseModel):
+    speed: str   # slow | normal | fast
+
+
+class SimForceOpenIn(BaseModel):
+    trader_id: str
+    side: Optional[str] = None       # buy | sell (random if omitted)
+    symbol: Optional[str] = None
+
+
+class AdminConfigIn(BaseModel):
+    defaults: Optional[CopySettingsIn] = None
+
+
+def attach(app, db, get_current_user, engine: CopyEngine, simulator, get_current_admin=None):
+    global _engine, _simulator
+    _engine = engine
+    _simulator = simulator
 
     r = APIRouter(prefix="/api/copy_trading", tags=["copy-trading"])
 
     # ----------------- Leaderboard -----------------
     @r.get("/traders")
     async def leaderboard(
-        sort: str = Query("total_roi", description="total_roi|monthly_roi|win_rate|followers|risk|new"),
+        sort: str = Query("total_roi"),
         search: Optional[str] = None,
         min_risk: int = Query(1, ge=1, le=10),
         max_risk: int = Query(10, ge=1, le=10),
@@ -98,15 +126,49 @@ def attach(app, db, get_current_user):
             raise HTTPException(404, "Trader not found")
         return {"trades": tmod.closed_trades(trader_id, limit=limit)}
 
+    # ----------------- Live master trade feed (for demo transparency) -----------------
+    @r.get("/traders/{trader_id}/master-trades")
+    async def trader_master_trades(trader_id: str, limit: int = Query(50, ge=1, le=200)):
+        if not tmod.get_trader(trader_id):
+            raise HTTPException(404, "Trader not found")
+        rows = await _simulator.recent_master_trades(trader_id=trader_id, limit=limit)
+        return {"trades": rows}
+
     # ----------------- Copy relationship -----------------
     @r.get("/my/copies")
     async def my_copies(user=Depends(get_current_user)):
-        rels = await _engine.list_copies(user["user_id"])
-        # Enrich each with trader summary for UI
-        for rel in rels:
-            t = tmod.get_trader(rel["trader_id"])
-            rel["trader"] = t
-        return {"copies": rels}
+        copies = await _engine.my_copies_enriched(user["user_id"], tmod.get_trader)
+        return {"copies": copies}
+
+    @r.get("/my/summary")
+    async def my_summary(user=Depends(get_current_user)):
+        return await _engine.my_summary(user["user_id"])
+
+    @r.get("/my/trades")
+    async def my_trades(
+        trader_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = Query(100, ge=1, le=500),
+        user=Depends(get_current_user),
+    ):
+        rows = await _engine.follower_trades(
+            user["user_id"], trader_id=trader_id, status=status, limit=limit)
+        return {"trades": rows}
+
+    @r.post("/my/copies/pause-all")
+    async def pause_all(user=Depends(get_current_user)):
+        n = await _engine.pause_all(user["user_id"])
+        return {"paused": n}
+
+    @r.post("/my/copies/resume-all")
+    async def resume_all(user=Depends(get_current_user)):
+        n = await _engine.resume_all(user["user_id"])
+        return {"resumed": n}
+
+    @r.post("/my/copies/close-all")
+    async def close_all(user=Depends(get_current_user)):
+        n = await _engine.close_all(user["user_id"])
+        return {"closed": n}
 
     @r.get("/traders/{trader_id}/copy")
     async def get_copy_relationship(trader_id: str, user=Depends(get_current_user)):
@@ -115,7 +177,8 @@ def attach(app, db, get_current_user):
         return await _engine.get_settings(user["user_id"], trader_id)
 
     @r.post("/traders/{trader_id}/copy/start")
-    async def start_copy(trader_id: str, body: Optional[StartCopyIn] = None, user=Depends(get_current_user)):
+    async def start_copy(trader_id: str, body: Optional[StartCopyIn] = None,
+                         user=Depends(get_current_user)):
         if not tmod.get_trader(trader_id):
             raise HTTPException(404, "Trader not found")
         settings = None
@@ -129,14 +192,17 @@ def attach(app, db, get_current_user):
 
     @r.post("/traders/{trader_id}/copy/resume")
     async def resume_copy(trader_id: str, user=Depends(get_current_user)):
-        return await _engine.set_status(user["user_id"], trader_id, "active")
+        return await _engine.set_status(user["user_id"], trader_id, "active",
+                                        halt_reason=None)
 
     @r.post("/traders/{trader_id}/copy/stop")
     async def stop_copy(trader_id: str, user=Depends(get_current_user)):
-        return await _engine.set_status(user["user_id"], trader_id, "stopped")
+        return await _engine.set_status(user["user_id"], trader_id, "stopped",
+                                        close_open_trades=True)
 
     @r.put("/traders/{trader_id}/copy/settings")
-    async def update_settings(trader_id: str, body: CopySettingsIn, user=Depends(get_current_user)):
+    async def update_settings(trader_id: str, body: CopySettingsIn,
+                              user=Depends(get_current_user)):
         if not tmod.get_trader(trader_id):
             raise HTTPException(404, "Trader not found")
         patch = body.model_dump(exclude_none=True)
@@ -145,13 +211,67 @@ def attach(app, db, get_current_user):
     # ----------------- Meta / diagnostics -----------------
     @r.get("/meta")
     async def meta():
+        defaults = await _engine.config.defaults()
+        sim = await _engine.config.sim_state()
         return {
             "trader_count": len(tmod.list_trader_ids()),
             "sort_keys": list(_SORT_KEYS.keys()),
-            "default_settings": DEFAULT_SETTINGS,
+            "default_settings": defaults,
             "modes": sorted(VALID_MODES),
             "broker": _engine.broker.name if _engine else None,
+            "simulator": {"enabled": sim.get("enabled"), "speed": sim.get("speed")},
         }
+
+    # ----------------- Admin: simulation control -----------------
+    if get_current_admin is not None:
+        @r.get("/admin/simulation/status")
+        async def sim_status(admin=Depends(get_current_admin)):
+            return await _simulator.status()
+
+        @r.post("/admin/simulation/pause")
+        async def sim_pause(admin=Depends(get_current_admin)):
+            await _simulator.pause()
+            return await _simulator.status()
+
+        @r.post("/admin/simulation/resume")
+        async def sim_resume(admin=Depends(get_current_admin)):
+            await _simulator.resume()
+            return await _simulator.status()
+
+        @r.post("/admin/simulation/speed")
+        async def sim_speed(body: SimSpeedIn, admin=Depends(get_current_admin)):
+            if body.speed not in ("slow", "normal", "fast"):
+                raise HTTPException(400, "speed must be slow|normal|fast")
+            await _simulator.set_speed(body.speed)
+            return await _simulator.status()
+
+        @r.post("/admin/simulation/force-open")
+        async def sim_force_open(body: SimForceOpenIn, admin=Depends(get_current_admin)):
+            trade = await _simulator.force_open(body.trader_id, side=body.side, symbol=body.symbol)
+            return {"master_trade": trade}
+
+        @r.post("/admin/simulation/force-close/{master_id}")
+        async def sim_force_close(master_id: str, admin=Depends(get_current_admin)):
+            return await _simulator.force_close(master_id)
+
+        @r.get("/admin/master-trades")
+        async def admin_master_trades(limit: int = Query(100, ge=1, le=500),
+                                       admin=Depends(get_current_admin)):
+            rows = await _simulator.recent_master_trades(limit=limit)
+            return {"trades": rows}
+
+        @r.get("/admin/config")
+        async def get_admin_config(admin=Depends(get_current_admin)):
+            defaults = await _engine.config.defaults()
+            sim = await _engine.config.sim_state()
+            return {"defaults": defaults, "sim": sim}
+
+        @r.put("/admin/config/defaults")
+        async def set_admin_defaults(body: CopySettingsIn,
+                                      admin=Depends(get_current_admin)):
+            patch = body.model_dump(exclude_none=True)
+            merged = await _engine.config.update_defaults(patch)
+            return {"defaults": merged}
 
     app.include_router(r)
     return r

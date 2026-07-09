@@ -34,13 +34,81 @@ export type CopySettings = {
   mode: "fixed_lot" | "multiplier" | "equity_percent";
   fixed_lot: number; multiplier: number; equity_percent: number;
   max_daily_loss_pct: number; max_drawdown_pct: number;
-  max_open_trades: number; equity_protection_pct: number; auto_close_on_stop: boolean;
+  max_open_trades: number; equity_protection_pct: number;
+  auto_close_on_equity_protection?: boolean;
+  auto_pause_on_daily_loss?: boolean;
+  resume_mode?: "manual" | "auto";
+  max_lot_size?: number; min_lot_size?: number; slippage_pips?: number;
+  auto_copy_new_trades?: boolean; copy_existing_open_trades?: boolean;
+};
+export type CopyLiveStats = {
+  open_positions: number; lifetime_pnl_usd: number;
+  today_pnl_usd: number; today_trades: number;
+  starting_equity_usd: number; current_equity_usd: number;
 };
 export type CopyRelationship = {
-  status: "active" | "paused" | "stopped";
+  user_id?: string;
+  copy_id?: string;
+  trader_id: string;
+  status: "active" | "paused" | "stopped" | "halted";
   settings: CopySettings;
   started_at: string | null;
+  starting_equity_usd?: number;
+  halt_reason?: string | null;
+  live?: CopyLiveStats;
   trader?: Trader;
+};
+
+export type FollowerTrade = {
+  follower_trade_id: string;
+  master_id: string;
+  user_id: string;
+  trader_id: string;
+  copy_id?: string;
+  symbol: string;
+  side: "buy" | "sell";
+  lot_size: number;
+  entry_price: number;
+  exit_price?: number | null;
+  sl?: number | null;
+  tp?: number | null;
+  pnl_usd?: number;
+  pnl_pct?: number;
+  opened_at: string;
+  closed_at?: string | null;
+  status: "open" | "closed" | "skipped";
+  skip_reason?: string | null;
+  close_reason?: string | null;
+  broker?: string;
+};
+
+export type CopySummary = {
+  total_pnl_usd: number;
+  today_pnl_usd: number;
+  today_trades: number;
+  open_positions: number;
+  active_copies: number;
+  paused_copies: number;
+  halted_copies: number;
+  total_trades: number;
+  win_rate_pct: number;
+};
+
+export type MasterTrade = {
+  master_id: string;
+  trader_id: string;
+  symbol: string;
+  side: "buy" | "sell";
+  lot_size: number;
+  entry_price: number;
+  exit_price?: number | null;
+  sl?: number | null;
+  tp?: number | null;
+  status: "open" | "closed";
+  opened_at: string;
+  closed_at?: string | null;
+  pnl_pct?: number | null;
+  source?: string;
 };
 
 export const copyApi = {
@@ -51,8 +119,17 @@ export const copyApi = {
   trader: async (id: string): Promise<Trader> => (await api.get(`/copy_trading/traders/${id}`)).data,
   openTrades: async (id: string): Promise<{ trades: Trade[] }> => (await api.get(`/copy_trading/traders/${id}/open-trades`)).data,
   closedTrades: async (id: string, limit = 40): Promise<{ trades: Trade[] }> => (await api.get(`/copy_trading/traders/${id}/closed-trades`, { params: { limit } })).data,
+  masterTrades: async (id: string, limit = 50): Promise<{ trades: MasterTrade[] }> =>
+    (await api.get(`/copy_trading/traders/${id}/master-trades`, { params: { limit } })).data,
 
   myCopies: async (): Promise<{ copies: CopyRelationship[] }> => (await api.get("/copy_trading/my/copies")).data,
+  mySummary: async (): Promise<CopySummary> => (await api.get("/copy_trading/my/summary")).data,
+  myTrades: async (opts: { trader_id?: string; status?: string; limit?: number } = {}): Promise<{ trades: FollowerTrade[] }> =>
+    (await api.get("/copy_trading/my/trades", { params: opts })).data,
+  pauseAll: async (): Promise<{ paused: number }> => (await api.post("/copy_trading/my/copies/pause-all")).data,
+  resumeAll: async (): Promise<{ resumed: number }> => (await api.post("/copy_trading/my/copies/resume-all")).data,
+  closeAll: async (): Promise<{ closed: number }> => (await api.post("/copy_trading/my/copies/close-all")).data,
+
   getCopy: async (id: string): Promise<CopyRelationship> => (await api.get(`/copy_trading/traders/${id}/copy`)).data,
   startCopy: async (id: string, settings?: Partial<CopySettings>): Promise<CopyRelationship> => (await api.post(`/copy_trading/traders/${id}/copy/start`, { settings })).data,
   pauseCopy: async (id: string): Promise<CopyRelationship> => (await api.post(`/copy_trading/traders/${id}/copy/pause`)).data,

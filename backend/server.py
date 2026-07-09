@@ -1087,11 +1087,14 @@ try:
 except Exception as _e:
     logger.warning(f"market_data attach failed: {_e}")
 
-# ------ Sprint 7B.1: Copy Trading (traders + leaderboard + copy engine) ------
+# ------ Sprint 7B.1 + 7B.2: Copy Trading (traders + leaderboard + copy engine + fan-out) ------
 try:
     import copy_trading as _copy_trading
-    _copy_trading.attach(app, db=db, get_current_user=get_current_user)
-    logger.info("copy_trading subsystem attached")
+    _copy_trading.attach(
+        app, db=db, get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+    )
+    logger.info("copy_trading subsystem attached (Sprint 7B.2)")
 except Exception as _e:
     logger.warning(f"copy_trading attach failed: {_e}")
 

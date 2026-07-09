@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, Pressable, TextInput, FlatList, ActivityIndicator, RefreshControl, Image } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Search, ShieldCheck, TrendingUp, Users, Percent, Sparkles, Award, Filter } from "lucide-react-native";
+import { ArrowLeft, Search, ShieldCheck, TrendingUp, Users, Percent, Sparkles, Award, Filter, Wallet } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { Screen } from "@/src/components/Screen";
 import { useToast } from "@/src/components/Toast";
@@ -75,6 +75,14 @@ export default function TradersLeaderboard() {
       <View style={[s.header, { borderBottomColor: palette.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={12}><ArrowLeft size={22} color={palette.textPrimary} /></Pressable>
         <Text style={[s.title, { color: palette.textPrimary }]}>Top Traders</Text>
+        <Pressable
+          onPress={() => router.push("/copies" as any)}
+          hitSlop={8}
+          style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border }}
+        >
+          <Wallet size={13} color={palette.textPrimary} />
+          <Text style={{ color: palette.textPrimary, fontSize: 11, fontWeight: "800" }}>My Copies</Text>
+        </Pressable>
         <Pressable
           onPress={() => setVerifiedOnly((v) => !v)}
           hitSlop={8}

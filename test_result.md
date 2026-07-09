@@ -559,3 +559,51 @@ Every other module already had NO KYC gate — /invest/buy, /forex/positions, /w
 - Regression: forex, wallet, kyc, notifications, market, market_data — all 200.
 - Minor cosmetic (settings sheet button label when relationship is `stopped`) — fixed.
 - Report: `/app/test_reports/iteration_24.json` — retest_needed: false.
+
+---
+
+## Iteration 25 — Sprint 7B.2 (Copy Execution Engine) — 2026-06
+
+### Scope
+Event-driven Copy Execution Engine on top of the 7B.1 foundation.
+- Master Simulator (28 traders auto-trading) → EventBus → CopyEngine fan-out → PaperBroker
+- 3 execution modes: Fixed Lot, Multiplier, Equity %
+- Full risk protection: Max Daily Loss, Max Drawdown, Equity Protection, Max Open Trades
+- Admin control: pause/resume simulation, speed (slow/normal/fast), force-open, force-close
+- My Copies dashboard + individual copy detail with mirrored trade history
+
+### Backend changes
+- `/app/backend/copy_trading/events.py` — EventBus + TradeEvent (in-process asyncio pub/sub)
+- `/app/backend/copy_trading/config.py` — CopyConfig singleton (mongo-backed, admin-editable)
+- `/app/backend/copy_trading/broker.py` — BrokerAdapter interface + PaperBroker (persists follower trades) + MT5/DXtrade/cTrader/MatchTrader/Custom placeholders
+- `/app/backend/copy_trading/simulator.py` — MasterSimulator (per-trader background tasks driven by style intervals + hold durations, admin pause/resume/speed/force-open)
+- `/app/backend/copy_trading/engine.py` — CopyEngine (subscribes to bus, fans out to followers; risk halts; my_summary; follower_trades; my_copies_enriched)
+- `/app/backend/copy_trading/routes.py` — extended with `/my/summary`, `/my/trades`, `/my/copies/pause-all|resume-all|close-all`, `/traders/{id}/master-trades`, `/admin/simulation/*`, `/admin/config/*`
+- `/app/backend/copy_trading/__init__.py` — wire everything + startup/shutdown handlers
+- `/app/backend/server.py` — pass `get_current_admin` to copy_trading.attach
+
+### Frontend changes
+- `/app/frontend/app/copies/index.tsx` — My Copies portfolio dashboard (summary card with total P&L, today P&L, win rate; per-trader rows; bulk pause/resume/close-all)
+- `/app/frontend/app/copies/[id].tsx` — Individual copy detail (live P&L, status controls, open positions, mirrored trade history, risk panel)
+- `/app/frontend/app/copies/_layout.tsx` — Stack layout
+- `/app/frontend/app/(tabs)/index.tsx` — "My Copies" quick-action tile
+- `/app/frontend/app/(tabs)/profile.tsx` — "My Copies" account menu entry
+- `/app/frontend/app/traders/index.tsx` — "My Copies" button top-right of leaderboard header
+- `/app/frontend/src/api/copyTrading.ts` — extended types + methods (CopySummary, FollowerTrade, MasterTrade, mySummary, myTrades, masterTrades, pauseAll, resumeAll, closeAll)
+
+### Mongo collections added/used
+- `copy_config` — global defaults + simulation state (singleton _id="active")
+- `copy_master_trades` — simulated master trades (event log)
+- `copy_follower_trades` — mirrored follower trades (managed by PaperBroker)
+- `copy_daily_stats` — per (user, trader, day) P&L for risk halt tracking
+- `copy_relationships` — pre-existing, now also stores `starting_equity_usd`, `halt_reason`, `copy_id`
+
+### No regression
+- Wallet, Forex, KYC, Notifications, AI Advisor, Market Data — untouched
+- KYC still enforced only on withdrawal requests
+- Auto-copy off by default for existing open trades (per user spec)
+
+### Curl verification
+- `GET /api/copy_trading/meta` → simulator enabled, defaults reflect user-provided values (max_daily_loss 10%, max_drawdown 20%, max_open_trades 10, equity_protection 30%, etc.)
+- Master simulator producing trades within seconds of startup (Hana Tanaka scalper opened/closed EURUSD/GBPUSD within 30s)
+- Backend clean startup: `MasterSimulator started with 28 traders`

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Image } from "re
 import { useRouter, useFocusEffect } from "expo-router";
 import {
   User as UserIcon, Moon, Sun, Shield, FileCheck, Gift, Users, LogOut, ChevronRight,
-  ShieldCheck, Bell, CreditCard, Award, HelpCircle, Globe
+  ShieldCheck, Bell, CreditCard, Award, HelpCircle, Globe, Copy as CopyIcon
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
@@ -36,6 +36,7 @@ export default function ProfileTab() {
         { icon: FileCheck, label: "KYC Verification", value: user?.kyc_status === "verified" ? "Verified" : "Pending", route: "/profile/kyc", color: user?.kyc_status === "verified" ? palette.success : palette.warning },
         { icon: CreditCard, label: "Linked Bank Accounts", value: "Manage", route: "/profile/banks", color: palette.primary },
         { icon: Award, label: "Rewards & Cashback", value: `${rewardPoints} pts`, route: "/rewards", color: palette.warning },
+        { icon: CopyIcon, label: "My Copies", value: "Manage", route: "/copies", color: "#F59E0B" },
         { icon: Gift, label: "Refer & Earn", value: user?.referral_code || "—", route: "/referral", color: palette.success },
       ],
     },
