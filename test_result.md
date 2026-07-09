@@ -552,3 +552,10 @@ Every other module already had NO KYC gate — /invest/buy, /forex/positions, /w
 - 28 traders, sort works, determinism (identical stats on repeat call).
 - Copy lifecycle: start → pause → stop reflected in DB.
 - Screenshots verified — leaderboard and profile pages render, avatars/flags/curves visible.
+
+### Iter24 verification — Sprint 7B.1 PASSED
+- Backend pytest: **27/27** (`test_copy_trading_iter24.py`) incl. determinism-across-restart P0 check.
+- Frontend Playwright: leaderboard + profile + copy lifecycle all verified.
+- Regression: forex, wallet, kyc, notifications, market, market_data — all 200.
+- Minor cosmetic (settings sheet button label when relationship is `stopped`) — fixed.
+- Report: `/app/test_reports/iteration_24.json` — retest_needed: false.

@@ -173,7 +173,7 @@ export default function TraderProfile() {
         visible={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         trader={trader}
-        initial={copy?.settings}
+        initial={copy?.settings ? { ...copy.settings, __isActive: (copy.status === "active" || copy.status === "paused") } as any : undefined}
         onSave={async (settings) => {
           try {
             const rel = copy && copy.status !== "stopped"
@@ -329,7 +329,9 @@ function CopySettingsSheet({ visible, onClose, trader, initial, onSave }: { visi
             })}
             style={{ marginTop: 14, backgroundColor: palette.primary, borderRadius: 10, paddingVertical: 14, alignItems: "center" }}
           >
-            <Text style={{ color: "#fff", fontWeight: "900", fontSize: 14 }}>{initial ? "Update Settings" : "Start Copying"}</Text>
+            <Text style={{ color: "#fff", fontWeight: "900", fontSize: 14 }}>
+              {initial && (initial as any).__isActive ? "Update Settings" : "Start Copying"}
+            </Text>
           </Pressable>
         </View>
       </View>
