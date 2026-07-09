@@ -175,7 +175,8 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
 
     @user.post("/bank-accounts")
     async def add_bank(body: BankAccountReq, u=Depends(get_current_user)):
-        await kyc_gate(u)
+        # KYC gate removed — users can add bank accounts anytime.
+        # KYC is enforced only when actually submitting a withdrawal request.
         ifsc = body.ifsc.upper()
         if not IFSC_RE.match(ifsc):
             raise HTTPException(400, "Invalid IFSC format (e.g. HDFC0001234)")

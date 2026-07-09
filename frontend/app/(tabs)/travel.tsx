@@ -53,7 +53,7 @@ export default function TravelTab() {
       });
       const cb = data?.cashback?.cashback_amount || 0;
       const pts = data?.cashback?.points_added || 0;
-      show("success", `${type[0].toUpperCase() + type.slice(1)} booked!${cb ? ` +₹${cb} cashback` : ""}${pts ? ` · +${pts} pts` : ""}`);
+      show("success", `${(type || "trip").charAt(0).toUpperCase() + (type || "trip").slice(1)} booked!${cb ? ` +₹${cb} cashback` : ""}${pts ? ` · +${pts} pts` : ""}`);
       load();
     } catch (e: any) {
       show("error", e?.response?.data?.detail || "Booking failed");
@@ -242,7 +242,7 @@ export default function TravelTab() {
                   <View style={{ flex: 1 }}>
                     <Text style={[s.hotelName, { color: palette.textPrimary }]} numberOfLines={1}>{bk.title}</Text>
                     <Text style={{ fontSize: 11, color: palette.textSecondary, marginTop: 2 }}>
-                      {bk.booking_type.toUpperCase()} · {bk.travel_date} ·{" "}
+                      {String(bk?.booking_type ?? "trip").toUpperCase()} · {bk?.travel_date ?? "—"} ·{" "}
                       <Text style={{ color: bk.status === "cancelled" ? palette.danger : palette.success, fontWeight: "700" }}>
                         {bk.status === "cancelled" ? `Cancelled (refund ₹${bk.refund_amount || 0})` : "Confirmed"}
                       </Text>

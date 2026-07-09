@@ -125,7 +125,7 @@ export default function MarketIndex() {
               {news.map((n) => (
                 <Card key={n.id} style={{ marginBottom: 8 }}>
                   <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                    <Text style={{ color: palette.primary, fontSize: 10, fontWeight: "800", letterSpacing: 0.5 }}>{n.category.toUpperCase()}</Text>
+                    <Text style={{ color: palette.primary, fontSize: 10, fontWeight: "800", letterSpacing: 0.5 }}>{String(n?.category ?? "news").toUpperCase()}</Text>
                     <Text style={{ color: palette.textMuted, fontSize: 10 }}>{new Date(n.published_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</Text>
                   </View>
                   <Text style={{ color: palette.textPrimary, fontSize: 14, fontWeight: "800", lineHeight: 20 }}>{n.headline}</Text>
@@ -148,7 +148,7 @@ export default function MarketIndex() {
                   <Text style={{ color: palette.textMuted, fontSize: 10, marginTop: 2 }}>{new Date(e.when).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</Text>
                 </View>
                 <View style={[s.impact, { backgroundColor: e.impact === "high" ? "#FEE2E2" : e.impact === "medium" ? "#FEF3C7" : "#DBEAFE" }]}>
-                  <Text style={{ color: e.impact === "high" ? "#DC2626" : e.impact === "medium" ? "#D97706" : "#2563EB", fontSize: 9, fontWeight: "900" }}>{e.impact.toUpperCase()}</Text>
+                  <Text style={{ color: e?.impact === "high" ? "#DC2626" : e?.impact === "medium" ? "#D97706" : "#2563EB", fontSize: 9, fontWeight: "900" }}>{String(e?.impact ?? "low").toUpperCase()}</Text>
                 </View>
               </View>
             </Card>

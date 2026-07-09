@@ -443,3 +443,33 @@ Business flow correction — KYC should ONLY be enforced at Withdrawal.
 - Full report: `/app/test_reports/iteration_20.json`
 
 Ready for APK build.
+
+## Iter21 — Broader stabilization audit (P0 re-report)
+
+User re-reported the same 2 P0 issues (Notifications toUpperCase crash + Forex KYC block). Most likely their installed APK was built BEFORE iter20 fixes landed. Nevertheless expanded the fix to guard EVERY `.toUpperCase()` and audit all remaining KYC gates.
+
+### Additional unsafe field accesses guarded (potential future crashes)
+- `/app/frontend/app/market/[symbol].tsx:48` — `q.category.toUpperCase()` → `String(q.category ?? "market").toUpperCase()`
+- `/app/frontend/app/market/index.tsx:128` — `n.category.toUpperCase()` → `String(n?.category ?? "news").toUpperCase()`
+- `/app/frontend/app/market/index.tsx:151` — `e.impact.toUpperCase()` → `String(e?.impact ?? "low").toUpperCase()`
+- `/app/frontend/app/(tabs)/travel.tsx:56` — `type[0].toUpperCase()` → guarded with `(type || "trip").charAt(0)`
+- `/app/frontend/app/(tabs)/travel.tsx:245` — `bk.booking_type.toUpperCase()` → guarded with `String(bk?.booking_type ?? "trip")`
+
+### KYC state — final audit
+Only ONE gate remains, on the exact endpoint per user requirement:
+- `/wallet/withdrawals/request` (line 230) — KYC gate PRESENT ✅ (user submits withdrawal)
+
+Removed additionally in iter21:
+- `/wallet/withdrawals/bank-accounts` (add-bank) — kyc_gate removed. User can save bank accounts anytime; KYC only prompts at actual withdrawal.
+
+### Curl end-to-end (fresh non-KYC user)
+| Action | HTTP | Notes |
+|---|---|---|
+| Signup | 200 | new token issued |
+| Forex BUY XAUUSD 0.01 | **200** ✅ | position opened |
+| Invest buy ₹100 | **200** ✅ | holding created |
+| Wallet topup /create-session ₹500 | **200** ✅ | demo Stripe session |
+| Add bank account | **200** ✅ | bank_id returned |
+| Withdrawal request | **403** ✅ | KYC_REQUIRED (correctly blocked) |
+
+Every other module already had NO KYC gate — /invest/buy, /forex/positions, /wallet/send, /wallet/recharge, /wallet/billpay, /wallet/payments/create, /wallet/topup/create-session.

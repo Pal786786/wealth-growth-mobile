@@ -45,7 +45,7 @@ export default function SymbolDetail() {
 
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 80 }}>
         <LinearGradient colors={isUp ? ["#052E1F", "#065F46"] : ["#3B0A0A", "#7F1D1D"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.hero}>
-          <Text style={s.heroLabel}>{q.symbol} · {q.category.toUpperCase()}</Text>
+          <Text style={s.heroLabel}>{q.symbol} · {String(q.category ?? "market").toUpperCase()}</Text>
           <Text style={s.heroPrice}>{q.currency === "INR" ? "₹" : "$"}{q.price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
             {isUp ? <TrendingUp color="#fff" size={18} /> : <TrendingDown color="#fff" size={18} />}
