@@ -22,12 +22,12 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
-  ArrowLeft, Search, Star, StarOff, Clock, ChevronRight, TrendingUp, TrendingDown, Wifi, WifiOff,
+  ArrowLeft, Search, Star, StarOff, TrendingUp, TrendingDown, Wifi, WifiOff,
 } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { Screen } from "@/src/components/Screen";
 import { useToast } from "@/src/components/Toast";
-import { marketDataApi, Category, Instrument, Quote } from "@/src/api/marketData";
+import { marketDataApi, Category, Instrument } from "@/src/api/marketData";
 import { useMarketStream } from "@/src/hooks/useMarketStream";
 import { errText, safeStr } from "@/src/utils/errors";
 
@@ -57,7 +57,9 @@ export default function MarketSymbolsBrowser() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Load categories + favorites on mount
+  // Load categories + favorites on mount. Favorites requires auth — swallow
+  // 401 silently rather than surfacing an error toast to unauthenticated
+  // visitors who just want to browse the catalog.
   useEffect(() => {
     (async () => {
       try {
@@ -67,7 +69,13 @@ export default function MarketSymbolsBrowser() {
       try {
         const f = await marketDataApi.favorites();
         setFavorites(new Set(f.symbols));
-      } catch { /* not fatal — user might not be logged in */ }
+      } catch (e: any) {
+        // 401 = not logged in — expected, don't warn. Any other error is silent too:
+        // the star toggle re-attempts and surfaces the real error to the user then.
+        if (e?.response?.status && e.response.status !== 401 && e.response.status !== 403) {
+          console.warn("[market/symbols] favorites load failed:", errText(e));
+        }
+      }
     })();
   }, [show]);
 
@@ -106,7 +114,7 @@ export default function MarketSymbolsBrowser() {
     }
   }, [activeTab, debouncedSearch, page, show]);
 
-  useEffect(() => { loadPage({ reset: true }); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeTab, debouncedSearch]);
+  useEffect(() => { loadPage({ reset: true }); }, [activeTab, debouncedSearch, loadPage]);
 
   // Subscribe to live prices for the currently visible list
   const visibleIds = useMemo(() => items.slice(0, 60).map((i) => i.symbol_id), [items]);

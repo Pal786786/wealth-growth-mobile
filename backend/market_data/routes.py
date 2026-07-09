@@ -29,7 +29,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from . import catalog as catmod
@@ -52,6 +52,15 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "api_keys": {"twelvedata": "", "alpha_vantage": "", "finnhub": "", "polygon": ""},
     "enabled_categories": ["forex_majors", "forex_minors", "metals", "energies", "indices", "crypto", "commodities"],
 }
+
+
+class AdminSettings(BaseModel):
+    """Admin PUT body — all fields optional so callers can patch subsets."""
+    provider: Optional[str] = None
+    transport: Optional[str] = None
+    interval_seconds: Optional[float] = None
+    api_keys: Optional[Dict[str, str]] = None
+    enabled_categories: Optional[List[str]] = None
 
 
 async def _get_settings(force: bool = False) -> Dict[str, Any]:
@@ -284,13 +293,6 @@ def attach(app, db, get_current_user, get_current_admin, logger=None) -> APIRout
             pump_task.cancel()
 
     # ---------------- ADMIN ----------------
-    class AdminSettings(BaseModel):
-        provider: Optional[str] = None
-        transport: Optional[str] = None
-        interval_seconds: Optional[float] = None
-        api_keys: Optional[Dict[str, str]] = None
-        enabled_categories: Optional[List[str]] = None
-
     @admin_r.get("/status")
     async def admin_status(admin=Depends(get_current_admin)):
         s = await _get_settings(force=True)
@@ -310,7 +312,7 @@ def attach(app, db, get_current_user, get_current_admin, logger=None) -> APIRout
         }
 
     @admin_r.put("/settings")
-    async def admin_put_settings(body: AdminSettings, admin=Depends(get_current_admin)):
+    async def admin_put_settings(body: AdminSettings = Body(...), admin=Depends(get_current_admin)):
         patch: Dict[str, Any] = {k: v for k, v in body.model_dump(exclude_none=True).items()}
         if not patch:
             raise HTTPException(400, "no fields to update")

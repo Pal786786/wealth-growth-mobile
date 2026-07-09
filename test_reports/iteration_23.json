@@ -1,0 +1,49 @@
+{
+  "summary": "Sprint 7 Slice 1 - Iter22 P1/P2 retest: BOTH fixes verified. (1) PUT /api/admin/market_data/settings now returns 200 for all subset payloads after AdminSettings was moved to module scope + Body(...) marker added. All 5 admin PUT scenarios pass: interval_seconds=2 -> 200, provider switch to twelvedata with fake key -> 200 (quote endpoint returns 200 with mock fallback, does NOT 500), reset to mock/polling/interval=3 -> 200, final GET /admin/status shows catalog_size=96 + provider_health.ok=true + settings restored. (2) Console noise fix on /market/symbols: unauthenticated load NO LONGER logs '[market/symbols] favorites load failed' (0 occurrences, down from 4 in iter22). Full pytest suite: 27/27 market_data + 5/5 iter23_admin_put = 32/32 (100%). Regression clean: forex XAUUSD ticket, /notifications, /kyc, /advisor all render without crash. NOTE: An unrelated axios-interceptor-level warn '[api/client] request failed:' still fires for the 401 /favorites on unauth mount (defined in /app/frontend/src/api/client.ts:43) - this is outside the local .catch scope of symbols.tsx and thus outside the requested fix, but if the goal is a totally clean console for unauth visitors, the interceptor should downgrade 401/403 to debug. Reporting as informational only.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Unauth /market/symbols load (INFORMATIONAL, not a regression)",
+        "issue": "Axios response interceptor in /app/frontend/src/api/client.ts:43 still emits a console.warn for the 401 on GET /api/market_data/favorites when a logged-out visitor lands on /market/symbols. The specific message this iteration fixed ('[market/symbols] favorites load failed') is now correctly silenced. If the intent is a fully clean console for unauth browsing, either (a) skip the favorites call entirely when no token is present, or (b) downgrade 401/403 in the client.ts interceptor to console.debug.",
+        "affected_testIDs": ["N/A"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "app/market/symbols.tsx (carry-over from iter22)",
+        "issue": "React Native web deprecation warning still fires: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Not part of iter23 scope but still present. Reference: /app/frontend/app/market/symbols.tsx StyleSheet."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_market_data.py",
+    "/app/backend/tests/test_iter23_admin_put.py",
+    "/app/test_reports/pytest/iter23_market_data.xml",
+    "/app/test_reports/pytest/iter23_admin_put.xml"
+  ],
+  "action_items": [
+    "NONE for P1 (admin PUT) - fix verified.",
+    "NONE for P2 (favorites 401 warn from symbols.tsx) - fix verified.",
+    "OPTIONAL P3: If a fully silent console for logged-out /market/symbols is desired, either skip the favorites API call when no auth token exists OR downgrade 401/403 in /app/frontend/src/api/client.ts:43 interceptor to console.debug. Not blocking.",
+    "CARRY-OVER P3 from iter22: Migrate shadow* StyleSheet props to boxShadow in /app/frontend/app/market/symbols.tsx (still logs deprecation warning)."
+  ],
+  "critical_code_review_comments": [
+    "market_data/routes.py:57-63 AdminSettings model is now at module scope with all-Optional fields, and route uses `body: AdminSettings = Body(...)` at line 315. Correct fix - FastAPI/Pydantic now resolves it as a JSON body instead of query params. Verified via curl + pytest.",
+    "market_data/routes.py:339 @app.on_event('startup') still registered inside attach() - if attach() ever runs twice, multiple handlers accumulate. Cosmetic only.",
+    "symbols.tsx:72-77 - guard `e?.response?.status !== 401 && !== 403` correctly matches axios error shape (verified in client.ts describeAxiosError)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter23_admin_put.py (new - 5 focused retest cases for iter22 P1)"
+  ],
+  "success_rate": {"backend": "100% (32/32 - 27 market_data + 5 iter23 admin PUT)", "frontend": "100% (unauth symbols, auth symbols, forex ticket, notifications, kyc, advisor - no crashes, no page errors)"},
+  "seed_data_creation": "Added XAUUSD favorite for demo@mfb.in during auth-flow verification (persisted from earlier iter22 test runs).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter22 P1 (admin PUT 422) and P2 (favorites 401 console warn on /market/symbols) are both RESOLVED. If the main agent wants a fully clean console for logged-out visitors, the residual axios-interceptor warn at /app/frontend/src/api/client.ts:43 needs to be gated or the favorites call skipped when unauthenticated - flagged as optional in action_items. shadow* deprecation warning + testID gaps from iter22 remain unaddressed but are outside iter23 scope."
+}
