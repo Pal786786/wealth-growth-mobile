@@ -83,8 +83,7 @@ def attach(app, db, get_current_user, alerts: AlertsEngine, get_current_admin=No
 
     @r.get("/signals/{symbol}")
     async def signal_detail(symbol: str, timeframe: str = Query("H1"),
-                            with_ai: bool = Query(True),
-                            user=Depends(get_current_user)):
+                            with_ai: bool = Query(True)):
         sig = signal_engine.signal_for(symbol, timeframe=timeframe)
         if not sig:
             raise HTTPException(404, f"Unknown or unsupported symbol: {symbol}")

@@ -65,8 +65,7 @@ async def _call_llm(sig: Dict[str, Any]) -> Optional[str]:
             api_key=EMERGENT_KEY,
             session_id=session,
             system_message=SYSTEM_PROMPT,
-        )
-        chat.with_model(MODEL_PROVIDER, MODEL_NAME).with_max_tokens(300)
+        ).with_model(MODEL_PROVIDER, MODEL_NAME)
         ind = sig.get("indicators") or {}
         prompt = (
             f"Symbol: {sig['symbol']} ({sig.get('display')}) — {sig['timeframe']}\n"

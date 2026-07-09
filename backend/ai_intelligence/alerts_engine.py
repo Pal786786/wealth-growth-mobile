@@ -175,11 +175,13 @@ class AlertsEngine:
             atype = a["type"]
             last_price = float(a.get("last_price") or price)
             if atype == "price_above":
-                if last_price < a["target_price"] <= price:
+                # Level trigger: fire whenever price is currently above target.
+                # `repeat=False` (default) ensures alert becomes 'triggered' → only fires once.
+                if price >= a["target_price"]:
                     fired = True
                     delta_msg = f"crossed above {a['target_price']}"
             elif atype == "price_below":
-                if last_price > a["target_price"] >= price:
+                if price <= a["target_price"]:
                     fired = True
                     delta_msg = f"crossed below {a['target_price']}"
             elif atype == "percent_move":
