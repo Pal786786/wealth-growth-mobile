@@ -662,3 +662,58 @@ KYC still enforced only on withdrawal requests.
 - `GET /copy_trading/admin/analytics` → daily/weekly/monthly ROI, leaders (highest ROI, win rate, AUM), most copied all populated
 - `GET /copy_trading/admin/system-health` → active_simulators=28, broker=paper OK, database OK, uptime tracked
 - `DELETE /copy_trading/admin/traders/{custom_id}` → custom trader removed and simulator task cancelled
+
+---
+
+## Iteration 27 — Sprint 7C.1 (AI Trading Intelligence) — 2026-06
+
+### Scope
+Independent AI Intelligence subsystem — Signal Engine, TA Engine, AI Reasoning (Claude), Enhanced Watchlist, Price Alerts (5 types with 30s configurable evaluation loop).
+
+### Architecture (all modules independent)
+Signal Engine → TA Engine → AI Engine (Claude) → Alerts (Notifications) → Frontend
+
+### Backend files created
+- `/app/backend/ai_intelligence/feed.py` — Deterministic SHA-256-seeded OHLCV synthesizer with mean-reversion to anchor prices (from market_data catalog). Provider-based so TwelveData/Alpha Vantage/Finnhub can replace it later.
+- `/app/backend/ai_intelligence/ta_engine.py` — All 10 indicators: EMA 20/50/200, RSI, MACD, ATR, Bollinger Bands, ADX, SuperTrend, VWAP + volatility.
+- `/app/backend/ai_intelligence/signal_engine.py` — Combines TA into signals with all 13 required fields (side, entry, SL, TP1/2/3, RR, confidence %, trend, strength, timeframe, expiry, reason hits, indicator summary).
+- `/app/backend/ai_intelligence/ai_engine.py` — Claude Sonnet 4.5 narrative reasoning cached in `ai_signal_explanations` collection (falls back to deterministic template if LLM unavailable).
+- `/app/backend/ai_intelligence/watchlist_engine.py` — Enriched watchlist with trend/signal/confidence/volatility/daily+weekly change.
+- `/app/backend/ai_intelligence/alerts_engine.py` — 5 alert types (price_above/below, percent_move, indicator_cross, rsi_alert), background asyncio loop @ 30s (admin-configurable), integrates with existing Notifications module.
+- `/app/backend/ai_intelligence/routes.py` — 14 endpoints under `/api/ai/*` + admin config endpoints.
+- `/app/backend/ai_intelligence/__init__.py` — Startup wires alerts loop from `ai_config` collection.
+
+### Endpoints (all under /api/ai/)
+- Meta: GET /meta
+- Signals: GET /signals[?timeframe&asset_class&min_confidence&side&limit], GET /signals/{symbol}[?timeframe&with_ai], GET /indicators/{symbol}, GET /candles/{symbol}
+- Watchlist: GET /watchlist, POST /watchlist, DELETE /watchlist/{symbol}
+- Alerts: GET/POST/DELETE /alerts[/…], POST /alerts/{id}/pause, POST /alerts/{id}/resume
+- Admin: GET /admin/alerts/config, PUT /admin/alerts/config
+
+### Mongo collections used
+- `ai_watchlist` — user symbol watchlist
+- `ai_price_alerts` — user alerts (5 types)
+- `ai_config` — global config (alerts_eval_interval_sec)
+- `ai_signal_explanations` — Claude cache keyed by (symbol|timeframe|bar_index)
+
+### Frontend screens created
+- `/app/frontend/app/ai/_layout.tsx` — Stack
+- `/app/frontend/app/ai/index.tsx` — AI Intelligence Hub with 3 module cards
+- `/app/frontend/app/ai/signals.tsx` — Filterable signals list (timeframe / asset class / side / min confidence)
+- `/app/frontend/app/ai/signal/[symbol].tsx` — Detailed signal view: SL/TP1/TP2/TP3, AI explanation, 10 indicators, quick alert/watchlist actions
+- `/app/frontend/app/ai/watchlist.tsx` — Symbol watchlist with add-modal (quick picks + custom entry)
+- `/app/frontend/app/ai/alerts.tsx` — Alert list + creator sheet supporting all 5 types
+- `/app/frontend/src/api/aiIntel.ts` — Typed API client
+
+### Home screen integration
+- Added "AI Signals" quick-action tile (Brain icon, #8B5CF6)
+
+### Not modified (regression protection)
+- Wallet, Forex, Copy Trading, KYC, Notifications (Alerts ADD notifications, don't modify code), AI Advisor, Market Data — untouched
+- Existing Copy Trading tests still pass
+
+### Curl verification
+- `GET /api/ai/meta` → timeframes (M5..D1), asset_classes, alert_types, universe (15), eval_interval_sec=30
+- `GET /api/ai/signals?limit=6` → returns signals with anchors matching catalog (BTCUSD @ ~99k, GER40 @ ~21k, XAUUSD @ ~4098)
+- `GET /api/ai/signals/BTCUSD` → full detail with Claude AI explanation (fallback narrative since sandbox has no live key), 10 indicators, indicator_summary rows, 6 reason hits
+- Alerts loop confirmed active at startup ("AlertsEngine started interval=30s")

@@ -1,0 +1,44 @@
+{
+  "summary": "Sprint 7C.1 AI Trading Intelligence backend testing: 36/37 tests passed (97%). All GET endpoints (/api/ai/meta, /signals list+filters, /signals/{symbol}, /indicators/{symbol}, /candles/{symbol}), TA engine sanity, signal determinism, watchlist CRUD, alerts CRUD + validation (all 5 types + pause/resume/delete + 404s), admin alerts config (get/set/persist/clamp 5-600), and full regression suite (wallet, notifications, forex, market, copy_trading meta+my/copies+admin/system-health with 28+ simulators) all PASS. Server startup logs confirmed 'ai_intelligence subsystem attached (Sprint 7C.1)' and 'AlertsEngine started (interval=30s)'. Anchor prices verified: BTCUSD~99k, XAUUSD~4000, EURUSD~1.14, GER40~20k. One functional bug: the price_above/price_below alerts use a strict cross-detection (last_price < target <= price) which prevents firing when target is set BELOW current price (spec expected such an alert to fire immediately per problem statement). Also noted: Claude LLM call fails with 'LlmChat has no attribute with_max_tokens' — deterministic fallback narrative is returned (still non-empty string, acceptable per spec).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/ai/alerts (type=price_above)",
+        "issue": "price_above alert with target BELOW current price never fires. alerts_engine._eval_symbol uses cross-detection: `last_price < target <= price`. Since on-creation last_price is snapshot to current price (~1.14 for EURUSD), a target of 0.0001 never satisfies `last_price < target` and the alert stays 'active' forever. Problem statement explicitly expects such an alert to fire (target guaranteed below live price). Fix: on the first evaluation after creation, use ONE-SIDED check (price >= target for price_above, price <= target for price_below), OR initialise last_price such that a below-current target is considered 'not yet triggered' (e.g. store target vs. anchor). Symmetric bug exists for price_below with target above current price.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/ai/signals/{symbol}?with_ai=true",
+        "issue": "Claude Sonnet 4.5 LLM invocation fails with `'LlmChat' object has no attribute 'with_max_tokens'` (see backend.err.log line 'Claude signal narrative failed'). ai_engine.py:69 chains `.with_max_tokens(300)` which isn't in the current emergentintegrations API. Fallback template returns a valid non-empty explanation so the endpoint contract is honoured, but the actual AI reasoning path is silently unavailable. Suggested fix: drop `.with_max_tokens(300)` or use the supported method name (e.g. `.with_params(max_tokens=300)` — verify against installed emergentintegrations version)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter27_ai_intelligence.py",
+    "/app/test_reports/pytest/iter27_ai_intelligence.xml"
+  ],
+  "action_items": [
+    "Fix price_above/price_below alert semantics so an alert whose target is already crossed at creation-time fires on the next eval cycle (see alerts_engine._eval_symbol). Recommend: for price_above, fire when `price >= target` AND (last_evaluation was not yet run OR last_price < target); for price_below, mirror it. Alternatively, when creating the alert, if the condition is already true, immediately trigger it.",
+    "Fix Claude LLM narrative call in ai_intelligence/ai_engine.py:69 — remove or replace deprecated `.with_max_tokens(300)` chained call so actual Sonnet 4.5 responses are used instead of falling back to the template (functional but reduces product quality)."
+  ],
+  "critical_code_review_comments": [
+    "alerts_engine.toggle() has a no-op branch `\"triggered_at\": None if active else None` — both sides of the ternary are None. If the intent was to clear triggered_at on resume, this needs `None if active else <original_value>` or simply drop the field on resume.",
+    "signal_engine.list_signals returns HOLD signals with `risk_reward_ratio: 0.0` while spec says buy/sell must have 3.0 — behaviour is correct but consider documenting the HOLD contract in OpenAPI/docstring.",
+    "ai_engine caches explanations by (symbol, timeframe, bar_index). If the LLM call is broken and returns the fallback, the fallback gets cached forever — even after ai_engine.py is fixed, a manual purge of `ai_signal_explanations` collection is needed to see real Claude output."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "97%", "frontend": "not tested (backend-only per request)"},
+  "seed_data_creation": "Created one test user via /api/auth/signup per test module run; created and cleaned up watchlist item XAUUSD; created + deleted multiple alerts. No manual DB seed required.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Only failing test: TestAlertsTrigger.test_eval_loop_triggers — will pass once alerts_engine price_above/price_below one-shot firing is fixed. Everything else (36/37) is green including admin config, TA sanity, determinism, all 5 alert types, watchlist CRUD, and full regression on copy_trading + market_data + wallet/notifications. Use /app/backend/tests/test_iter27_ai_intelligence.py for re-run.",
+  "rca_of_issue": "RCA — Alert never fires: In ai_intelligence/alerts_engine.py::_eval_symbol, the price_above branch is `if last_price < a[\"target_price\"] <= price: fired = True`. On alert creation the code snapshots `doc[\"last_price\"] = feed.current_price(symbol)` (~1.14 for EURUSD), so the invariant `last_price < 0.0001` is never satisfied and no cross is ever detected. Reproduction: POST /api/ai/alerts {type:price_above, symbol:EURUSD, target_price:0.0001}; wait 45s with eval_interval_sec=5; GET /api/ai/alerts → status remains 'active' rather than 'triggered'. Mitigation: either (a) evaluate an immediate hit on creation and mark as triggered synchronously, or (b) at first eval after creation, treat the alert with a one-sided check `price >= target` regardless of last_price (then switch to cross-detection thereafter). Same symmetric logic applies to price_below."
+}

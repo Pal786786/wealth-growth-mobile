@@ -1098,6 +1098,17 @@ try:
 except Exception as _e:
     logger.warning(f"copy_trading attach failed: {_e}")
 
+# ------ Sprint 7C.1: AI Intelligence (signals + TA + watchlist + alerts) ------
+try:
+    import ai_intelligence as _ai_intelligence
+    _ai_intelligence.attach(
+        app, db=db, get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+    )
+    logger.info("ai_intelligence subsystem attached (Sprint 7C.1)")
+except Exception as _e:
+    logger.warning(f"ai_intelligence attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as
