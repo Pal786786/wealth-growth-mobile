@@ -513,3 +513,13 @@ Every other module already had NO KYC gate — /invest/buy, /forex/positions, /w
 ### Files added / modified
 - **New**: `backend/market_data/{__init__,catalog,providers,transports,routes}.py`, `frontend/src/api/marketData.ts`, `frontend/src/hooks/useMarketStream.ts`, `frontend/app/market/symbols.tsx`, `admin/src/pages/AdminMarketData.tsx`
 - **Modified**: `backend/server.py` (attach), `frontend/app/market/index.tsx` (Browse-all CTA), `admin/src/main.tsx` (route), `admin/src/pages/Layout.tsx` (nav)
+
+### Iter22 + Iter23 verification — Sprint 7 Slice 1 COMPLETE
+- **Iter22**: 25/27 backend pytest + 100% frontend Playwright pass. Two follow-ups:
+  - P1 (blocking): PUT /api/admin/market_data/settings 500 due to nested Pydantic model
+  - P2 (cosmetic): 4× 401 console warnings on unauth /market/symbols load
+- **Iter23 retest** (after main-agent fix): 
+  - **Backend 27/27 pytest pass** (`test_market_data.py`) + **5/5** on the new admin-put fix (`test_iter23_admin_put.py`)
+  - Frontend: 0 favorites-load warnings on unauth load, LIVE badge + prices streaming.
+  - Regression: forex/notifications/kyc/advisor all clean; non-KYC forex 200, non-KYC withdrawal 403.
+  - Report: `/app/test_reports/iteration_23.json` — `retest_needed: false`
