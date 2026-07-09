@@ -31,6 +31,7 @@ import AdminWithdrawals from "./pages/AdminWithdrawals";
 import AdminAIAdvisor from "./pages/AdminAIAdvisor";
 import AdminNotificationCenter from "./pages/AdminNotificationCenter";
 import AdminMarketSettings from "./pages/AdminMarketSettings";
+import AdminMarketData from "./pages/AdminMarketData";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -79,6 +80,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="audit" element={<AdminAuditLogs />} />
               <Route path="ai-advisor" element={<AdminAIAdvisor />} />
               <Route path="market-settings" element={<AdminMarketSettings />} />
+              <Route path="market-data" element={<AdminMarketData />} />
               <Route path="api-management" element={<ApiManagement />} />
               <Route path="settings" element={<Settings />} />
               <Route path="admins" element={<AdminUsers />} />

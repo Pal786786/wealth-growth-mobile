@@ -1,0 +1,76 @@
+{
+  "summary": "Sprint 7 Slice 1 (Market Data) — 25/27 backend pytest passing (92.6%). Frontend /market/symbols renders correctly with header 'Markets' + LIVE badge, search filters (BTC->Bitcoin), 11 category tabs with correct counts (Forex Majors 7, Forex Minors 21, Forex Exotics 15, Metals 4, Energies 3, Indices 10, Crypto 30, Commodities 6), live prices with change %. /market dashboard shows 'Browse all' pill. /forex regression clean (XAU/EUR/GBP/JPY/BTC still there). WebSocket subscribe/ping/error round-trip works. Wallet send (no KYC) works, withdrawals still gated. TWO backend bugs found: (1) PUT /api/admin/market_data/settings returns 422 because AdminSettings model has all-Optional fields and FastAPI 0.110.1+Pydantic 2.13 treats it as query param instead of body. Blocks admin from changing interval/provider/api_keys. (2) Client calls /api/market_data/favorites without a token producing console 401 warnings for unauthenticated users on /market/symbols and /market. Deprecated shadow* CSS style props warning also fired.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PUT /api/admin/market_data/settings",
+        "issue": "422 Unprocessable Entity — response says {\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"body\"],\"msg\":\"Field required\"}]}. Root cause: AdminSettings pydantic model in /app/backend/market_data/routes.py:287-292 declares ALL fields as Optional with None defaults. FastAPI 0.110.1 + Pydantic 2.13 then treats the parameter as a query alias called `body` instead of a JSON body. Admin cannot update interval_seconds, provider, or api_keys — blocks entire Sprint 7 admin panel PUT flow. Fix: `from fastapi import Body` and change signature to `async def admin_put_settings(body: AdminSettings = Body(...), admin=Depends(...))` — or add one required field / model_config = ConfigDict(extra='allow').",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/market_data/favorites (client side)",
+        "issue": "/app/frontend/app/market/symbols.tsx (and possibly the layout) calls /api/market_data/favorites without a Bearer token when user is logged out. Server returns 401 (correct) but console gets 4x 'Missing token' warnings on every /market/symbols and /market load. Gate the call by an isAuthed guard in useMarketFavorites / MarketDataClient."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/market/symbols.tsx",
+        "issue": "No testID attributes anywhere on the browser screen (header, search input, tabs, list rows, star buttons). Blocks robust automated testing.",
+        "testID": "market-symbols-screen / market-search-input / market-tab-<id> / market-row-<symbol_id> / market-star-<symbol_id>",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Unauth /market/symbols load",
+        "issue": "Favorites endpoint is called on mount even for logged-out users, resulting in repeated 401 console errors. Screen still degrades gracefully (star buttons render as empty).",
+        "affected_testIDs": ["N/A — no testIDs present"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "/market/symbols",
+        "issues": [
+          "Category tabs row overflows off-screen right of viewport 390px (Commodities partially hidden until user scrolls). Horizontal scroll works, but consider a subtle chevron/fade to hint scrollability.",
+          "Star icons (44px hit target) are edge-aligned tight against the right border — a 12–16px right padding would improve tap comfort."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "app/market/symbols.tsx (and possibly index.tsx)",
+        "issue": "React Native web console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — fired repeatedly on mount. Migrate elevation/shadow styles to the new API."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_market_data.py",
+    "/app/test_reports/pytest/iter22_market_data.xml"
+  ],
+  "action_items": [
+    "FIX (P1): /app/backend/market_data/routes.py line 313 — change signature to `async def admin_put_settings(body: AdminSettings = Body(...), admin=Depends(get_current_admin))` (import Body from fastapi). Without this, admin cannot mutate any market_data settings.",
+    "FIX (P2): Gate `GET /api/market_data/favorites` client call behind isAuthed to remove 4x 401 console warnings on unauth loads (/app/frontend/app/market/symbols.tsx or wherever useMarketFavorites is invoked).",
+    "ADD (P2): testID attributes to the market symbols screen: `market-symbols-screen`, `market-search-input`, `market-tab-<id>`, `market-row-<symbol_id>`, `market-star-<symbol_id>`, `market-live-badge`.",
+    "FIX (P3): Migrate `shadow*` StyleSheet keys to `boxShadow` per RN 0.76+ deprecation warning (fires from /market/symbols)."
+  ],
+  "critical_code_review_comments": [
+    "market_data/routes.py:287 — AdminSettings with all-Optional fields breaks FastAPI 0.110+Pydantic 2.x body detection. Confirmed via 422 response with loc:[query,body]. Verified with fastapi 0.110.1 pydantic 2.13.4.",
+    "market_data/routes.py:337 — `@app.on_event('startup')` registered inside attach() — every re-attach adds another handler. Cosmetic since attach only runs once but worth using lifespan or a guard.",
+    "market_data/routes.py:161 — Favorites `find_one` uses `{'_id': 0}` projection but returned dict includes `updated_at` which is a datetime — serializes fine, low risk.",
+    "market_data/routes.py:216 — recently-viewed items list may include duplicate schema keys if catalog changes; consider cleaning stale entries.",
+    "No testIDs anywhere in /app/frontend/app/market/symbols.tsx — critical for automated regression."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_market_data.py (new — 27 pytest cases for market_data subsystem + regression)"
+  ],
+  "success_rate": {"backend": "92.6% (25/27)", "frontend": "100% (smoke-tested /market/symbols, /market, /forex — all render without red screen)"},
+  "seed_data_creation": "None — favorites & recently-viewed test data added under demo@mfb.in during tests, cleaned by test flow itself.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After E1 fixes the admin PUT bug in /app/backend/market_data/routes.py (add Body(...) or make one field required), rerun `pytest /app/backend/tests/test_market_data.py::TestAdmin -v` — expect 4/4 green. Also verify PUT interval_seconds=2 -> subsequent GET status shows interval_seconds=2, and provider switch to twelvedata + reset to mock leaves quote/XAUUSD returning source='mock'. On the frontend, verify no 401 console warnings on unauth /market/symbols load after favorites-gating fix.",
+  "rca_of_issue": "PUT /api/admin/market_data/settings 422 — REPRO: curl -X PUT /api/admin/market_data/settings -H 'Authorization: Bearer <admin>' -H 'Content-Type: application/json' -d '{\"interval_seconds\":2}' returns {\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"body\"],\"msg\":\"Field required\"}]}. RCA: FastAPI 0.110.1 with Pydantic 2.13.4 uses model field introspection to decide body-vs-query — when every field of a top-level model is Optional with default None, FastAPI treats it as an implicit query params container (each field becomes a query arg) rather than a JSON body. AdminSettings has provider/transport/interval_seconds/api_keys/enabled_categories all Optional. MITIGATION: annotate `body: AdminSettings = Body(...)` (recommended), OR make one field required (breaks partial-update), OR change signature to `body: Dict[str, Any] = Body(...)` and validate manually."
+}

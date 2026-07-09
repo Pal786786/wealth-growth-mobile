@@ -1073,6 +1073,20 @@ market_module.attach(
 )
 app.include_router(api)
 
+# ------ Sprint 7 Slice 1: Market Data (multi-asset browser + provider layer) ------
+try:
+    import market_data as _mkt_data
+    _mkt_data.attach(
+        app,
+        db=db,
+        get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+        logger=logger,
+    )
+    logger.info("market_data subsystem attached")
+except Exception as _e:
+    logger.warning(f"market_data attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as

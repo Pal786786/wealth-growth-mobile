@@ -7,8 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
 const ROLE_NAV: Record<string, string[]> = {
-  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/market-settings", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
-  admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/market-settings", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings"],
+  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/market-settings", "/market-data", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
+  admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/market-settings", "/market-data", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings"],
   finance_manager: ["/", "/users", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/insurance/claims", "/rewards", "/tier-upgrades", "/reports", "/audit"],
   support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications", "/push-logs", "/travel", "/insurance", "/insurance/claims", "/tier-upgrades"],
   investment_manager: ["/", "/users", "/investments", "/calculator-config", "/content"],
@@ -26,6 +26,7 @@ const NAV = [
   { to: "/withdrawals", label: "Withdrawals", icon: ArrowUpFromLine },
   { to: "/ai-advisor", label: "AI Advisor", icon: Bot },
   { to: "/market-settings", label: "Market Settings", icon: LineChart },
+  { to: "/market-data", label: "Market Data (S7)", icon: LineChart },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/push-logs", label: "Push Logs", icon: Activity },
   { to: "/investments", label: "Investments", icon: TrendingUp },

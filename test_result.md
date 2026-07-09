@@ -480,3 +480,36 @@ Every other module already had NO KYC gate — /invest/buy, /forex/positions, /w
 - Fresh non-KYC user gets 200 on 9 non-withdrawal endpoints incl. bank-accounts add. 403 only on withdrawals/request.
 - Playwright E2E: signup → notifications (3 malformed docs) → market → advisor → kyc → forex/symbol — zero crashes, zero KYC modal on non-withdrawal flows.
 - Full report: `/app/test_reports/iteration_21.json`.
+
+## Sprint 7 Slice 1 — Live Market Data Foundation
+
+### What ships
+- **Scalable catalog** (`/app/backend/market_data/catalog.py`) — 96 instruments across 8 categories today (Forex Majors 7, Minors 21, Exotics 15, Metals 4, Energies 3, Indices 10, Crypto 30, Commodities 6). Schema is open-ended; adding new categories/instruments requires only a list append.
+- **Provider abstraction** (`providers.py`) — `BaseProvider` + `MockProvider` + `TwelveDataProvider` (real HTTPS adapter, activates only when API key set). Registry factory `build_provider(name, settings)`. Extensible for Alpha Vantage / Finnhub / Polygon / Kite Connect / Upstox.
+- **Transport abstraction** (`transports.py`) — `PollingTransport` (default) and `WebSocketTransport` (falls back to polling until provider WS is wired). Admin switches by name.
+- **Routes** (`routes.py`) under `/api/market_data/*`:
+  - GET `/categories`, `/catalog?category=&search=&page=&limit=`, `/symbols/{id}`, `/quote/{id}`, `/quotes?symbols=`, `/history/{id}`
+  - GET/POST/DEL `/favorites`, `/favorites/{id}` (persisted per user)
+  - POST/GET `/recently-viewed`
+  - **WebSocket `/ws/stream`** — subscribe/unsubscribe protocol, transport-agnostic
+  - Admin: `/api/admin/market_data/status` + `PUT /settings` + `POST /test-provider`
+- **Mobile UI** — new `/market/symbols` browser: category tabs auto-generated from `/categories`, debounced search, virtualized FlatList, favorite star toggle, infinite scroll pagination, live prices via WebSocket with polling fallback, LIVE/POLL/idle status indicator. "Browse all" CTA added to `/market` dashboard.
+- **Admin panel** — new `AdminMarketData.tsx` at `/#/market-data` with provider dropdown, transport dropdown, poll interval, API keys (masked), diagnostics viewer, catalog stats. Vite build produced and copied to `backend/static/admin-ui`.
+
+### No regression
+- `backend/forex/*` untouched. Existing BUY/SELL, watchlist, positions, KYC-only-on-withdrawal all unchanged.
+- Existing `market_module.py` (Sprint 6 dashboard, news, calendar, watchlist) untouched.
+
+### Backend curl verification
+- `/api/market_data/categories` → 8 categories with counts, HTTP 200.
+- `/api/market_data/catalog?category=forex_majors` → 7 items page 1.
+- `/api/market_data/catalog?search=bit` → BTC/USD, BCH/USD, ARB/USD (relevance-ordered).
+- `/api/market_data/quote/XAUUSD` → mid=4069.93, source=mock, HTTP 200.
+- `/api/market_data/quotes?symbols=XAUUSD,BTCUSD,EURUSD,SOLUSD` → 4 quotes.
+- Favorites add/list roundtrip for demo user → persisted in `market_favorites` collection.
+- Recently viewed roundtrip → persisted in `market_recent` collection.
+- WebSocket `/ws/stream` — Playwright shows LIVE status on `/market/symbols`, prices tick every 3s.
+
+### Files added / modified
+- **New**: `backend/market_data/{__init__,catalog,providers,transports,routes}.py`, `frontend/src/api/marketData.ts`, `frontend/src/hooks/useMarketStream.ts`, `frontend/app/market/symbols.tsx`, `admin/src/pages/AdminMarketData.tsx`
+- **Modified**: `backend/server.py` (attach), `frontend/app/market/index.tsx` (Browse-all CTA), `admin/src/main.tsx` (route), `admin/src/pages/Layout.tsx` (nav)

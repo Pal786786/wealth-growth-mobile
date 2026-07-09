@@ -55,7 +55,20 @@ export default function MarketIndex() {
     <Screen padded={false}>
       <View style={[s.hdr, { borderBottomColor: palette.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={12}><ChevronLeft color={palette.textPrimary} size={26} /></Pressable>
-        <Text style={[s.title, { color: palette.textPrimary }]}>Markets</Text>
+        <Text style={[s.title, { color: palette.textPrimary, flex: 1 }]}>Markets</Text>
+        {/* Sprint 7 Slice 1: Browse-all CTA links to full instrument browser */}
+        <Pressable
+          onPress={() => router.push("/market/symbols")}
+          hitSlop={8}
+          style={{
+            flexDirection: "row", alignItems: "center", gap: 4,
+            paddingHorizontal: 10, paddingVertical: 6,
+            borderRadius: 999, backgroundColor: palette.primary + "22",
+          }}
+        >
+          <Text style={{ color: palette.primary, fontWeight: "800", fontSize: 11 }}>Browse all</Text>
+          <ChevronLeft color={palette.primary} size={14} style={{ transform: [{ rotate: "180deg" }] }} />
+        </Pressable>
       </View>
 
       <View style={{ flexDirection: "row", paddingHorizontal: 16, paddingVertical: 10, gap: 6 }}>
