@@ -473,3 +473,10 @@ Removed additionally in iter21:
 | Withdrawal request | **403** ✅ | KYC_REQUIRED (correctly blocked) |
 
 Every other module already had NO KYC gate — /invest/buy, /forex/positions, /wallet/send, /wallet/recharge, /wallet/billpay, /wallet/payments/create, /wallet/topup/create-session.
+
+### Iter21 verification — PASS (retest_needed: false)
+- Backend pytest 11/11 (`test_iter21_kyc_bank_accounts.py`)
+- All iter20 renderItem guards intact + 5 new iter21 toUpperCase guards land.
+- Fresh non-KYC user gets 200 on 9 non-withdrawal endpoints incl. bank-accounts add. 403 only on withdrawals/request.
+- Playwright E2E: signup → notifications (3 malformed docs) → market → advisor → kyc → forex/symbol — zero crashes, zero KYC modal on non-withdrawal flows.
+- Full report: `/app/test_reports/iteration_21.json`.
