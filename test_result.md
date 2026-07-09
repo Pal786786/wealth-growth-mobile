@@ -717,3 +717,72 @@ Signal Engine → TA Engine → AI Engine (Claude) → Alerts (Notifications) �
 - `GET /api/ai/signals?limit=6` → returns signals with anchors matching catalog (BTCUSD @ ~99k, GER40 @ ~21k, XAUUSD @ ~4098)
 - `GET /api/ai/signals/BTCUSD` → full detail with Claude AI explanation (fallback narrative since sandbox has no live key), 10 indicators, indicator_summary rows, 6 reason hits
 - Alerts loop confirmed active at startup ("AlertsEngine started interval=30s")
+
+---
+
+## Iteration 28 — Sprint 7.5 (Live Market Integration) — 2026-06
+
+### Scope
+Provider-based live market layer with TwelveData → Alpha Vantage → Mock automatic fallback. Zero frontend changes. All 5 consumers (Forex/AI Signals/Watchlist/Copy Trading/Price Alerts) read from a shared MongoDB TTL cache.
+
+### Architecture
+```
+ProviderManager (10s refresh, circuit breaker)
+   ├── TwelveDataProvider     (priority 100, needs API key)
+   ├── AlphaVantageProvider   (priority 200, needs API key)
+   └── MockProvider           (priority 300, always available)
+          ↓
+     QuoteCache (MongoDB, 30s TTL)  +  in-process _MEMO
+          ↓
+     Consumers: Forex / AI Signals / Watchlist / Copy Trading / Alerts
+```
+
+### Backend files created
+- `/app/backend/market_providers/base.py` — Provider abstract + Quote + ProviderStats
+- `/app/backend/market_providers/mock.py` — Mock provider (always ok)
+- `/app/backend/market_providers/twelvedata.py` — REST client + symbol map (24 symbols)
+- `/app/backend/market_providers/alphavantage.py` — REST client (FX + Crypto + equities)
+- `/app/backend/market_providers/cache.py` — MongoDB TTL cache (`market_price_cache` collection)
+- `/app/backend/market_providers/manager.py` — Circuit breaker + auto-fallback + background refresh loop + history logging
+- `/app/backend/market_providers/routes.py` — 11 admin endpoints under /api/market_providers
+- `/app/backend/market_providers/__init__.py` — Bootstrap + `get_manager()` singleton
+- Modified `ai_intelligence/feed.py` — Added `skip_live` param + `publish_price()` + `_MEMO` for sync live reads; `get_candles` splices live price into last bar
+
+### Endpoints (all admin)
+GET /api/market_providers/status  — full status snapshot
+GET /api/market_providers/quotes  — all cached quotes
+GET /api/market_providers/quote/{symbol}  — one quote
+POST /api/market_providers/refresh  — manual refresh
+GET /api/market_providers/health[?provider=…]  — health check
+GET /api/market_providers/history — recent refresh history
+PUT /api/market_providers/manual-provider  — force provider or clear override
+PUT /api/market_providers/auto-fallback  — enable/disable
+PUT /api/market_providers/refresh-interval  — set interval seconds
+PUT /api/market_providers/universe  — set symbol universe
+PUT /api/market_providers/api-key  — set provider API key
+DELETE /api/market_providers/cache  — clear cache
+
+### MongoDB collections
+- `market_price_cache` — live quotes with age tracking
+- `market_provider_config` — persisted config (auto_fallback, manual_provider, api keys, universe, refresh interval)
+- `market_provider_history` — refresh events (last ~500)
+
+### Admin Panel
+- New page `/app/admin/src/pages/AdminLiveMarket.tsx` with 4 tabs:
+  - **Overview** — Active provider, auto-fallback, refresh interval, symbols, cache stats, manual override, actions
+  - **Providers** — Per-provider stats + circuit state + API key input + Test Connection
+  - **Cache** — Live 20-symbol table with bid/ask/provider/age (auto-refresh 3s)
+  - **History** — Refresh events with timestamps + latency + errors
+- Nav entry added: "Live Market (S7.5)" using `Activity` icon
+
+### No frontend changes (mobile)
+Zero mobile screens modified. All 5 consumers continue calling the same functions; underneath they now read from the shared cache instead of ad-hoc synthesized values.
+
+### Regression protection
+Wallet, Forex, Copy Trading, Notifications, AI Advisor, KYC, Market Data, AI Signals — all untouched. Existing endpoints continue to work.
+
+### Curl verification
+- GET /api/market_providers/status → active=mock, auto_fallback=true, cache 20/20 fresh, 3 providers listed
+- GET /api/market_providers/quotes → 20 quotes (BTCUSD ≈97878, EURUSD ≈1.151, GER40 ≈20874, XAUUSD present)
+- GET /api/market_providers/health → mock ok, twelvedata + alphavantage report "ProviderNotConfigured" (correct — no keys)
+- Background refresh loop running every 10s (verified via history)

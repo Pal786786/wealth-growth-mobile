@@ -1,0 +1,33 @@
+{
+  "summary": "Sprint 7.5 Live Market Integration — backend-only testing. All 34 pytest cases pass (100%). Verified: /api/market_providers status/quotes/quote/{sym}/health/refresh/history endpoints; PUT controls for manual-provider, auto-fallback, refresh-interval (with 5..300 clamp), universe, api-key; DELETE /cache. Mock provider is active as expected (Option A), TwelveData/AlphaVantage report configured=false. Cache has 20 fresh symbols; realistic price ranges (BTCUSD 50–200k, XAUUSD 2.5–5k, EURUSD 0.9–1.4, GER40 10–30k, USOIL 30–150). AI signal splice verified: /api/ai/signals/BTCUSD?with_ai=false entry price matches /api/market_providers/quote/BTCUSD within 0.5%. Regression sanity: /api/wallet, /api/notifications, /api/forex/*, /api/market/dashboard, /api/copy_trading/meta, /api/ai/meta, /api/ai/signals, /api/ai/watchlist, /api/auth/me all 200. Copy Trading admin/system-health returns active_simulators>=28 and broker=paper. Startup logs contain 'market_providers subsystem attached (Sprint 7.5)' and 'ProviderManager started (interval=10s, universe=20)'. Fake TD key cleanup and universe restoration handled by tests.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_market_providers.py",
+    "/app/test_reports/pytest/iter28_market_providers.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "manager.py status(): `active_provider` uses walrus-like expression `self._last_active_provider or (await self._choose_provider()).name if any(self.providers) else None` — parentheses/precedence is ambiguous but works because providers list is always non-empty; consider parenthesizing for readability.",
+    "cache.py get(): the age_sec computation has an awkward inline ternary with mixed subtraction. Works, but hard to read — refactor to compute a tz-aware `ua` first then `(_now() - ua).total_seconds()`.",
+    "manager.refresh_once: recursion on auto-fallback could infinite-loop if all breakers open at once; ultimate mock fallback saves us but consider explicit provider iteration instead of recursion.",
+    "manager._log_history: uses estimated_document_count then trims by skipping 200 latest — the delete logic keeps 200..1200 window which is fine but the intent 'trim to 200' is misleading; comment says 500."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter28_market_providers.py (new)"
+  ],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "not tested (backend only)"},
+  "seed_data_creation": "None. Test relies on existing demo user demo@mfb.in and admin admin@mfb.in. Fake TwelveData key set and cleared within TestAdminControls. Universe temporarily changed to 2 symbols then restored to full 20.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login endpoint expects `identifier` (email OR mobile), not `email`/`mobile`. Backend env var used is EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. ProviderManager auto-refresh runs every 10s; if you clear cache immediately expect <20 quotes until next refresh. Refresh interval clamp is [5, 300]. TwelveData daily limit is 800 credits, AlphaVantage 25.",
+  "rca_of_issue": "N/A — no bugs found. Sprint 7.5 backend behaves per spec."
+}

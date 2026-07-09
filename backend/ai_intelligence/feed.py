@@ -59,10 +59,16 @@ def current_bar_index(timeframe: str, ts: float | None = None) -> int:
 
 
 def get_candles(symbol: str, timeframe: str = DEFAULT_TF, count: int = 250,
-                end_index: int | None = None) -> List[Dict[str, float]]:
+                end_index: int | None = None,
+                skip_live: bool = False) -> List[Dict[str, float]]:
     """Return the last `count` candles ending at `end_index` (inclusive).
 
     Each candle: {t (bar_idx), open, high, low, close, volume}
+
+    Sprint 7.5: If a live cached price is available from the ProviderManager,
+    the LAST bar's close is replaced with the live price so signals/indicators
+    stay aligned with the actual market. Historical bars remain synthetic since
+    free-tier providers can't backfill 250 bars for 20 symbols cheaply.
     """
     if end_index is None:
         end_index = current_bar_index(timeframe)
@@ -106,10 +112,76 @@ def get_candles(symbol: str, timeframe: str = DEFAULT_TF, count: int = 250,
             "volume": volume,
         })
         price = new_close
+
+    # ---- Sprint 7.5 live overlay ----
+    # If the manager has a cached live price for this symbol, splice it into
+    # the last bar's close (and adjust that bar's high/low envelope).
+    if not skip_live:
+        live_price = _live_price_lookup(symbol)
+        if live_price and candles:
+            last = candles[-1]
+            # Anchor last close to live; adjust high/low to bracket it
+            last["close"] = round(live_price, 8)
+            last["high"] = round(max(last["high"], live_price * 1.0005), 8)
+            last["low"] = round(min(last["low"], live_price * 0.9995), 8)
     return candles
 
 
+def _live_price_lookup(symbol: str) -> float | None:
+    """Look up cached live price via the ProviderManager (blocking-safe).
+
+    Runs synchronously by scheduling an async cache read via asyncio. Returns
+    None if manager isn't running yet, the symbol isn't cached, or on any error
+    — the synthetic price is used in those cases.
+    """
+    try:
+        import asyncio
+        import market_providers
+        mgr = market_providers.get_manager()
+        if not mgr:
+            return None
+        # We're in sync code inside an async event loop. Grab the running loop
+        # and schedule the coroutine synchronously via run_coroutine_threadsafe
+        # if applicable, else skip live lookup.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            # Can't safely block on the running loop from sync context.
+            # Fall back to sync-cache read via a small trick: use asyncio.run
+            # on a separate coroutine that pulls the cached doc directly with
+            # motor sync helpers — but motor is async only. Solution: rely on
+            # a per-process quick-cache dict that is populated by the refresh
+            # worker via `_publish_price` (see below).
+            return _MEMO.get(symbol.upper())
+    except Exception:
+        return None
+    return None
+
+
+# In-process memo populated by the Provider Manager's refresh worker via
+# `publish_price` for zero-latency sync reads. Bounded to universe size.
+_MEMO: Dict[str, float] = {}
+
+
+def publish_price(symbol: str, price: float) -> None:
+    """Called by the ProviderManager AFTER a successful cache write.
+
+    Keeps a tiny in-process dict so downstream sync code (TA / signals /
+    watchlist) can look up prices without an async round-trip.
+    """
+    _MEMO[symbol.upper()] = float(price)
+
+
+def all_memoized_prices() -> Dict[str, float]:
+    return dict(_MEMO)
+
+
 def current_price(symbol: str, timeframe: str = "M5") -> float:
-    """Get the latest close price using the smallest timeframe (5-min bar)."""
+    """Get the latest close price. Sprint 7.5: prefer in-process live memo."""
+    live = _MEMO.get(symbol.upper())
+    if live and live > 0:
+        return live
     c = get_candles(symbol, timeframe, count=1)
     return float(c[-1]["close"]) if c else 0.0

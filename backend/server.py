@@ -1098,6 +1098,14 @@ try:
 except Exception as _e:
     logger.warning(f"copy_trading attach failed: {_e}")
 
+# ------ Sprint 7.5: Live Market Providers (TwelveData → Alpha Vantage → Mock with auto-fallback) ------
+try:
+    import market_providers as _market_providers
+    _market_providers.attach(app, db=db, get_current_admin=admin_module.get_current_admin)
+    logger.info("market_providers subsystem attached (Sprint 7.5)")
+except Exception as _e:
+    logger.warning(f"market_providers attach failed: {_e}")
+
 # ------ Sprint 7C.1: AI Intelligence (signals + TA + watchlist + alerts) ------
 try:
     import ai_intelligence as _ai_intelligence
