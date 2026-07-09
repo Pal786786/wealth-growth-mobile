@@ -607,3 +607,58 @@ Event-driven Copy Execution Engine on top of the 7B.1 foundation.
 - `GET /api/copy_trading/meta` → simulator enabled, defaults reflect user-provided values (max_daily_loss 10%, max_drawdown 20%, max_open_trades 10, equity_protection 30%, etc.)
 - Master simulator producing trades within seconds of startup (Hana Tanaka scalper opened/closed EURUSD/GBPUSD within 30s)
 - Backend clean startup: `MasterSimulator started with 28 traders`
+
+---
+
+## Iteration 26 — Sprint 7B.3 (Admin Copy Trading Console) — 2026-06
+
+### Scope
+Full admin console for Copy Trading — Trader Management, Live Simulation Panel,
+Master Trade Explorer, Follower Monitor, Analytics, System Health, Configuration.
+
+### Design decisions confirmed by user
+- Hybrid trader model: 28 seeded traders (deterministic) + admin overlays + custom traders in mongo.
+- Master Trade Explorer polls every 2s (design allows swapping to WebSocket later).
+- Trader Categories: system / verified / custom / disabled.
+- Approval Levels: verified / professional / elite / master.
+- All configuration stored in MongoDB (nothing hardcoded).
+
+### Backend additions
+- `/app/backend/copy_trading/admin_traders.py` — Overlay system for system traders (`copy_trader_overlays` collection) + full CRUD for custom traders (`copy_custom_traders` collection).
+- Extended `/app/backend/copy_trading/simulator.py` — includes custom traders in the loop; respects disabled flag; adds `sync_traders()` and `remove_trader()`.
+- Extended `/app/backend/copy_trading/engine.py` — health metrics (fanout_ms, exec_ms, failed_mirrors, retry_queue) + `health_snapshot()`.
+- Extended `/app/backend/copy_trading/routes.py` with:
+  - Trader CRUD: `GET /admin/traders`, `GET /admin/traders/{id}`, `POST /admin/traders`, `PUT /admin/traders/{id}`, `DELETE /admin/traders/{id}`, `POST /admin/traders/{id}/verify|unverify|disable|enable|reset-overlay`
+  - Master Trade Explorer: `GET /admin/master-trades` (with `followers_copied` per row)
+  - Follower Monitor: `GET /admin/followers/summary`, `GET /admin/traders/{id}/followers`
+  - Analytics: `GET /admin/analytics` (daily/weekly/monthly ROI, win rate, most copied, highest ROI, highest win rate, highest AUM, mirrored trades, open positions, unique followers)
+  - System Health: `GET /admin/system-health` (event queue, active simulators, followers, sessions, broker, avg fan-out/exec ms, failed mirrors, retry queue, DB ping, uptime)
+- Public leaderboard now merges seeded (with overlay) + custom + honours `visible`/`disabled` flags.
+
+### Admin panel additions
+- `/app/admin/src/pages/AdminCopyTrading.tsx` — new page with 7 tabs (Traders / Simulation / Master Trades / Followers / Analytics / System Health / Configuration).
+- Trader table with category filter (ALL/SYSTEM/VERIFIED/CUSTOM/DISABLED), search, verify/unverify/enable/disable/edit/delete inline actions, reset-overlay for system traders.
+- Custom Trader creator + system trader Editor with avatar upload (base64), country, style, approval level, risk tier, verified/visible/disabled toggles.
+- Simulation panel with Start/Pause, Speed selector (Slow/Normal/Fast), Force-open master trade.
+- Master Trades table auto-refreshing every 2s with followers_copied count + force-close button.
+- Follower Monitor: top-10 traders by follower count with click-through to detailed follower list.
+- Analytics dashboard: 16 stat cards + 3 leader cards + most-copied banner.
+- System Health: 12 stat cards (queue, simulators, followers, sessions, broker, timings, retries, server, DB).
+- Configuration editor with 10 numeric fields + 4 boolean toggles.
+- Registered nav entry "Copy Trading" (Copy icon) and route `/copy-trading`.
+
+### MongoDB collections added
+- `copy_trader_overlays` — admin edits to system traders (avatar, bio, verified, risk_tier, style, country, visible, disabled, approval_level)
+- `copy_custom_traders` — full custom trader documents (persona + admin metadata)
+
+### Regression protection
+Wallet, Forex, KYC, Notifications, AI Advisor, Market Data — untouched.
+KYC still enforced only on withdrawal requests.
+
+### Curl verification
+- `POST /api/admin/login` → admin token OK
+- `GET /copy_trading/admin/traders` → 28 system traders returned
+- `POST /copy_trading/admin/traders` → custom trader created with generated stats & risk score
+- `GET /copy_trading/admin/analytics` → daily/weekly/monthly ROI, leaders (highest ROI, win rate, AUM), most copied all populated
+- `GET /copy_trading/admin/system-health` → active_simulators=28, broker=paper OK, database OK, uptime tracked
+- `DELETE /copy_trading/admin/traders/{custom_id}` → custom trader removed and simulator task cancelled

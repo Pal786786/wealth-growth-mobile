@@ -18,7 +18,9 @@ Persistence:
 from __future__ import annotations
 import asyncio
 import logging
+import time
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -41,9 +43,30 @@ class CopyEngine:
         self.bus = bus
         self.broker = broker
         self.config = config
+        # Sprint 7B.3: in-memory health metrics
+        self._fanout_ms = deque(maxlen=200)
+        self._exec_ms = deque(maxlen=500)
+        self._failed_mirrors = 0
+        self._retry_queue: List[Dict[str, Any]] = []
+        self._events_processed = 0
         # Subscribe once
         self.bus.subscribe(TRADE_OPENED, self.on_trade_opened)
         self.bus.subscribe(TRADE_CLOSED, self.on_trade_closed)
+
+    # ----- Sprint 7B.3 health snapshot -----
+    def health_snapshot(self) -> Dict[str, Any]:
+        def avg(dq: deque) -> float:
+            return round(sum(dq) / len(dq), 2) if dq else 0.0
+        return {
+            "broker": self.broker.name,
+            "broker_ok": True,
+            "avg_fanout_ms": avg(self._fanout_ms),
+            "avg_exec_ms": avg(self._exec_ms),
+            "events_processed": self._events_processed,
+            "failed_mirrors": self._failed_mirrors,
+            "retry_queue_size": len(self._retry_queue),
+            "fanout_samples": len(self._fanout_ms),
+        }
 
     # ==================================================================
     # Relationship management
@@ -151,17 +174,23 @@ class CopyEngine:
 
     async def on_trade_opened(self, event: TradeEvent):
         """Master TRADE_OPENED → fan out to every active follower."""
+        t0 = time.perf_counter()
         cur = self.db.copy_relationships.find(
             {"trader_id": event.trader_id, "status": "active"}, {"_id": 0})
         followers = [d async for d in cur]
         if not followers:
+            self._events_processed += 1
+            self._fanout_ms.append(round((time.perf_counter() - t0) * 1000, 2))
             return
         results = await asyncio.gather(
             *[self._mirror_open(f, event) for f in followers], return_exceptions=True,
         )
         for r in results:
             if isinstance(r, Exception):
+                self._failed_mirrors += 1
                 logger.warning("mirror_open error: %s", r)
+        self._events_processed += 1
+        self._fanout_ms.append(round((time.perf_counter() - t0) * 1000, 2))
 
     async def on_trade_closed(self, event: TradeEvent):
         """Master TRADE_CLOSED → close ALL follower trades for that master_id."""
@@ -180,6 +209,7 @@ class CopyEngine:
                 logger.warning("mirror_close error: %s", r)
 
     async def _mirror_open(self, rel: Dict[str, Any], event: TradeEvent):
+        t0 = time.perf_counter()
         settings = rel.get("settings") or await self.config.defaults()
         user_id = rel["user_id"]
         trader_id = rel["trader_id"]
@@ -216,7 +246,18 @@ class CopyEngine:
                                deeplink=f"/copies/{trader_id}")
             return trade
         except Exception as e:
+            self._failed_mirrors += 1
+            self._retry_queue.append({
+                "user_id": user_id, "trader_id": trader_id,
+                "master_id": event.master_id, "error": str(e),
+                "queued_at": _now().isoformat(),
+            })
+            # Cap retry queue to last 100 entries so it doesn't grow unbounded
+            if len(self._retry_queue) > 100:
+                self._retry_queue = self._retry_queue[-100:]
             logger.warning("mirror open failed [%s/%s]: %s", user_id, trader_id, e)
+        finally:
+            self._exec_ms.append(round((time.perf_counter() - t0) * 1000, 2))
 
     async def _mirror_close(self, follower_trade: Dict[str, Any],
                             exit_price: float, event: TradeEvent):
