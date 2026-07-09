@@ -434,3 +434,12 @@ Business flow correction — KYC should ONLY be enforced at Withdrawal.
 - `POST /api/forex/positions XAUUSD buy 0.01` → 200 ✅ (entry_price=4003.15, margin=₹10)
 - `POST /api/wallet/send ₹50` → 200 ✅
 - `POST /api/wallet/withdrawals/request` → 403 KYC_REQUIRED ✅ (correctly blocked)
+
+### Iter20 verification — BOTH HOTFIXES PASS
+- Backend pytest: 14/14 (`test_iter20_kyc_removal.py`)
+- (A) Notifications: seeded 4 malformed docs → all render, 0 crashes, 0 `toUpperCase` errors.
+- (B) KYC removal: fresh non-KYC user → 200 on forex BUY/SELL/close, wallet/send, wallet/recharge, wallet/billpay, wallet/topup/create-session, wallet/payments/create. UI renders trade ticket with no KYC modal.
+- (C) Withdrawal KYC gate holds: 403 KYC_REQUIRED on /wallet/withdrawals/request + /bank-accounts; passes after DB approval.
+- Full report: `/app/test_reports/iteration_20.json`
+
+Ready for APK build.
