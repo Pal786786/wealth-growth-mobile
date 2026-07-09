@@ -8,9 +8,11 @@ export function formatINR(amount: number, opts: { compact?: boolean } = {}): str
   return `₹${amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
-export function shortDate(iso: string): string {
+export function shortDate(iso: string | null | undefined): string {
+  if (!iso) return "";
   try {
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
     return d.toLocaleString("en-IN", {
       day: "2-digit",
       month: "short",
@@ -18,6 +20,6 @@ export function shortDate(iso: string): string {
       minute: "2-digit",
     });
   } catch {
-    return iso;
+    return String(iso);
   }
 }

@@ -404,3 +404,33 @@ Every screen used the pattern `show("error", e?.response?.data?.detail || "...")
 - pytest: `/app/backend/tests/test_kyc_gate_iter19.py` 3/3 pass. Full report `/app/test_reports/iteration_19.json`.
 
 Stabilization sprint fully closed. Ready for a fresh APK build.
+
+## Hotfix 2026-07-02 — Notification crash + Remove KYC from non-withdrawal
+
+### Bug 1: Notification screen crash
+`TypeError: Cannot read property 'toUpperCase' of undefined` at renderItem when a notification record lacked `category` (or other) field.
+
+**Fix in `app/frontend/app/notifications/index.tsx` renderItem:**
+- Every field defensively defaulted at the top of the render (`category`, `title`, `body`, `read`, `priority`, `notif_id`, `created_at`).
+- `keyExtractor` falls back to index and `_id` when `notif_id` is missing.
+- `openNotif` gracefully returns on null.
+- `shortDate` in `src/utils/format.ts` now accepts `null | undefined`, checks `isNaN`, and never throws.
+
+### Bug 2: KYC gating too aggressive
+Business flow correction — KYC should ONLY be enforced at Withdrawal.
+
+**Backend endpoints — removed `require_kyc_approved`:**
+- `POST /api/wallet/send` (`server.py:413`)
+- `POST /api/wallet/recharge` (`server.py:433`)
+- `POST /api/wallet/billpay` (`server.py:456`)
+- `POST /api/wallet/topup/create-session` (Stripe deposit) (`server.py:485`)
+- `POST /api/wallet/payments/create` (Razorpay deposit) (`wallet_module.py:365-370`)
+- `POST /api/forex/positions` (BUY/SELL) (`forex/routes.py:187-193`)
+
+**KYC still enforced on:**
+- Withdrawal flow — `wallet_module.attach(kyc_gate=...)` passes into `withdrawal_module`, which calls `kyc_gate(u)` on `/wallet/withdrawals/bank-accounts`, `/wallet/withdrawals/request`, `/wallet/withdrawals/verify-otp`.
+
+**Curl verification (fresh non-KYC user):**
+- `POST /api/forex/positions XAUUSD buy 0.01` → 200 ✅ (entry_price=4003.15, margin=₹10)
+- `POST /api/wallet/send ₹50` → 200 ✅
+- `POST /api/wallet/withdrawals/request` → 403 KYC_REQUIRED ✅ (correctly blocked)

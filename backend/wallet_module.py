@@ -361,13 +361,8 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin, log_action):
     # ----- PAYMENTS -----
     @user.post("/payments/create")
     async def create_payment(body: CreatePaymentReq, u=Depends(get_current_user)):
-        try:
-            import kyc_module as _km
-            await _km.require_kyc_approved(u)
-        except HTTPException:
-            raise
-        except Exception:
-            pass
+        # KYC gate removed — deposits/top-ups no longer require KYC.
+        # Only Withdrawals check KYC.
         if body.amount < MIN_TOPUP:
             raise HTTPException(400, f"Minimum top-up is ₹{MIN_TOPUP:.0f}")
         # Rate limit

@@ -410,7 +410,7 @@ async def get_transactions(user: Dict[str, Any] = Depends(get_current_user), lim
 
 @api.post("/wallet/send")
 async def send_money(req: SendMoneyReq, user: Dict[str, Any] = Depends(get_current_user)):
-    await kyc_module.require_kyc_approved(user)
+    # KYC gate removed — only WITHDRAWALS require KYC per business flow.
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Invalid amount")
     w = await db.wallets.find_one({"user_id": user["user_id"]}, {"_id": 0})
@@ -430,7 +430,7 @@ async def send_money(req: SendMoneyReq, user: Dict[str, Any] = Depends(get_curre
 
 @api.post("/wallet/recharge")
 async def recharge(req: RechargeReq, user: Dict[str, Any] = Depends(get_current_user)):
-    await kyc_module.require_kyc_approved(user)
+    # KYC gate removed — only WITHDRAWALS require KYC per business flow.
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Invalid amount")
     w = await db.wallets.find_one({"user_id": user["user_id"]}, {"_id": 0})
@@ -453,7 +453,7 @@ async def recharge(req: RechargeReq, user: Dict[str, Any] = Depends(get_current_
 
 @api.post("/wallet/billpay")
 async def bill_pay(req: BillPayReq, user: Dict[str, Any] = Depends(get_current_user)):
-    await kyc_module.require_kyc_approved(user)
+    # KYC gate removed — only WITHDRAWALS require KYC per business flow.
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Invalid amount")
     w = await db.wallets.find_one({"user_id": user["user_id"]}, {"_id": 0})
@@ -482,7 +482,8 @@ async def _stripe_cfg() -> Dict[str, Any]:
 
 @api.post("/wallet/topup/create-session")
 async def create_topup_session(req: StripeCheckoutReq, user: Dict[str, Any] = Depends(get_current_user)):
-    await kyc_module.require_kyc_approved(user)
+    # KYC gate removed — DEPOSITS (top-ups) must work without KYC per business
+    # flow. KYC is only required at Withdrawal.
     if req.amount < 10 or req.amount > 100000:
         raise HTTPException(status_code=400, detail="Amount must be between ₹10 and ₹1,00,000")
 

@@ -48,11 +48,13 @@ export default function NotificationsIndex() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const openNotif = async (n: NotifItem) => {
-    if (!n.read) {
-      try { await notifApi.markOne(n.notif_id); setUnread((u) => Math.max(0, u - 1)); }
+  const openNotif = async (n: NotifItem | undefined | null) => {
+    if (!n) return;
+    const notifId = n.notif_id || (n as any)?._id;
+    if (!n.read && notifId) {
+      try { await notifApi.markOne(notifId); setUnread((u) => Math.max(0, u - 1)); }
       catch { /* ignore */ }
-      setItems((xs) => xs.map((x) => x.notif_id === n.notif_id ? { ...x, read: true } : x));
+      setItems((xs) => xs.map((x) => x.notif_id === notifId ? { ...x, read: true } : x));
     }
     if (n.deeplink && n.deeplink !== "/") { try { router.push(n.deeplink as any); } catch { /* invalid route */ } }
   };
@@ -135,29 +137,40 @@ export default function NotificationsIndex() {
 
       <FlatList
         data={items}
-        keyExtractor={(x) => x.notif_id}
+        keyExtractor={(x, idx) => x?.notif_id || (x as any)?._id || `notif-${idx}`}
         contentContainerStyle={{ padding: 16, gap: 8, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={palette.primary} />}
         renderItem={({ item }) => {
-          const Icon = ICONS[item.category] || Bell;
-          const tint = TINTS[item.category] || palette.primary;
+          // Every field is defensively defaulted — a missing category / read /
+          // priority in the API payload must NEVER crash renderItem. The old
+          // build blew up with `Cannot read property 'toUpperCase' of undefined`
+          // because some legacy notifications don't have a `category`.
+          const category = String(item?.category ?? "general");
+          const title = String(item?.title ?? "Notification");
+          const body = String(item?.body ?? "");
+          const isRead = !!item?.read;
+          const notifId = String(item?.notif_id ?? item?._id ?? "");
+          const priority = String(item?.priority ?? "normal");
+          const createdAt = item?.created_at ?? null;
+          const Icon = ICONS[category as keyof typeof ICONS] || Bell;
+          const tint = TINTS[category as keyof typeof TINTS] || palette.primary;
           return (
-            <Pressable onLongPress={() => del(item.notif_id)} onPress={() => openNotif(item)}>
-              <View style={[s.card, { backgroundColor: item.read ? palette.surface : palette.primary + "08", borderColor: item.read ? palette.border : palette.primary + "55", borderWidth: 1 }]}>
+            <Pressable onLongPress={() => notifId && del(notifId)} onPress={() => openNotif(item)}>
+              <View style={[s.card, { backgroundColor: isRead ? palette.surface : palette.primary + "08", borderColor: isRead ? palette.border : palette.primary + "55", borderWidth: 1 }]}>
                 <View style={[s.cardIcon, { backgroundColor: tint + "22" }]}>
                   <Icon color={tint} size={18} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" }}>
-                    <Text style={[s.cardTitle, { color: palette.textPrimary, fontWeight: item.read ? "600" : "900" }]} numberOfLines={1}>{item.title}</Text>
-                    {!item.read && <View style={[s.dot, { backgroundColor: palette.primary }]} />}
+                    <Text style={[s.cardTitle, { color: palette.textPrimary, fontWeight: isRead ? "600" : "900" }]} numberOfLines={1}>{title}</Text>
+                    {!isRead && <View style={[s.dot, { backgroundColor: palette.primary }]} />}
                   </View>
-                  <Text style={[s.cardBody, { color: palette.textSecondary }]} numberOfLines={2}>{item.body}</Text>
+                  <Text style={[s.cardBody, { color: palette.textSecondary }]} numberOfLines={2}>{body}</Text>
                   <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4 }}>
-                    <Text style={[s.cardMeta, { color: tint }]}>{item.category.toUpperCase()}</Text>
-                    <Text style={[s.cardMeta, { color: palette.textMuted }]}>{shortDate(item.created_at)}</Text>
+                    <Text style={[s.cardMeta, { color: tint }]}>{category.toUpperCase()}</Text>
+                    <Text style={[s.cardMeta, { color: palette.textMuted }]}>{shortDate(createdAt)}</Text>
                   </View>
-                  {item.priority === "critical" && (
+                  {priority === "critical" && (
                     <View style={[s.critical, { backgroundColor: palette.danger + "22", borderColor: palette.danger + "55" }]}>
                       <AlertTriangle color={palette.danger} size={11} />
                       <Text style={{ color: palette.danger, fontSize: 10, fontWeight: "800" }}>CRITICAL</Text>

@@ -184,13 +184,8 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
 
     @public.post("/positions")
     async def open_position(req: OpenPositionRequest, user=Depends(_get_current_user)):
-        try:
-            import kyc_module as _km
-            await _km.require_kyc_approved(user)
-        except HTTPException:
-            raise
-        except Exception:
-            pass
+        # KYC gate removed — Forex trading works without KYC per business flow.
+        # KYC is only required at Withdrawal.
         try:
             return await _engine.open_position(user["user_id"], req.symbol_id, req.side,
                                                 req.lot_size, req.tp, req.sl)
