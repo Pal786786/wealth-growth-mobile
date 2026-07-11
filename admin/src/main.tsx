@@ -38,6 +38,7 @@ import AdminAIConsole from "./pages/AdminAIConsole";
 import AdminPayments from "./pages/AdminPayments";
 import AdminGoldConsole from "./pages/AdminGoldConsole";
 import AdminMutualFundsConsole from "./pages/AdminMutualFundsConsole";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
 
 const queryClient = new QueryClient({

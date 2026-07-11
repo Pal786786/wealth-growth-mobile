@@ -1,6 +1,7 @@
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon, ShieldCheck, KeyRound, AlertTriangle, Plane, Shield, Trophy, ScrollText, Lock, Activity, Smartphone, FileSearch, Crown, Calculator, LineChart, ArrowUpFromLine, Bot, Copy, CreditCard, Coins, Repeat } from "lucide-react";
 import { Logo } from "../components/Logo";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { useAdminAuth } from "../lib/auth";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -135,8 +136,24 @@ export default function Layout() {
             <span><b>Live API keys are not configured yet.</b> Demo data is being used for {apiStatus.demo_count} integration{apiStatus.demo_count > 1 ? "s" : ""}. <NavLink to="/api-management" className="underline font-bold">Configure now →</NavLink></span>
           </div>
         ) : null}
-        <div className="px-4 lg:px-8 py-6"><Outlet /></div>
+        <div className="px-4 lg:px-8 py-6">
+          <RoutedErrorBoundary />
+        </div>
       </main>
     </div>
+  );
+}
+
+/**
+ * Keyed ErrorBoundary — re-mounts when the route changes so navigating to
+ * another page after a crash resets the error boundary state. This prevents
+ * a single broken page from bricking the whole admin SPA.
+ */
+function RoutedErrorBoundary() {
+  const loc = useLocation();
+  return (
+    <ErrorBoundary key={loc.pathname}>
+      <Outlet />
+    </ErrorBoundary>
   );
 }

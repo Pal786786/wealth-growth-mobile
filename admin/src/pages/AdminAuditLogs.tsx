@@ -161,7 +161,7 @@ export default function AdminAuditLogs() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-slate-800 text-sm">{r.action}</span>
-                    {r.target ? <span className="badge bg-slate-100 text-slate-600 text-[10px]">→ {r.target}</span> : null}
+                    {r.target ? <span className="badge bg-slate-100 text-slate-600 text-[10px]">→ {typeof r.target === "string" ? r.target : JSON.stringify(r.target)}</span> : null}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
                     by <b>{r.actor_name || r.admin_id || "system"}</b>

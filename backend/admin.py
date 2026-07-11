@@ -129,11 +129,22 @@ def _admin_public(a: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _log_action(admin_id: str, action: str, target: Optional[str] = None, meta: Optional[Dict[str, Any]] = None):
+    # Defensive coercion — some legacy callers pass a dict as `target`; keep audit
+    # rows homogeneous (str|None) so the admin UI never explodes rendering them.
+    _target: Optional[str]
+    if target is None or isinstance(target, str):
+        _target = target
+    else:
+        try:
+            import json as _json
+            _target = _json.dumps(target, default=str)
+        except Exception:
+            _target = str(target)
     await _db.admin_audit.insert_one({
         "id": uuid.uuid4().hex[:16],
         "admin_id": admin_id,
         "action": action,
-        "target": target,
+        "target": _target,
         "meta": meta or {},
         "at": _now(),
     })

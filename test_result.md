@@ -1171,3 +1171,29 @@ Full-stack module for Indian mutual funds & SIPs. Backend + Mobile UI + Admin Co
 - EDIT: `/app/backend/server.py` (attach mutual_funds)
 - EDIT: `/app/frontend/app/(tabs)/index.tsx` (Home MF tile)
 - EDIT: `/app/admin/src/main.tsx` + `Layout.tsx` (route + sidebar + roles)
+
+---
+## Stabilization Sprint (June 2026, post Sprint 11)
+
+Freeze on new features. Full stabilization pass.
+
+### Regression: 697/697 PASS · 2 skipped · 0 failed 🎯
+Fixed 11 previously failing tests (10 pre-existing + 1 new S11 supplemental).
+Details in `/app/PRODUCTION_READINESS_REPORT.md`.
+
+### Critical bug fix
+Admin Audit page was crashing (React: "Objects are not valid as a React child")
+because 49 legacy rows had `target` stored as a dict. Root cause: `forex/routes.py`
+was passing the meta payload as `target` kwarg. Fix:
+- Backend: `admin.py::_log_action` defensively coerces `target` to `str|None`
+- Backend: `forex/routes.py` corrected to pass `meta=` kwarg
+- Data: 49 legacy rows migrated in place
+- Frontend: `AdminAuditLogs.tsx` defensive render
+- Frontend: new admin-wide `ErrorBoundary` around `<Outlet />` so any future page-level crash cannot brick the SPA
+
+### Perf & indexes
+Added production-grade indexes (MF: 12 indexes, shared: 12 more). Hot-path
+p50 ~10 ms.
+
+### Deliverable
+`/app/PRODUCTION_READINESS_REPORT.md` — sign-off document with caveats.

@@ -253,7 +253,7 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
             key = cfg.get("twelve_data_api_key") or ""
             _feed.set_live_mode(bool(cfg.get("live_mode")), td_api_key=key)
         try:
-            await _log_action(admin_user["admin_id"], "forex_settings_update", {"keys": list(patch.keys())})
+            await _log_action(admin_user["admin_id"], "forex_settings_update", target="forex_settings", meta={"keys": list(patch.keys())})
         except Exception:  # pragma: no cover
             pass
         return {"ok": True}
