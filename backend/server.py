@@ -1139,6 +1139,17 @@ try:
 except Exception as _e:
     logger.warning(f"payments attach failed: {_e}")
 
+# ------ Sprint 9: Real KYC Platform (v2) ------
+try:
+    import kyc_v2 as _kyc_v2
+    _kyc_v2.attach(
+        app, db=db, get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+    )
+    logger.info("kyc_v2 subsystem attached (Sprint 9)")
+except Exception as _e:
+    logger.warning(f"kyc_v2 attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as
