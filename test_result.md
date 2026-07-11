@@ -1052,3 +1052,55 @@ Wallet · Forex · Copy Trading · Live Market · AI News · AI Console · KYC �
 ### Mobile UI (still to build in follow-up)
 Backend is production-ready. Mobile screens for the gold hub, buy/sell sheet, chart, and holdings will be built as an incremental UI-only iteration.
 
+
+---
+## Sprint 10.5 — Gold Investment Mobile UI + Admin Console (June 2026)
+
+### Scope
+Frontend-only sprint. Backend endpoints from Sprint 10 (unchanged) are wired into:
+- Mobile app (Expo React Native) — new `/gold` route family
+- Admin panel (Vite React) — new `/gold` route
+
+Backend WAS NOT modified. Regression sanity: `test_gold_iter34.py` → 21/21 PASS.
+
+### New reusable components
+- `/app/frontend/src/components/FinancialChart.tsx` — powered by `react-native-gifted-charts`, area-gradient, timeframe pills (1D/1W/1M/3M/1Y/ALL), long-press tooltip + strip, live price badge, dark/light theme. Reused across Gold, will plug into Forex/AI Signals/Watchlist/MF NAV.
+- `/app/frontend/src/components/TradeBottomSheet.tsx` — snap points 40/70/95%, spring animation, drag-to-close, tap-outside-dismiss, keyboard-aware, long-press confirm, submitting/success/error state slots. Reused for Gold buy/sell; drop-in for Forex/Wallet/Withdraw/SIP/MF.
+- `/app/frontend/src/api/gold.ts` — typed API wrapper for `/api/gold/*` (quote, chart, holdings, transactions, buy, sell, config).
+
+### Mobile Gold screens
+- `app/gold/index.tsx` — Dashboard: gold gradient hero (live price, bid/ask, 24h delta), holdings summary, live mini-chart, quick tiles, wallet strip, Buy + Sell sheets
+- `app/gold/chart.tsx` — Full-screen live chart with timeframe switcher and range stats
+- `app/gold/history.tsx` — Transactions with all/buy/sell filter, infinite pagination
+- `app/gold/analytics.tsx` — Personal analytics (P/L total = realized + unrealized, cost vs market, activity blocks, portfolio position)
+- Home dashboard now has a "Gold" quick-action tile that opens `/gold`
+
+### Admin Gold Console
+`/app/admin/src/pages/AdminGoldConsole.tsx` — 6 tabs:
+1. Overview — Live price banner, trading status, KPI cards, provider state, user-realized P/L
+2. Transactions — Side/user filters, CSV export
+3. Users — Top investors, live-marked current value, ROI %, CSV export
+4. Providers — Provider registry cards, active toggle, manual-override warning
+5. Settings — Full config editor (spread, min/max, GST, fees, trading hours, manual price, maintenance toggle, KYC gate)
+6. Analytics — Range switcher (today/week/month/year/all), full KPI grid (Business/Financial), daily buy-vs-sell 14-day bar chart, holdings distribution, top ROI investors, CSV export
+
+Wired into `Layout.tsx` sidebar (`/gold`) and `main.tsx` router; roles: super_admin, admin, finance_manager, investment_manager.
+
+### Testing done in-session
+- Backend regression: `test_gold_iter34.py` 21/21 PASS
+- Admin build: `yarn build` → 0 errors
+- Frontend lint: no errors on new files (only unused-var warnings)
+- Mobile screenshot smoke test: /gold renders premium UI without crashes (auth-gated data placeholders visible when unauthenticated)
+
+### Files added / modified
+- ADD: `/app/frontend/src/api/gold.ts`
+- ADD: `/app/frontend/src/components/FinancialChart.tsx`
+- ADD: `/app/frontend/src/components/TradeBottomSheet.tsx`
+- ADD: `/app/frontend/app/gold/{_layout,index,chart,history,analytics}.tsx`
+- ADD: `/app/admin/src/pages/AdminGoldConsole.tsx`
+- EDIT: `/app/frontend/app/(tabs)/index.tsx` (Gold quick action)
+- EDIT: `/app/admin/src/main.tsx` (route)
+- EDIT: `/app/admin/src/pages/Layout.tsx` (sidebar + role matrix)
+
+### Package additions
+- `react-native-gifted-charts@1.4.77` (installed via `yarn expo install`)

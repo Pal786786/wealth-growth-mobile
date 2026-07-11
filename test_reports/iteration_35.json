@@ -1,0 +1,27 @@
+{
+  "summary": "Sprint 10.5 — Gold Mobile UI + Admin Gold Console validated end-to-end. Backend regression suite (test_gold_iter34.py) — 21/21 PASS in 5.86s. Mobile: /gold dashboard renders (gold gradient hero, live mid ₹10,753, bid/ask, holdings, mini FinancialChart, quick tiles, wallet strip, Buy/Sell CTAs), all testIDs present (gold-buy-btn, gold-sell-btn, gold-open-chart, tile-chart/history/analytics, gold-history-btn, gold-add-money). Buy sheet opens with title 'Buy Digital Gold', ₹100/500/1000/5000/10000 quick pills, amount/grams toggle, preview card; ₹500 + long-press confirm → POST /api/gold/buy 200 → success state 'Gold has been added to your holdings' → holdings refreshed (grams 0.0564g, invested increased). Sell sheet: 25/50/75/MAX pills populate grams input correctly (0.25 * 0.1024 = 0.0256), Realized P/L preview computes cost basis and pnl live. /gold/chart: all 6 timeframe pills (1D/1W/1M/3M/1Y/ALL) trigger re-fetch of /api/gold/chart?window=<w> confirmed via request interceptor. /gold/history: ALL/BUY/SELL filter pills trigger /api/gold/transactions?side=buy|sell — verified. /gold/analytics: shows Total P/L (realized+unrealized), Cost vs Market, Activity (buys/sells counts+amounts+grams), Portfolio Position. Home /: 'Gold' quick-action tile (testid quick-action-gold) navigates to /gold. Admin console (/api/admin-ui/#/gold): AdminGoldConsole renders all 6 tabs. Overview: trading status LIVE, KPI cards (Buy Volume ₹3,480 / Sell Volume ₹2,319 / Platform Revenue ₹57.99 / Active Investors 1), active provider card with all 5 providers listed, user realized P/L. Transactions: ALL/BUY/SELL pills + 'Filter by user id' text input + CSV export + 9-column table (TX, User, Side, Amount, Grams, Price, P/L, Provider, When). Users: Top investors table with Grams, Invested, Avg Buy, Current Value (live-marked), P/L, ROI, Last Update columns. Providers: 5 cards (MOCK/LIVE_MARKET/AUGMONT/MMTC_PAMP/SAFEGOLD) with 'Set active →' — click on mock triggered PUT /api/admin/gold/config {\"provider\":\"mock\"} (confirmed via request capture). Settings: full editable form (spread, min/max, GST, maker fee, trading open/close, manual price, maintenance toggle, KYC gate). Analytics: TODAY/WEEK/MONTH/YEAR/ALL range switcher, Business KPIs (total/active investors, avg investment, repeat buy rate), Financial KPIs (Buy/Sell Volume, AUM live, Platform Revenue, Invested, Unrealized/Realized P/L, Net Gold Holdings), Daily Buy vs Sell · Last 14 Days chart. State reset to provider=live_market, manual_price=0, maintenance=false, max_buy=200000 at teardown.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "TradeBottomSheet (Sell Digital Gold)", "issues": ["When grams input is 0 (initial), the 'Long-press · Sell Gold' button is disabled but its opacity 0.6 makes text 'Long-press · Sell Gold' still visible with pink accent — user might tap expecting response. Consider showing a helper hint 'Enter grams to enable'."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_gold_iter34.py",
+    "/app/test_reports/pytest/iter35_gold_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "gold/index.tsx L127: Math.round(estAmount*100)/100 uses number rounding which can drift by ±0.005 on JS floats; consider using Number.toFixed(2) then parseFloat for INR paise precision. Not blocking for current test payloads.",
+    "TradeBottomSheet L230-238: Both onLongPress and onPress trigger onConfirm — onPress will fire immediately on tap before the 350ms long-press threshold. This defeats the 'long-press to confirm' safety guarantee. In this test, both a mouse-down+mouse-up<600ms and mouse-hold worked, but on mobile a normal tap would also submit. Consider removing onPress or gating onPress behind a 'require long press' flag."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (21/21 gold regression)", "frontend": "100% (all 15 sprint 10.5 scenarios verified)"},
+  "seed_data_creation": "Buy tests added ~5 buy transactions and sell tests removed some grams from demo@mfb.in holdings during testing. Provider was momentarily switched to 'mock' via Providers tab click and reset to 'live_market' at end via curl PUT /api/admin/gold/config.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 10.5 (Gold Mobile UI + Admin Console) is complete and fully verified. Mobile testIDs to reuse for future tests: gold-dashboard-scroll, gold-buy-btn, gold-sell-btn, gold-open-chart, tile-chart/history/analytics, gold-history-btn, gold-add-money, buy-mode-amount/grams, buy-amount-input, buy-grams-input, sell-grams-input, sheet-confirm-btn, sheet-close-btn, sheet-success-close, sheet-error-cancel/retry. Home quick-action-gold routes to /gold. Long-press confirm button in TradeBottomSheet also fires onPress (single tap), so tap works too — Playwright mouse.down+timeout+mouse.up simulates long-press cleanly. Admin AdminGoldConsole tabs are inline buttons under 'Gold Console' heading — use scoped selectors (avoid sidebar 'Users'/'Transactions'/'Settings' items which have identical text). Admin provider switch fires PUT /api/admin/gold/config {provider: name} — verified."
+}
