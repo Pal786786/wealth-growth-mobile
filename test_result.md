@@ -786,3 +786,38 @@ Wallet, Forex, Copy Trading, Notifications, AI Advisor, KYC, Market Data, AI Sig
 - GET /api/market_providers/quotes → 20 quotes (BTCUSD ≈97878, EURUSD ≈1.151, GER40 ≈20874, XAUUSD present)
 - GET /api/market_providers/health → mock ok, twelvedata + alphavantage report "ProviderNotConfigured" (correct — no keys)
 - Background refresh loop running every 10s (verified via history)
+
+## Iteration 29 — Sprint 7.5 P0 Fix (TwelveData Batch + Backoff) — 2026-06
+
+### Problem
+Free-tier TwelveData quota was being exhausted (20 individual HTTP requests × every 10s = ~120 credits/min vs 8/min limit).
+
+### Fix (files touched)
+- `/app/backend/market_providers/twelvedata.py` — full rewrite
+  * Kept batch `/quote?symbol=A,B,C` (1 HTTP request per cycle)
+  * Added exponential backoff: **30s → 60s → 120s → 240s → 600s** on 429 (HTTP status OR JSON `code:429`)
+  * Backoff resets on first successful response
+  * Parses `api-credits-left` / `api-daily-credits-left` headers
+  * Provider REJECTS calls while backed-off (never hammers the API)
+- `/app/backend/market_providers/manager.py` — full rewrite
+  * `refresh_interval_sec` default: 10 → **60**
+  * Cache TTL default: 30 → **60**
+  * 429s DO NOT trip the circuit breaker (only network/5xx do)
+  * `_choose_provider` skips backed-off providers
+  * New `_market_status()` computes LIVE / STALE / FALLBACK
+  * `live_max_sec = max(30, refresh_interval + 5s grace)` — no green→amber oscillation
+  * On startup, migrates stored `refresh_interval_sec` <60 → 60 (P0 safety)
+- `/app/backend/market_providers/base.py` — added default `is_backed_off()` / `backoff_state()` on Provider
+- `/app/backend/market_providers/cache.py` — TTL 60, FRESH_MAX_SEC=30, STALE_MAX_SEC=300, `newest_age_sec` / `oldest_age_sec` / `expired`
+- `/app/admin/src/pages/AdminLiveMarket.tsx` — 🟢 LIVE / 🟠 STALE / 🔵 FALLBACK banner + backoff panel with countdown, schedule, total 429 events
+- `/app/backend/tests/test_iter28_market_providers.py` — assertions updated (60/60/300, market_status, backoff)
+
+### Testing (iteration_29.json)
+- 57/57 backend tests pass (34 iter28 + 23 new sprint75 P0 tests)
+- Validated: batch call path, 429 backoff triggers, 429 does NOT trip breaker, credits parsing, mock fallback, market_status shape, admin controls, all downstream endpoints (Wallet/Forex/AI/CopyTrading) still 200.
+
+### Curl verification (post-fix)
+- `GET /api/market_providers/status` → refresh_interval_sec=60, cache.ttl_sec=60, market_status={state:FALLBACK, tint:blue, live_max_sec:65}
+- Setting a bad TD key → circuit_failures++ but backoff.active=False (correct separation)
+- Admin UI screenshot confirmed: FALLBACK banner + all backoff/credits fields visible
+

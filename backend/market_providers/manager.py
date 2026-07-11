@@ -298,23 +298,29 @@ class ProviderManager:
 
     # ================ market health status ================
     async def _market_status(self) -> Dict[str, Any]:
-        """Derive LIVE / STALE / FALLBACK (MOCK) status for the admin panel.
+        """Derive LIVE / STALE / FALLBACK status for the admin panel.
 
-        LIVE     — real provider active AND newest cache age <30s
-        STALE    — real provider recent but newest cache 30-300s old
+        LIVE     — real provider active AND newest cache age <= (refresh_interval + 5s grace)
+        STALE    — real provider recent but newest cache within 5min window
         FALLBACK — active provider is mock (no real provider available)
+                   OR cache is >5 minutes old (real providers failing continuously)
+
+        Note: The "LIVE" threshold matches the refresh cadence (so cache doesn't
+        oscillate green→amber every cycle during healthy operation).
         """
         cache_stats = await self.cache.stats()
         newest = cache_stats.get("newest_age_sec") or 0
         active = self._last_active_provider
+        # LIVE window = refresh_interval + 5s grace (min 30s)
+        live_max = max(FRESH_MAX_SEC, self.refresh_interval_sec + 5)
         if active == "mock" or active is None:
             state = "FALLBACK"
             tint = "blue"
             reason = "using Mock provider — real providers unavailable"
-        elif newest <= FRESH_MAX_SEC:
+        elif newest <= live_max:
             state = "LIVE"
             tint = "green"
-            reason = f"{active} — fresh ({newest}s)"
+            reason = f"{active} — fresh ({newest}s, refresh every {self.refresh_interval_sec}s)"
         elif newest <= STALE_MAX_SEC:
             state = "STALE"
             tint = "amber"
@@ -329,6 +335,8 @@ class ProviderManager:
             "reason": reason,
             "newest_age_sec": newest,
             "oldest_age_sec": cache_stats.get("oldest_age_sec"),
+            "live_max_sec": live_max,
+            "stale_max_sec": STALE_MAX_SEC,
             "last_real_success_at": self._last_real_success_at.isoformat()
                 if self._last_real_success_at else None,
             "last_real_provider": self._last_real_provider,
