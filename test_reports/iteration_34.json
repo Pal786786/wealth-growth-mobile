@@ -1,0 +1,39 @@
+{
+  "summary": "Sprint 10 — Gold Investment Platform backend validated end-to-end. All 15 required scenarios pass (quote structure/spread, buy 500 with wallet debit + notification + audit, Idempotency-Key single-debit, below-min 400, insufficient-wallet 400, sell half with realized_pnl and wallet credit, chart windows 1D/1W/1M/3M/1Y/ALL non-empty, transactions ?side=buy filter, manual price override -> mid=7000 provider=manual source=admin_override, maintenance_mode blocks buy, provider switching mock + augmont fallback, /api/admin/gold/providers returns all 5, admin dashboard totals, audit log entries for gold.buy/sell/config.updated, no KYC gate on buy/sell). Full regression suites iter27/28/30/32/33 (kyc_v2)/forex_regression/notifications all green (235 passed, 1 skipped, 0 failures). State reset to provider=live_market, manual_price=0, maintenance=false at teardown. No wallet double-debit observed; wallet delta matched tx amount to 1 paise in every case.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_gold_iter34.py",
+    "/app/test_reports/pytest/iter34_gold.xml",
+    "/app/test_reports/pytest/iter34_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "gold/engine.py: current_price() falls back correctly to live_market then mock. When chosen provider is a real-but-unconfigured stub (augmont/mmtc_pamp/safegold) with is_configured()==False, provider.price_per_gram() returns ok=True with source='<name>:fallback_live_market' — so the outer 'if not result.ok' fallback branch is bypassed and the returned quote has provider='augmont' source='augmont:fallback_live_market' (no explicit 'note' field). The review request accepts both shapes, so behavior is acceptable, but consider adding the same explanatory 'note' field for UX parity.",
+    "gold/engine.py: buy/sell wallet mutation and gold_transactions insert are not wrapped in a transaction — if the insert fails after $inc, the wallet would drift. Consider a compensating rollback or a Motor session/transaction. For MVP it is acceptable because DB writes are local and idempotent.",
+    "gold/engine.py: _guardrails raises when amount < min_buy_inr BEFORE the idempotency lookup — so a repeat POST with an amount below min will still hit 400 (this is fine).",
+    "gold/engine.py: holdings.total_invested is decremented by grams*avg_buy_price at sell time; if user sells all, total_invested correctly floors at 0 via max(0, ...).",
+    "gold/routes.py: BuyIn uses ge=1 (₹1 minimum via Pydantic) but engine enforces min_buy_inr=10 — this dual-gate is fine; the 422 vs 400 discrepancy is only for < ₹1 which is a corner case.",
+    "gold/providers.py: PROVIDER_REGISTRY lookup is case-insensitive on config but the PUT config accepts any string; consider validating provider in ('mock','live_market','augmont','mmtc_pamp','safegold') at the route level to fail fast.",
+    "gold/engine.py: _ensure_chart_seed inserts 400 seed points on first chart call — one-time cost but ok."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_gold_iter34.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (21/21 gold; 235/236 combined incl. regression, 1 skipped unrelated)",
+    "frontend": "not tested (backend-only scope)"
+  },
+  "seed_data_creation": "None. Tests used existing demo user (demo@mfb.in) wallet balance and reset admin config to defaults on teardown (provider=live_market, manual_price=0, maintenance=false, max_buy=200000).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Gold module lives at /app/backend/gold/{engine,providers,routes}.py and is attached via server.py ~L1155. Test suite is /app/backend/tests/test_gold_iter34.py — runnable with `EXPO_PUBLIC_BACKEND_URL=... pytest tests/test_gold_iter34.py`. Some sibling suites (test_iter28_market_providers.py, test_iter30_ai_news_analytics.py) hard-require EXPO_PUBLIC_BACKEND_URL to be exported in the environment or they abort at collection time — set it before invoking pytest at repo root. Test 05 (insufficient wallet) briefly bumps max_buy_inr to (wallet+500000) then resets to 200000 to avoid hitting the max-cap error first; keep this pattern if the wallet balance changes. All gold config was reset to defaults at module teardown (autouse fixture)."
+}

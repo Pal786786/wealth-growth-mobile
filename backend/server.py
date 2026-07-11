@@ -1150,6 +1150,17 @@ try:
 except Exception as _e:
     logger.warning(f"kyc_v2 attach failed: {_e}")
 
+# ------ Sprint 10: Gold Investment Platform ------
+try:
+    import gold as _gold
+    _gold.attach(
+        app, db=db, get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+    )
+    logger.info("gold subsystem attached (Sprint 10)")
+except Exception as _e:
+    logger.warning(f"gold attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as
