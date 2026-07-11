@@ -1,0 +1,45 @@
+{
+  "summary": "Sprint 7C.2 (AI News, Calendar, Summary, Analytics) backend validation + full regression. New comprehensive suite /app/backend/tests/test_iter30_ai_news_analytics.py — 50/50 PASSED (100%). Every new endpoint (news list/detail/filters, calendar meta/list/filters/CRUD, summary get/history/generate/delete, analytics overview/by-symbol/by-timeframe/history/tick, admin console) returns 200 with correct shape. Datetime handling is clean (all ISO strings, no offset-naive/aware errors). Broadcaster produced market_news notifications on startup as designed. Full regression re-run of iter27 + iter28 (71 tests): 70 PASSED, 1 pre-existing failure unrelated to Sprint 7C.2 (TestAlertsTrigger.test_eval_loop_triggers — same alerts_engine.price_above cross-detection bug documented in iteration_27.json). No Sprint 7C.2 regression on wallet, notifications, auth/me, forex, market, market_providers, copy_trading, ai_intelligence, or kyc.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/ai/alerts (pre-existing, iter27)",
+        "issue": "TestAlertsTrigger.test_eval_loop_triggers still fails — alerts_engine price_above/below only triggers on cross (needs last_price < target <= price). Since last_price is snapshotted at creation to current market price, an alert with target=0.0001 never fires. Documented RCA in iteration_27.json; NOT introduced by Sprint 7C.2."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_ai_news_analytics.py",
+    "/app/test_reports/pytest/iter30_ai_news.xml",
+    "/app/test_reports/pytest/iter30_regression.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (pre-existing, iter27): Fix alerts_engine.price_above/below cross-detection so alerts fire when target is already crossed at creation. Not blocking Sprint 7C.2."
+  ],
+  "critical_code_review_comments": [
+    "ai_news/routes.py — clean separation of user vs admin dependencies (get_current_user vs get_current_admin), Pydantic-validated request models, proper HTTPException codes.",
+    "ai_news/calendar_engine.py — correctly handles offset-naive datetimes by replacing tzinfo=UTC before arithmetic (lines 168-184), preventing the 500 error mentioned in task brief.",
+    "ai_news/news_engine.py & summary_engine.py — gracefully degrades when EMERGENT_LLM_KEY missing by falling back to deterministic templates with is_ai_generated=False. Verified via response schema.",
+    "routes.py admin_console — computes pending_broadcast and upcoming_events counts on-the-fly; not cached (fine for admin dashboard, low traffic).",
+    "MongoDB _id is properly excluded via projection {'_id': 0} everywhere in ai_news module.",
+    "All datetimes serialized via .isoformat() before returning."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter30_ai_news_analytics.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (50/50 new suite); 98.6% (70/71 combined with iter27+iter28 regression, 1 pre-existing failure)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Tests create+delete transient news items (title prefix 'TEST_iter30') and one calendar event ('TEST_iter30 FOMC Rate Decision') within TestAINews.test_admin_news_put_delete_lifecycle and TestAICalendar.test_calendar_crud_lifecycle. Both are cleaned up in-test. One admin-generated news batch (categories=['forex','global'], per_category=1) remains in DB — harmless.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All Sprint 7C.2 endpoints green. Re-run: `EXPO_PUBLIC_BACKEND_URL=<url> pytest /app/backend/tests/test_iter30_ai_news_analytics.py -v`. Note: TestAINews.test_admin_news_generate + test_admin_summary_generate hit Claude Sonnet 4.5 via EMERGENT_LLM_KEY and can take 30-90s each (timeout=120s already set). AnalyticsEngine tick runs every 300s in background; total_signals grows over time so overview counts drift between runs. Broadcaster notifications only appear after first high_impact news exists at startup — currently visible."
+}

@@ -1117,6 +1117,17 @@ try:
 except Exception as _e:
     logger.warning(f"ai_intelligence attach failed: {_e}")
 
+# ------ Sprint 7C.2: AI Market News & Analytics (news + calendar + summary + analytics) ------
+try:
+    import ai_news as _ai_news
+    _ai_news.attach(
+        app, db=db, get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+    )
+    logger.info("ai_news subsystem attached (Sprint 7C.2)")
+except Exception as _e:
+    logger.warning(f"ai_news attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as

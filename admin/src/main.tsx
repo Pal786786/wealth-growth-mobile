@@ -34,6 +34,7 @@ import AdminMarketSettings from "./pages/AdminMarketSettings";
 import AdminMarketData from "./pages/AdminMarketData";
 import AdminLiveMarket from "./pages/AdminLiveMarket";
 import AdminCopyTrading from "./pages/AdminCopyTrading";
+import AdminAIConsole from "./pages/AdminAIConsole";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -85,6 +86,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="market-data" element={<AdminMarketData />} />
               <Route path="live-market" element={<AdminLiveMarket />} />
               <Route path="copy-trading" element={<AdminCopyTrading />} />
+              <Route path="ai-console" element={<AdminAIConsole />} />
               <Route path="api-management" element={<ApiManagement />} />
               <Route path="settings" element={<Settings />} />
               <Route path="admins" element={<AdminUsers />} />
