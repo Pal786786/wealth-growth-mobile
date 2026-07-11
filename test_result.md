@@ -1008,3 +1008,47 @@ Wallet · Forex · Copy Trading · Live Market · AI News · AI Console · KYC �
 3. `DIGILOCKER_CLIENT_ID` + `DIGILOCKER_CLIENT_SECRET` — Meri Pehchaan / DigiLocker Sandbox / Prod credentials
 4. Register callback URL in DigiLocker console: `https://<host>/api/kyc/v2/digilocker/callback` (or app deeplink)
 
+
+## Iteration 34 — Sprint 10 Gold Investment Platform — 2026-06
+
+### New module `/app/backend/gold/` (4 files, additive)
+  * `providers.py` — GoldProvider abstraction with 5 backends:
+      - `MockGoldProvider` (deterministic ±15 INR/g band around ₹6500/g, seeded per-minute)
+      - `LiveMarketGoldProvider` (derives ₹/g from XAUUSD × USDINR / 31.1035 from `market_price_cache`)
+      - `AugmontProvider`, `MmtcPampProvider`, `SafeGoldProvider` — real backend stubs; automatically fall through to LiveMarketGoldProvider when API keys are placeholder
+  * `engine.py` — GoldEngine:
+      - Manual price override → chosen provider → live_market → mock fallback chain
+      - Buy/sell against wallet (weighted-average cost, realized P/L on sell)
+      - Spread engine (default 2% total split as buy/sell around mid)
+      - Trading hours + maintenance-mode guardrails
+      - Weighted-avg cost basis + P/L (unrealized + realized)
+      - Price history collection + auto-seeded 400-point 1Y chart curve
+      - Structured audit log for every action
+  * `routes.py` — 7 user + 7 admin endpoints
+  * `__init__.py` — startup hook
+
+### DB collections (additive)
+  * `gold_config` (singleton), `gold_transactions`, `gold_holdings`, `gold_audit_log`, `gold_price_history`
+
+### Business rules verified
+  * NO KYC required to buy/sell gold. KYC gate stays reserved for gold **redemption** (config flag `redemption_kyc_required=true`, to be enforced when redemption module lands)
+  * Purchases use wallet balance only; every tx generates a notification + audit entry
+  * Minimum purchase ₹10, maximum ₹2,00,000 (both admin-configurable)
+  * Idempotency-Key header protects against double-buys on retry
+
+### Testing
+- **Sprint 10 new suite**: `test_gold_iter34.py` (21 tests) — 21/21 PASS
+- **Full regression**: **214 pass + 21 gold = 235 PASS · 1 SKIP · 0 FAIL**
+- Wallet integrity: no double-debit, balance delta matches tx amount to ₹0.01 on all buy/sell paths
+
+### Report
+`/app/test_reports/iteration_34.json`, `iter34_gold.xml`, `iter34_full.xml`
+
+### Follow-ups (all non-blocking, admin config)
+  * Provide `AUGMONT_API_KEY` / `MMTC_PAMP_API_KEY` / `SAFEGOLD_API_KEY` when ready → real backends auto-activate
+  * Admin can switch provider live via `PUT /api/admin/gold/config {"provider": "augmont"}`
+  * Manual price override via `PUT /api/admin/gold/config {"manual_price_inr_per_gram": 7000}`
+
+### Mobile UI (still to build in follow-up)
+Backend is production-ready. Mobile screens for the gold hub, buy/sell sheet, chart, and holdings will be built as an incremental UI-only iteration.
+
