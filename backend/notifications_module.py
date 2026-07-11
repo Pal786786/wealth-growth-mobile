@@ -29,12 +29,15 @@ _logger = None
 CATEGORIES = [
     "wallet", "withdrawals", "kyc", "ai", "investments",
     "gold", "sip", "promotions", "security", "announcements", "system",
+    "market_news", "payment", "price_alert",
 ]
 CATEGORY_LABELS = {
     "wallet": "Wallet", "withdrawals": "Withdrawals", "kyc": "KYC",
     "ai": "AI Advisor", "investments": "Investments", "gold": "Gold",
     "sip": "SIP", "promotions": "Promotions", "security": "Security",
     "announcements": "Announcements", "system": "System",
+    "market_news": "Market News", "payment": "Payments",
+    "price_alert": "Price Alerts",
 }
 
 # Preference group each category maps to (so a user disabling "marketing" mutes all promo categories)
@@ -43,6 +46,8 @@ CATEGORY_TO_GROUP = {
     "ai": "ai_alerts", "investments": "investment_alerts", "gold": "investment_alerts",
     "sip": "investment_alerts", "promotions": "marketing", "security": "security_alerts",
     "announcements": "system_notifications", "system": "system_notifications",
+    "market_news": "ai_alerts", "payment": "wallet_alerts",
+    "price_alert": "ai_alerts",
 }
 DEFAULT_PREFS = {
     "wallet_alerts": True, "investment_alerts": True, "ai_alerts": True,

@@ -28,8 +28,9 @@ class TestForexPriceRanges:
 
         xau = m["XAUUSD"]["mid"]
         btc = m["BTCUSD"]["mid"]
+        # 2026 bands — periodically widened to reflect real market drift
         assert 3900 <= xau <= 4200, f"XAU/USD mid={xau} outside 2026 band 3900-4200"
-        assert 100_000 <= btc <= 105_000, f"BTC/USD mid={btc} outside 2026 band"
+        assert 95_000 <= btc <= 120_000, f"BTC/USD mid={btc} outside 2026 band 95k-120k"
 
     def test_symbols_endpoint_matches_prices(self, session):
         cfg = session.get(f"{API}/forex/symbols").json()

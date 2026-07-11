@@ -63,8 +63,11 @@ class TestUserNotifications:
         for k in ("items", "total", "unread", "per_category", "categories"):
             assert k in j, f"missing {k}"
         assert isinstance(j["items"], list)
-        assert len(j["per_category"]) == 11
-        assert len(j["categories"]) == 11
+        # Category count grows over time as new modules are added (Sprint 8 added
+        # `payment`, Sprint 7C.2 added `market_news`). Just assert the core set
+        # is present.
+        assert len(j["per_category"]) == len(j["categories"])
+        assert len(j["categories"]) >= 11
         keys = {c["key"] for c in j["categories"]}
         assert {"wallet", "withdrawals", "kyc", "ai", "investments", "gold", "sip",
                 "promotions", "security", "announcements", "system"}.issubset(keys)
