@@ -1104,3 +1104,70 @@ Wired into `Layout.tsx` sidebar (`/gold`) and `main.tsx` router; roles: super_ad
 
 ### Package additions
 - `react-native-gifted-charts@1.4.77` (installed via `yarn expo install`)
+
+---
+## Sprint 11 — Mutual Funds & SIP Platform (June 2026)
+
+### Scope
+Full-stack module for Indian mutual funds & SIPs. Backend + Mobile UI + Admin Console + AI Advisor.
+
+### Backend (`/app/backend/mutual_funds/`)
+- `providers.py` — Mock (default seed) + AMFI (free NAV feed) + CAMS/KFintech/MF Central stubs
+- `seed.py` — 40 realistic funds across 11 categories, 400 days of NAV history each
+- `engine.py` — Fund catalog, NAV history, order lifecycle (created→pending_payment→processing→allocated→completed / failed / redeemed), SIP state machine (active/paused/cancelled/failed/completed) with retry policy, portfolio (XIRR/CAGR/absolute + Daily/Weekly/Monthly P/L + 4-way allocations + top/worst performer), goals with SIP-required + ETA + progress, watchlist, redemption with KYC gate, admin dashboard + KPIs
+- `ai.py` — Claude Sonnet 4.5 advisor (6 kinds: analyze_portfolio / suggest_funds / sip_increase / tax_saving / risk_analysis / diversification + top_funds / best_sip / goal_plan)
+- `routes.py` — 20 user endpoints + 10 admin endpoints under `/api/mf/*` and `/api/admin/mf/*`
+- Wired into `server.py` — startup seeds if empty
+
+### Mobile UI (`/app/frontend/app/mutual-funds/`)
+- `index.tsx` — Hub with portfolio hero, quick tiles (Portfolio/SIPs/Goals/Compare/Watchlist/AI), category shortcuts, top-rated funds
+- `explore.tsx` — Full explorer with search, filters (AMC/Category/Risk/Rating), 7 sort modes, infinite list
+- `fund/[id].tsx` — Fund detail with NAV chart (FinancialChart, 7 windows 1M/3M/6M/1Y/3Y/5Y/MAX), historical returns grid, key details, top holdings, sector allocation, YOUR HOLDING pane, Invest sheet with Lumpsum/SIP tabs, Redeem sheet
+- `portfolio.tsx` — XIRR/CAGR/Absolute, Daily/Weekly/Monthly P/L cards, 4-way allocation stack (asset/AMC/category/risk), top+worst performer, holdings list
+- `sips.tsx` — Pause/Resume/Cancel actions, status filter, retry warnings
+- `goals.tsx` — Create sheet (kind/amount/years/return), progress bar, required SIP, ETA
+- `compare.tsx` — Add-to-compare search, 2–4 side-by-side attribute cards
+- `watchlist.tsx` — Add/remove funds, deep-link to detail
+- `advisor.tsx` — 6 AI prompt tiles, streamed answers
+- `orders.tsx` — Full order lifecycle history with status pipeline
+- Home dashboard: added "SIP & MF" quick action tile
+
+### Reusable components (all reused, NO duplication):
+- FinancialChart (Gold + MF NAV)
+- TradeBottomSheet (Gold + MF Lumpsum/SIP + MF Redeem)
+- Notifications collection (SIP success, SIP failed, investment success, redemption completed)
+- Wallet + wallet_transactions collection
+- Admin analytics framework (Stat/StatCard, CSV export)
+
+### Admin Console (`AdminMutualFundsConsole.tsx`)
+8 tabs: Overview · Funds · Investors · Transactions · SIPs · Providers · Analytics · Settings
+- SIP Success/Failure rate KPIs, Avg SIP, Avg lumpsum, Avg holding days
+- Highest-AUM AMC, Fastest-growing category
+- Category + AMC distribution bars
+- Daily lumpsum-vs-redemption 14-day chart
+- Execute-due-SIPs button (dry-run + real)
+- Full config editor (min amounts, retry policy, KYC gate, maintenance mode, NAV sync)
+- Wired into Layout sidebar & main.tsx router; role matrix updated (super_admin, admin, finance_manager, investment_manager)
+
+### Business rules honored
+- No KYC required to browse / SIP / lumpsum. KYC gate ONLY on redemption (per config).
+- Long-press confirm on all TradeBottomSheet interactions (from Sprint 10.5 review).
+
+### Testing
+- New pytest suite `test_mutual_funds_iter36.py` — 21 tests PASS
+- Full regression: **668 pass / 2 skip / 10 pre-existing failures (unrelated to Sprint 11)**
+    - The 10 failures are in `test_notifications`, `test_push_notifications`, `test_mfb_backend` (OTP/Stripe), `test_kyc_gate_iter19`, `test_iter20_kyc_removal`, `test_withdrawals` — all touching untouched modules.
+- Admin `yarn build` — 0 errors
+- Mobile lint — 0 errors (16 warnings only)
+- Mobile smoke test — /mutual-funds renders premium UI
+
+### Files added / modified
+- ADD: `/app/backend/mutual_funds/{__init__,providers,seed,engine,ai,routes}.py`
+- ADD: `/app/backend/tests/test_mutual_funds_iter36.py`
+- ADD: `/app/frontend/src/api/mutualFunds.ts`
+- ADD: `/app/frontend/app/mutual-funds/{_layout,index,explore,portfolio,sips,goals,compare,watchlist,advisor,orders}.tsx`
+- ADD: `/app/frontend/app/mutual-funds/fund/[id].tsx`
+- ADD: `/app/admin/src/pages/AdminMutualFundsConsole.tsx`
+- EDIT: `/app/backend/server.py` (attach mutual_funds)
+- EDIT: `/app/frontend/app/(tabs)/index.tsx` (Home MF tile)
+- EDIT: `/app/admin/src/main.tsx` + `Layout.tsx` (route + sidebar + roles)

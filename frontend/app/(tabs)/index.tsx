@@ -5,7 +5,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import {
   Bell, Send, Plus, QrCode, Smartphone, Receipt, Wallet as WalletIcon,
   Plane, TrendingUp, ShieldCheck, Gift, ChevronRight, ArrowDownLeft, ArrowUpRight, Eye, EyeOff, TrendingDown,
-  AlertTriangle, Bot, LineChart, Users, Copy as CopyIcon, Brain, Coins
+  AlertTriangle, Bot, LineChart, Users, Copy as CopyIcon, Brain, Coins, Repeat
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";

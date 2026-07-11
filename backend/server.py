@@ -1161,6 +1161,17 @@ try:
 except Exception as _e:
     logger.warning(f"gold attach failed: {_e}")
 
+# ------ Sprint 11: Mutual Funds & SIP Platform ------
+try:
+    import mutual_funds as _mf
+    _mf.attach(
+        app, db=db, get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+    )
+    logger.info("mutual_funds subsystem attached (Sprint 11)")
+except Exception as _e:
+    logger.warning(f"mutual_funds attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as

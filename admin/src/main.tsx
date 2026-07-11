@@ -37,6 +37,7 @@ import AdminCopyTrading from "./pages/AdminCopyTrading";
 import AdminAIConsole from "./pages/AdminAIConsole";
 import AdminPayments from "./pages/AdminPayments";
 import AdminGoldConsole from "./pages/AdminGoldConsole";
+import AdminMutualFundsConsole from "./pages/AdminMutualFundsConsole";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -91,6 +92,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="ai-console" element={<AdminAIConsole />} />
               <Route path="payments" element={<AdminPayments />} />
               <Route path="gold" element={<AdminGoldConsole />} />
+              <Route path="mutual-funds" element={<AdminMutualFundsConsole />} />
               <Route path="api-management" element={<ApiManagement />} />
               <Route path="settings" element={<Settings />} />
               <Route path="admins" element={<AdminUsers />} />

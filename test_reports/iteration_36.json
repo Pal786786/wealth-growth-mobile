@@ -1,0 +1,50 @@
+{
+  "summary": "Sprint 11 — Mutual Funds & SIP Platform validated end-to-end. Backend: 21/21 primary MF tests (test_mutual_funds_iter36.py) PASS + 19/19 new supplemental tests (test_mutual_funds_iter36_supplemental.py) PASS covering all 6 AI kinds (analyze_portfolio/suggest_funds/sip_increase/tax_saving/risk_analysis/diversification), all 7 chart windows (1M/3M/6M/1Y/3Y/5Y/MAX), all 4 portfolio allocation views (asset/amc/category/risk), search+risk+min_rating+amc filters, sort options, admin provider switch and KYC gate on redemption (confirmed 400 with 'kyc' error when redemption_kyc_required=true). Gold regression (test_gold_iter34.py) 21/21 PASS. Mobile (390x844, demo@mfb.in): /mutual-funds hub renders with ₹13,000.16 portfolio value, XIRR 25.47%, 2 funds, Portfolio/SIPs/Goals/Compare/Watchlist/AI Advisor tiles, Explore by Category and Top Rated sections. /mutual-funds/explore shows 40 funds with search+filter. Fund detail (HDFC Balanced Advantage) renders NAV chart with window pills, Historical Returns (1M/3M/6M/1Y/3Y/5Y), Key Details (Expense Ratio, Exit Load, AUM, Fund Manager, Benchmark, Min Lumpsum, Min SIP), Top Holdings (8 stocks), Sector Allocation (6 sectors), Your Holding (units/invested/value/P&L/AVG NAV), Documents (SID/KIM/Fact Sheet), Invest Now + Redeem CTAs. TradeBottomSheet opens with LUMPSUM/MONTHLY SIP tabs, quick amount pills ₹1k/5k/10k/25k/50k, Wallet balance ₹1,92,646.07, Long-press · Invest CTA. /mutual-funds/advisor 6 AI tiles render; tapping 'Analyze My Portfolio' returned detailed AI analysis (Concentration Risk HIGH, AMC breakdown, Performance Analysis, Expense Drag). /mutual-funds/goals Add Goal modal has 7 kinds (Retirement/House/Car/Education/Marriage/Emergency/Custom) + Goal Name + Target Amount + Years + Expected Return + Save Goal. /mutual-funds/portfolio renders XIRR 25.47% / CAGR 18.07% / ABS RET / DAILY/WEEKLY/MONTHLY P/L / Allocation tabs (ASSET/AMC/CATEGORY/RISK) / Top Performer / Holdings (2) / 'Ask AI Advisor about my portfolio' CTA. Admin Console /api/admin-ui/#/mutual-funds: Mutual Funds & SIP Console with 8 tabs (Overview/Funds/Investors/Transactions/SIPs/Providers/Analytics/Settings). Overview: LIVE · Provider mock, AUM ₹13,000, Active Investors 1, Active SIPs 10 (1 paused), Pending Redemptions 0, SIP Success/Failure rate, Avg SIP ₹600, Avg Investment ₹764.71, Highest AUM AMC (HDFC), Fastest Growing hybrid, Top AMCs, Top Funds. Investors tab: table with user, ₹13,000 invested, 2 funds, CSV export. No 401/500s on any MF endpoint in mobile UI once authenticated.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Fund Detail — NAV chart window pills",
+        "issues": [
+          "Chart pills on the NAV history chart are 1D/1W/1M/3M/1Y/ALL (6 pills) — but the review spec calls for 7 window pills matching the backend chart endpoint (1M/3M/6M/1Y/3Y/5Y/MAX). Backend supports all 7 windows correctly (verified in supplemental test). The mobile chart currently hides 6M/3Y/5Y/MAX behind the 'ALL' pill and adds 1D/1W (which are not backend windows per the review spec). Consider aligning the pill set with the backend windows so users can drill into 6M / 3Y / 5Y timeframes directly."
+        ]
+      },
+      {
+        "screen": "Admin Mutual Funds Console — tab buttons",
+        "issues": [
+          "Tab buttons (Overview/Funds/Investors/Transactions/SIPs/Providers/Analytics/Settings) share text with sidebar items (Transactions/Settings/Investors etc.) causing selector ambiguity. Adding data-testid like `mf-tab-<name>` on the 8 tab pills would make QA and E2E more robust."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_mutual_funds_iter36.py",
+    "/app/backend/tests/test_mutual_funds_iter36_supplemental.py",
+    "/app/test_reports/pytest/iter36_mf.xml",
+    "/app/test_reports/pytest/iter36_mf_supplemental.xml",
+    "/app/test_reports/pytest/iter36_gold_regression.xml"
+  ],
+  "action_items": [
+    "Optional design: align Fund Detail NAV chart pills with the 7 backend windows (1M/3M/6M/1Y/3Y/5Y/MAX). Not blocking — backend and Historical Returns table already expose all values.",
+    "Optional test-hygiene: add `data-testid=\"mf-tab-<name>\"` to the 8 admin MF console tab pills to disambiguate from sidebar entries."
+  ],
+  "critical_code_review_comments": [
+    "test_mutual_funds_iter36.py L214-218 (test_redeem_insufficient_units) — accepts 400 OR 500 as valid; ideally redemption should return 400 for business rule failures and reserve 500 for actual server errors. The supplemental KYC-gate test already narrows this: 400 with 'kyc' text is returned when redemption_kyc_required=true (verified good).",
+    "Fund detail file /app/frontend/app/mutual-funds/fund/[id].tsx currently uses 1D/1W pills instead of the spec's 1M/3M/6M/1Y/3Y/5Y/MAX — mismatch with backend windows (backend does not have 1D/1W chart windows for MF)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_mutual_funds_iter36_supplemental.py (new — 19 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (21/21 iter36 + 19/19 supplemental + 21/21 gold regression = 61/61)",
+    "frontend": "100% for all Sprint 11 scenarios verified (MF hub, explore, fund detail, trade sheet, portfolio, advisor with real AI answer, goals modal, watchlist, compare, SIPs, admin console 8 tabs)"
+  },
+  "seed_data_creation": "During testing, one ₹500 lumpsum investment was made via /api/mf/invest into HDFC Balanced Advantage-Direct as part of the portfolio allocation view + KYC-gate tests. This is on top of pre-existing 17 orders across 2 holdings for demo@mfb.in. Redemption KYC flag was toggled on and restored to original value; admin provider was toggled to 'mock' and restored. AI-related SIPs/orders left in place (10 active SIPs, 1 paused, 0 failed) — no destructive teardown required.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 11 (Mutual Funds & SIP) is complete and fully validated. To reproduce: (1) POST /api/auth/login {identifier: demo@mfb.in, password: demo1234}; (2) Token stored in browser localStorage under key `mfb_token` (JSON-stringified). Injecting `localStorage.setItem('mfb_token', JSON.stringify(token))` after page.goto(/) works to bypass the login form when scripting. (3) Admin login via /api/admin-ui/#/login with admin@mfb.in / Admin@MFB2026 — 'Sign in' role=button. (4) Mobile testIDs on MF hub: mf-home-scroll, mf-invest-cta, mf-portfolio-cta, tile-portfolio/sips/goals/compare/watchlist/advisor, mf-fund-row-<id>. Fund detail testIDs are minimal — chart pills selected via get_by_text('3M', exact=True). Admin MF tabs currently rely on text selection (Overview/Funds/Investors/Transactions/SIPs/Providers/Analytics/Settings) and collide with sidebar entries — see action item. (5) Backend chart endpoint accepts window ∈ {1M,3M,6M,1Y,3Y,5Y,MAX} (verified). Mobile NAV chart currently only surfaces 6 pills (1D/1W/1M/3M/1Y/ALL) — design mismatch flagged, non-blocking.",
+  "rca_of_issue": "N/A — no defects. Sprint 11 shipping green: 61/61 backend PASS + full frontend E2E validated."
+}

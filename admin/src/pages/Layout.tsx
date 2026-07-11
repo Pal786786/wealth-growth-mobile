@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon, ShieldCheck, KeyRound, AlertTriangle, Plane, Shield, Trophy, ScrollText, Lock, Activity, Smartphone, FileSearch, Crown, Calculator, LineChart, ArrowUpFromLine, Bot, Copy, CreditCard, Coins } from "lucide-react";
+import { LayoutDashboard, Users as UsersIcon, FileCheck2, Wallet, ArrowLeftRight, LogOut, Menu, X, Bell, TrendingUp, Image, FileText, Settings as SettingsIcon, ShieldCheck, KeyRound, AlertTriangle, Plane, Shield, Trophy, ScrollText, Lock, Activity, Smartphone, FileSearch, Crown, Calculator, LineChart, ArrowUpFromLine, Bot, Copy, CreditCard, Coins, Repeat } from "lucide-react";
 import { Logo } from "../components/Logo";
 import { useAdminAuth } from "../lib/auth";
 import { useState } from "react";
@@ -7,11 +7,11 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
 const ROLE_NAV: Record<string, string[]> = {
-  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/ai-console", "/market-settings", "/market-data", "/live-market", "/copy-trading", "/payments", "/gold", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
-  admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/ai-console", "/market-settings", "/market-data", "/live-market", "/copy-trading", "/payments", "/gold", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings"],
-  finance_manager: ["/", "/users", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/insurance/claims", "/rewards", "/tier-upgrades", "/reports", "/audit", "/gold"],
+  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/ai-console", "/market-settings", "/market-data", "/live-market", "/copy-trading", "/payments", "/gold", "/mutual-funds", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
+  admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/ai-console", "/market-settings", "/market-data", "/live-market", "/copy-trading", "/payments", "/gold", "/mutual-funds", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings"],
+  finance_manager: ["/", "/users", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/insurance/claims", "/rewards", "/tier-upgrades", "/reports", "/audit", "/gold", "/mutual-funds"],
   support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications", "/push-logs", "/travel", "/insurance", "/insurance/claims", "/tier-upgrades"],
-  investment_manager: ["/", "/users", "/investments", "/calculator-config", "/content", "/gold"],
+  investment_manager: ["/", "/users", "/investments", "/calculator-config", "/content", "/gold", "/mutual-funds"],
 };
 
 const NAV = [
@@ -32,6 +32,7 @@ const NAV = [
   { to: "/copy-trading", label: "Copy Trading", icon: Copy },
   { to: "/payments", label: "Payments (S8)", icon: CreditCard },
   { to: "/gold", label: "Gold Console (S10)", icon: Coins },
+  { to: "/mutual-funds", label: "Mutual Funds (S11)", icon: Repeat },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/push-logs", label: "Push Logs", icon: Activity },
   { to: "/investments", label: "Investments", icon: TrendingUp },
