@@ -959,3 +959,52 @@ Wallet · Forex · Copy Trading · Live Market · AI News · AI Console · KYC �
 - Enable events: payment.captured, payment.failed, refund.processed, refund.failed
 - Flip demo_mode → false via Config tab (auto-forced to false once real keys are saved and mode=live)
 
+
+## Iteration 33 — Sprint 9 Real KYC Platform (kyc_v2) — 2026-06
+
+### New module `/app/backend/kyc_v2/` (additive — legacy `kyc_module.py` untouched)
+  * `providers/base.py`         — Protocol definitions
+  * `providers/pan.py`          — DemoPanProvider + NSDLPanProvider stub (delegates to demo when key missing)
+  * `providers/digilocker.py`   — DemoDigiLockerProvider + DigiLockerProviderReal (OAuth stub)
+  * `providers/aux.py`          — DemoOCRProvider + DemoFaceMatchProvider (deterministic outputs for reliable tests)
+  * `storage.py`                — Fernet-encrypted document storage (falls back to unencrypted b64 when KYC_ENCRYPTION_KEY is placeholder)
+  * `gating.py`                 — 4 gated actions: `withdrawal`, `become_signal_provider`, `become_copy_trader`, `compliance_limits`; audit trail via `kyc_gating_events`
+  * `routes.py`                 — 13 endpoints under `/api/kyc/v2/*` (user) + `/api/admin/kyc/v2/*` (admin)
+
+### DB collections (additive)
+  * `kyc_verifications` — one row per check (PAN, Aadhaar-soft, DigiLocker, OCR, FaceMatch)
+  * `kyc_v2_documents` — encrypted document blobs with sha256 hash
+  * `kyc_gating_events` — audit trail for gate decisions
+  * `kyc_digilocker_states` — OAuth state binding (short-lived)
+
+### Business rules honoured
+  * Sign Up / Login / Deposit / Forex / Copy Trade / AI / Gold / SIP / Mutual Funds → **NO KYC required**
+  * Withdrawal / Signal Provider / Copy Trader / crossing compliance limits → KYC gate returns 403 with `{kyc_required:true, action, reason, kyc_status, unblock_hint}`
+  * Compliance thresholds: ₹5L lifetime deposit, ₹1L single transaction
+
+### Provider abstraction
+  * PAN, DigiLocker, OCR, FaceMatch each expose `provider`, `is_configured()`, and their verify methods.
+  * `get_pan_provider()` auto-picks the real backend when `NSDL_PAN_API_KEY` is set, else demo.
+  * `get_digilocker_provider()` same pattern using `DIGILOCKER_CLIENT_ID` + `DIGILOCKER_CLIENT_SECRET`.
+  * When keys land later, NO code changes needed.
+
+### Encrypted document storage
+  * Fernet symmetric encryption (AES-128-CBC + HMAC-SHA256).
+  * Key accepted as raw urlsafe base64 OR any passphrase (SHA-256-derived).
+  * With placeholder key, docs are stored as plain base64 but flagged `encrypted:false` so ops can catch it via `/api/admin/kyc/v2/dashboard` → `encryption`.
+
+### Testing (iteration_33)
+- **kyc_v2 new tests**: **22/22 PASS** (`test_kyc_v2_iter33.py`)
+  All 17 scenarios covered incl. PAN happy/invalid/BAD-prefix, Aadhaar soft-verify, DigiLocker full flow, DigiLocker security (wrong-state 400 + foreign-state 403), OCR PAN+Aadhaar, face-match identical+different, doc upload+sha256, doc >8MB → 413, summary, gate withdrawal + gate forex_trade, compliance, admin dashboard, admin verifications 401 gate, admin providers.
+- **Regression**: iter27 (37) + iter28 (34) + iter30 (49+1 skip) + iter32 (26) + forex (16) + notifications (30) → all green.
+- **Grand total: 214 PASS · 1 SKIP · 0 FAIL** across 215 tests.
+
+### Report
+`/app/test_reports/iteration_33.json`, `iter33_kyc_v2.xml`, `iter33_regression_*.xml`
+
+### Production go-live prerequisites (user actions when ready)
+1. `KYC_ENCRYPTION_KEY` — set a strong 32-byte urlsafe base64 key OR any passphrase (auto-derived) in `/app/backend/.env`
+2. `NSDL_PAN_API_KEY` — plug real NSDL PAN check credentials
+3. `DIGILOCKER_CLIENT_ID` + `DIGILOCKER_CLIENT_SECRET` — Meri Pehchaan / DigiLocker Sandbox / Prod credentials
+4. Register callback URL in DigiLocker console: `https://<host>/api/kyc/v2/digilocker/callback` (or app deeplink)
+
