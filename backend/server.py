@@ -1128,6 +1128,17 @@ try:
 except Exception as _e:
     logger.warning(f"ai_news attach failed: {_e}")
 
+# ------ Sprint 8: Production Payments (Razorpay) ------
+try:
+    import payments as _payments
+    _payments.attach(
+        app, db=db, get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+    )
+    logger.info("payments subsystem attached (Sprint 8)")
+except Exception as _e:
+    logger.warning(f"payments attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as
