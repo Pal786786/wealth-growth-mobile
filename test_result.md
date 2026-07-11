@@ -821,3 +821,61 @@ Free-tier TwelveData quota was being exhausted (20 individual HTTP requests × e
 - Setting a bad TD key → circuit_failures++ but backoff.active=False (correct separation)
 - Admin UI screenshot confirmed: FALLBACK banner + all backoff/credits fields visible
 
+
+## Iteration 30 — Sprint 7C.2 AI Market News & Analytics — 2026-06
+
+### New module
+`/app/backend/ai_news/` (attached in `server.py` after `ai_intelligence`)
+  * `news_engine.py`      — AI-generated categorized market news (Forex/Crypto/Indices/Commodities/Indian Market/Global) via Claude Sonnet 4.5 + deterministic template fallback + high-impact broadcaster (2-min interval, notifications collection)
+  * `calendar_engine.py`  — Economic calendar with 32-event curated seed (Fed/NFP/CPI/ECB/RBI/BoE/BoJ/RBA/etc.), impact filters + live countdown_sec, admin CRUD
+  * `summary_engine.py`   — Daily/weekly/intraday market summaries powered by Claude Sonnet 4.5 aggregating top movers from `market_price_cache`
+  * `analytics_engine.py` — Signal outcome tracker (5-min tick loop): resolves against SL/TP levels, computes ROI, aggregates win rate / tp1/2/3 hit rates / confidence edge
+  * `routes.py`           — Public + admin endpoints (see below)
+
+### New endpoints
+Public:
+  `GET /api/ai/news[?category&sentiment&high_impact_only&limit]`
+  `GET /api/ai/news/{id}`
+  `GET /api/ai/calendar[?impact&country&currency&days_ahead&include_past&limit]`
+  `GET /api/ai/calendar/meta`
+  `GET /api/ai/summary?type=intraday|daily|weekly`
+  `GET /api/ai/summary/history[?type&limit]`
+  `GET /api/ai/analytics/overview[?window_days]`
+  `GET /api/ai/analytics/by-symbol[?window_days&limit]`
+  `GET /api/ai/analytics/by-timeframe[?window_days]`
+  `GET /api/ai/analytics/history[?limit&outcome]`
+Admin console:
+  `POST/PUT/DELETE /api/ai/admin/news`, `POST/PUT/DELETE /api/ai/admin/calendar`,
+  `POST /api/ai/admin/summary/generate`, `DELETE /api/ai/admin/summary/{id}`,
+  `POST /api/ai/admin/analytics/tick`, `GET /api/ai/admin/console`, `GET /api/ai/admin/news`
+
+### New Mongo collections
+  * `ai_news_items`         — categorized AI news
+  * `ai_economic_events`    — 32 seeded macro events + admin additions
+  * `ai_market_summaries`   — intraday/daily/weekly narratives
+  * `ai_signal_history`     — tracked signals with SL/TP outcomes + ROI
+
+### Mobile screens
+  * `/app/frontend/app/ai/news.tsx` + `/news/[id].tsx` — feed with category pills + high-impact filter, detail with sentiment icon + snapshot
+  * `/app/frontend/app/ai/calendar.tsx` — impact + country filters, live countdown grouped by day, side border indicates impact
+  * `/app/frontend/app/ai/summary.tsx` — Intraday/Daily/Weekly tabs, key-movers card
+  * `/app/frontend/app/ai/analytics.tsx` — 4 KPI cards (win rate / TP hit rate / sum ROI / confidence edge), outcome breakdown, by-symbol, by-timeframe, recent signals
+  * `/app/frontend/app/ai/index.tsx` — hub updated to expose 7 modules (Signals/News/Calendar/Summary/Analytics/Watchlist/Alerts)
+
+### Admin console page
+  * `/app/admin/src/pages/AdminAIConsole.tsx` — 5 tabs (Overview, News, Economic Calendar, Market Summary, Signal Analytics). CRUD news (Mark HI, Publish, Delete), CRUD calendar (Add Event, Delete), regenerate summaries, view analytics per window (7/30/90/all-time), force analytics tick.
+  * Routed at `/ai-console`, added to sidebar as "AI Console (S7C.2)".
+
+### Testing
+- `/app/backend/tests/test_iter30_ai_news_analytics.py`: 50/50 PASS
+  (news + filters, calendar CRUD, summary all types + history, analytics aggregations + tick, admin console, broadcaster, datetime ISO)
+- Regression: 70/71 iter27+iter28 tests pass. 1 pre-existing failure (alerts_engine cross-detection) documented in iteration_27, NOT introduced by 7C.2.
+- Untouched (verified regression-free): Wallet, Notifications, Auth/me, Forex, Market Dashboard, Live Market (7.5), Copy Trading, AI Intelligence (7C.1), KYC.
+
+### Frontend build & deploy
+- Admin panel rebuilt: `cd /app/admin && yarn build` → copied to `/app/backend/static/admin-ui/`.
+- Expo restarted via supervisorctl. AI hub now shows 7 modules.
+
+### Report
+`/app/test_reports/iteration_30.json`
+
