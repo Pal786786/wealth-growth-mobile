@@ -232,10 +232,10 @@ export function TradeBottomSheet({
                       onConfirm();
                     }}
                     onPress={async () => {
+                      // Provide subtle haptic hint that a long-press is required
                       try { await Haptics.selectionAsync(); } catch {}
-                      onConfirm();
                     }}
-                    delayLongPress={350}
+                    delayLongPress={450}
                     disabled={confirmDisabled || state === "submitting"}
                     style={[
                       s.confirmBtn,

@@ -124,7 +124,7 @@ export default function GoldDashboard() {
   };
 
   const doBuy = async () => {
-    const amt = Math.round(estAmount * 100) / 100;
+    const amt = Number((estAmount || 0).toFixed(2));
     if (!amt || amt < (cfg?.min_buy_inr ?? 10)) {
       setSheetError(`Minimum purchase is ${formatMoney(cfg?.min_buy_inr ?? 10)}`);
       setSheetState("error");
