@@ -879,3 +879,31 @@ Admin console:
 ### Report
 `/app/test_reports/iteration_30.json`
 
+
+## Iteration 31 — Stabilization Sprint (Alert Notification Test) — 2026-06
+
+### Bug Fixed
+`TestAlertsTrigger.test_eval_loop_triggers` in `test_iter27_ai_intelligence.py` was failing since Sprint 7C.1 with "no price_alert notification with EURUSD in title found".
+
+### RCA
+The test looked up the wrong JSON key. Endpoint `/api/notifications` returns
+`{items, total, unread, per_category, categories}` (per Sprint 7A refactor to a
+richer notifications module), but the test was reading `r.json().get("notifications", [])`.
+So even though the alerts_engine created the notification correctly (verified in
+Mongo: `db.notifications.count({category:'price_alert'}) > 0`), the test always
+saw `notif_list=[]` and asserted False.
+
+### Fix
+- `/app/backend/tests/test_iter27_ai_intelligence.py` — tolerant assertion that
+  accepts a raw list OR `items` key OR legacy `notifications` key. No production
+  code change was needed (alerts_engine, notifications_module untouched).
+
+### Regression run (post-fix)
+- iter27 (AI Intelligence) — 37/37 ✅
+- iter28 (Market Providers / Sprint 7.5) — 34/34 ✅
+- iter30 (AI News & Analytics / Sprint 7C.2) — 50/50 ✅
+- **Total: 121/121 PASS** — all three sprints green.
+
+### Untouched (regression-free)
+Wallet · Forex · Copy Trading · Live Market · AI News · AI Console · KYC · Notifications module · alerts_engine production code.
+

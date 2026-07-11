@@ -400,15 +400,23 @@ class TestAlertsTrigger:
                     break
             assert fired, f"alert did not fire within 45s; last status={match[0]['status'] if match else 'missing'}"
 
-            # Verify notification created
+            # Verify notification created (endpoint returns {items, total, ...})
             r = api.get(f"{BASE_URL}/api/notifications",
                         headers=user_token["headers"], timeout=10)
             assert r.status_code == 200
-            notif_list = r.json() if isinstance(r.json(), list) else r.json().get("notifications", [])
+            body = r.json()
+            if isinstance(body, list):
+                notif_list = body
+            else:
+                # Handle both legacy `notifications` key and current `items` key
+                notif_list = body.get("items") or body.get("notifications") or []
             hits = [n for n in notif_list
                     if n.get("category") == "price_alert"
                     and "EURUSD" in (n.get("title") or "")]
-            assert len(hits) >= 1, "no price_alert notification with EURUSD in title found"
+            assert len(hits) >= 1, (
+                f"no price_alert notification with EURUSD in title found; "
+                f"got {len(notif_list)} notifications, response_keys={list(body.keys()) if isinstance(body, dict) else 'list'}"
+            )
         finally:
             # Reset eval interval to 30
             api.put(f"{BASE_URL}/api/ai/admin/alerts/config",
