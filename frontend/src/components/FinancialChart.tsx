@@ -17,9 +17,9 @@ import { LineChart } from "react-native-gifted-charts";
 import { useTheme } from "@/src/theme/ThemeProvider";
 
 export type ChartPoint = { ts: number | string; value: number; label?: string };
-export type ChartWindow = "1D" | "1W" | "1M" | "3M" | "1Y" | "ALL";
+export type ChartWindow = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "3Y" | "5Y" | "ALL" | "MAX";
 
-const WINDOWS: ChartWindow[] = ["1D", "1W", "1M", "3M", "1Y", "ALL"];
+const DEFAULT_WINDOWS: ChartWindow[] = ["1D", "1W", "1M", "3M", "1Y", "ALL"];
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -38,6 +38,7 @@ export function FinancialChart({
   positiveColor,
   negativeColor,
   containerWidth,
+  windows: windowsProp,
 }: {
   points: ChartPoint[];
   height?: number;
@@ -53,7 +54,9 @@ export function FinancialChart({
   positiveColor?: string;
   negativeColor?: string;
   containerWidth?: number;
+  windows?: ChartWindow[];
 }) {
+  const WINDOWS = windowsProp ?? DEFAULT_WINDOWS;
   const { palette, mode } = useTheme();
   const posColor = positiveColor ?? palette.success;
   const negColor = negativeColor ?? palette.danger;

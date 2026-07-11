@@ -189,6 +189,7 @@ export default function FundDetail() {
             points={chartPts}
             height={260}
             window={chartWin as any}
+            windows={["1M", "3M", "6M", "1Y", "3Y", "5Y", "MAX"] as any}
             onWindowChange={(w) => setChartWin(w as MFWindow)}
             livePrice={fund.current_nav}
             title="NAV HISTORY"
