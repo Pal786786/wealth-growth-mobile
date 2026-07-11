@@ -96,11 +96,16 @@ class TestStatus:
         j = r.json()
         # Basic keys
         for k in ["active_provider", "auto_fallback", "refresh_interval_sec",
-                  "universe", "cache", "providers"]:
+                  "universe", "cache", "providers", "market_status"]:
             assert k in j, f"missing key {k}"
         assert j["auto_fallback"] is True
-        assert j["refresh_interval_sec"] == 10
+        assert j["refresh_interval_sec"] == 60
         assert j["active_provider"] == "mock"
+        # market_status structure
+        ms = j["market_status"]
+        for k in ["state", "tint", "reason", "newest_age_sec"]:
+            assert k in ms, f"missing market_status.{k}"
+        assert ms["state"] in {"LIVE", "STALE", "FALLBACK"}
 
     def test_status_universe(self, admin_headers):
         r = requests.get(f"{BASE_URL}/api/market_providers/status",
@@ -111,6 +116,9 @@ class TestStatus:
         assert uni == EXPECTED_UNIVERSE, f"universe mismatch: {uni ^ EXPECTED_UNIVERSE}"
 
     def test_status_cache_stats(self, admin_headers):
+        # Force a fresh refresh so all entries are <30s old before asserting fresh count.
+        requests.post(f"{BASE_URL}/api/market_providers/refresh",
+                      headers=admin_headers, timeout=30)
         # Wait a beat for refresh worker to populate
         for _ in range(15):
             r = requests.get(f"{BASE_URL}/api/market_providers/status",
@@ -120,10 +128,13 @@ class TestStatus:
                 break
             time.sleep(1)
         c = j["cache"]
-        assert c["ttl_sec"] == 30
+        assert c["ttl_sec"] == 60
+        assert c["fresh_max_sec"] == 30
+        assert c["stale_max_sec"] == 300
         assert c["total_symbols_cached"] == 20, c
         assert c["fresh"] == 20
-        assert c["stale"] == 0
+        assert c.get("stale", 0) == 0
+        assert c.get("expired", 0) == 0
 
     def test_status_providers_list(self, admin_headers):
         r = requests.get(f"{BASE_URL}/api/market_providers/status",
@@ -146,12 +157,18 @@ class TestStatus:
         required = {"name", "total_requests", "successful_requests", "failed_requests",
                     "rate_limited_requests", "error_rate_pct", "avg_response_ms",
                     "daily_credits_used", "daily_credits_limit", "credits_remaining",
-                    "last_error", "last_success_at", "last_error_at", "circuit"}
+                    "last_error", "last_success_at", "last_error_at", "circuit",
+                    "backoff"}
         for name, p in provs.items():
             missing = required - set(p.keys())
             assert not missing, f"{name} missing keys {missing}"
             cb = p["circuit"]
             assert set(cb.keys()) == {"open", "consecutive_failures", "opened_at"}
+            bo = p["backoff"]
+            for k in ["active", "step", "remaining_sec"]:
+                assert k in bo, f"{name}.backoff missing {k}"
+            # Fresh state: backoff should be inactive
+            assert bo["active"] is False
         # TD 800, AV 25
         assert provs["twelvedata"]["daily_credits_limit"] == 800
         assert provs["alphavantage"]["daily_credits_limit"] == 25
@@ -161,7 +178,10 @@ class TestStatus:
 
 class TestQuotes:
     def test_all_quotes(self, admin_headers):
-        # Ensure cache filled
+        # Trigger a refresh so the previously-cleared entries are repopulated to 20
+        requests.post(f"{BASE_URL}/api/market_providers/refresh",
+                      headers=admin_headers, timeout=30)
+        # Wait for cache repopulation
         for _ in range(15):
             r = requests.get(f"{BASE_URL}/api/market_providers/quotes",
                              headers=admin_headers, timeout=15)
@@ -178,7 +198,7 @@ class TestQuotes:
             assert k in q0, f"missing key {k}"
         assert q0["provider"] == "mock"
         assert q0["stale"] is False
-        assert q0["age_sec"] < 60
+        assert q0["age_sec"] < 120
 
     def test_price_ranges(self, admin_headers):
         r = requests.get(f"{BASE_URL}/api/market_providers/quotes",
@@ -332,9 +352,9 @@ class TestAdminControls:
         s = requests.get(f"{BASE_URL}/api/market_providers/status",
                          headers=admin_headers, timeout=10).json()
         assert s["refresh_interval_sec"] == 5
-        # Restore to 10
+        # Restore to 60
         requests.put(f"{BASE_URL}/api/market_providers/refresh-interval",
-                     json={"seconds": 10}, headers=admin_headers, timeout=10)
+                     json={"seconds": 60}, headers=admin_headers, timeout=10)
 
     def test_api_key_set_and_invalid_provider(self, admin_headers):
         # Set fake TD key

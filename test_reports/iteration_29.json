@@ -1,0 +1,51 @@
+{
+  "summary": "Sprint 7.5 P0 (TwelveData batch + exponential backoff) backend validation. Ran the full iter28 regression suite (34 tests) plus a new dedicated P0 suite (23 tests) covering status shape, backoff-on-429-only, consumer cache reads, universe scope, and interval clamps + full downstream regression sanity. All 57 tests pass. One P0-spec deviation found & fixed: base Provider.backoff_state() was missing the `schedule`, `credits_left_minute`, `credits_left_daily` keys for non-TD providers — added so every provider surfaces the full backoff shape. Also stabilized one flaky iter28 assertion (cache freshness after 60s refresh worker).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/market_providers/status",
+        "issue": "Before fix: AlphaVantage & Mock providers' backoff sub-object was missing the `schedule` / `credits_left_minute` / `credits_left_daily` keys (base Provider.backoff_state didn't return them), causing non-uniform admin payload. Fixed in /app/backend/market_providers/base.py."
+      },
+      {
+        "endpoint": "GET /api/market_providers/status (cache freshness)",
+        "issue": "Design note (not a bug): refresh_interval_sec=60 combined with cache.fresh_max_sec=30 means market_status will oscillate between LIVE (0-30s post-refresh) and STALE (30-60s post-refresh) even under normal healthy operation. Admin UI badge will visibly flip every refresh cycle. Consider either refresh_interval=30s (still batch-safe on TD free tier: 8 credits/min × 20 symbols = fits at 30s) OR increase fresh_max_sec to 60s so 'LIVE' persists through a full cycle."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_market_providers.py",
+    "/app/backend/tests/test_sprint75_p0_market.py",
+    "/app/test_reports/pytest/sprint75_p0_combined.xml",
+    "/app/test_reports/pytest/iter28_market_providers.xml",
+    "/app/test_reports/pytest/sprint75_p0_market.xml"
+  ],
+  "action_items": [
+    "REVIEW ONLY (no code action required): confirm the fix to /app/backend/market_providers/base.py Provider.backoff_state() (added schedule/credits_left_minute/credits_left_daily keys) matches the P0 admin API contract you intended.",
+    "DESIGN DECISION: With refresh_interval=60s and fresh_max_sec=30s, the market_status badge will flip LIVE↔STALE every 30s in steady state. Recommend either raising fresh_max_sec to 60 OR lowering refresh_interval to 30s. Free tier accommodates the shorter interval: 20 symbols × 1 credit / 30s = 40 credits/min, still under 800 credits/day (2880/day). Actually wait: TwelveData free tier is 8 credits/min → cannot do 40 credits/min. So the right fix is fresh_max_sec=60."
+  ],
+  "critical_code_review_comments": [
+    "manager.py refresh_once() recursion is bounded by the _visited set — good, prevents infinite loop when all providers fail.",
+    "TwelveData._trigger_backoff() increments _backoff_step BEFORE indexing schedule; index is `min(step, len(schedule)-1)` so the first 429 uses schedule[0]=30s, then step=1, next 429 uses schedule[1]=60s. Correct 30→60→120→240→600 progression.",
+    "_reset_backoff on success is called only when `out` is non-empty. If TD returns an empty dict on a 200 (no valid quotes), backoff stays. Acceptable but worth documenting.",
+    "cache.stats() computes newest_age_sec correctly for both naive and tz-aware Mongo datetimes — good defensive coding.",
+    "manager._load_config auto-migrates stored refresh_interval < 60s → 60s on startup (P0 safety migration). Verified via review — no direct test possible without restarting the process, but the clamp on set_refresh_interval still permits 5s admin override, which is by design."
+  ],
+  "updated_files": [
+    "/app/backend/market_providers/base.py (added schedule/credits_left_minute/credits_left_daily to default backoff_state())",
+    "/app/backend/tests/test_iter28_market_providers.py (stabilized test_status_cache_stats — trigger refresh before asserting fresh count; added fresh_max_sec/stale_max_sec/expired assertions)",
+    "/app/backend/tests/test_sprint75_p0_market.py (NEW — 23 tests covering P0-specific behavior)"
+  ],
+  "success_rate": {"backend": "100% (57/57)", "frontend": "N/A (skipped per request)"},
+  "seed_data_creation": "None. Tests self-cleanup any admin config changes (API keys cleared, universe restored, refresh interval reset to 60s).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Full Sprint 7.5 P0 market provider suite passes. Two test files: (1) /app/backend/tests/test_iter28_market_providers.py — 34 legacy tests updated for new 60s/30/300 values; (2) /app/backend/tests/test_sprint75_p0_market.py — 23 new tests for backoff shape, 429-only guarantee, market_status shape, config clamps. Run both with `EXPO_PUBLIC_BACKEND_URL=<preview-url> pytest backend/tests/test_iter28_market_providers.py backend/tests/test_sprint75_p0_market.py -v`. Note: The backend base.py Provider.backoff_state() was patched to include `schedule/credits_left_minute/credits_left_daily` — non-TD providers now return them as [] / null. This is the only production code change made during testing.",
+  "rca_of_issue": "Two issues surfaced during testing. (1) alphavantage/mock backoff.schedule missing: root cause was the base Provider class only returning 6 keys in backoff_state() while TwelveData subclass returns 9. Since the P0 admin API contract requires `schedule` on every provider entry for uniformity, base was updated to return the full 9-key shape with empty/null defaults. (2) test_status_cache_stats assertion `c['fresh']==20` was flaky: cache entries can be up to 60s old (refresh_interval=60s) but fresh_max_sec=30s, so ~half the time entries counted as 'stale' not 'fresh'. Fixed by triggering a manual refresh before asserting. Root design tension: refresh_interval=60 > fresh_max_sec=30 means market_status badge will oscillate LIVE↔STALE in steady state — flagged as design consideration for main agent."
+}

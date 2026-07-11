@@ -79,8 +79,35 @@ function OverviewTab() {
     : data.active_provider === "alphavantage" ? "text-blue-600 bg-blue-50"
     : "text-slate-600 bg-slate-50";
 
+  const ms = data.market_status || {};
+  const stateBadge = ms.state === "LIVE"
+    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+    : ms.state === "STALE"
+    ? "bg-amber-100 text-amber-800 border-amber-300"
+    : "bg-blue-100 text-blue-800 border-blue-300";
+  const stateDot = ms.state === "LIVE" ? "🟢" : ms.state === "STALE" ? "🟠" : "🔵";
+
   return (
     <div className="space-y-5">
+      <div className={`p-4 rounded-xl border-2 ${stateBadge}`}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="text-3xl">{stateDot}</div>
+            <div>
+              <div className="text-xs font-bold uppercase opacity-70">Market Data Health</div>
+              <div className="text-2xl font-bold">{ms.state || "—"}</div>
+              <div className="text-xs mt-1 opacity-80">{ms.reason || ""}</div>
+            </div>
+          </div>
+          <div className="text-right text-xs">
+            <div><b>Newest cache:</b> {ms.newest_age_sec ?? "—"}s</div>
+            <div><b>Oldest cache:</b> {ms.oldest_age_sec ?? "—"}s</div>
+            {ms.last_real_success_at && (
+              <div className="mt-1"><b>Last real:</b> {ms.last_real_provider} · {fmtDate(ms.last_real_success_at)}</div>
+            )}
+          </div>
+        </div>
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Active Provider" value={(data.active_provider || "—").toUpperCase()} tint={data.active_provider === "twelvedata" ? "green" : data.active_provider === "mock" ? "amber" : "blue"} icon={Zap} />
         <StatCard label="Auto Fallback" value={data.auto_fallback ? "ENABLED" : "DISABLED"} tint={data.auto_fallback ? "green" : "amber"} icon={Activity} />
@@ -179,6 +206,11 @@ function ProvidersTab() {
                   {p.circuit?.open && (
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">CIRCUIT OPEN</span>
                   )}
+                  {p.backoff?.active && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800">
+                      BACKOFF · {p.backoff.remaining_sec}s (step {p.backoff.step})
+                    </span>
+                  )}
                 </div>
                 <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-xs">
                   <KV label="Total Requests"  value={p.total_requests} />
@@ -191,7 +223,22 @@ function ProvidersTab() {
                   <KV label="Credits Remaining" value={p.credits_remaining ?? "∞"} />
                   <KV label="Last Success"    value={p.last_success_at ? fmtDate(p.last_success_at) : "—"} />
                   <KV label="Last Error"      value={p.last_error_at ? fmtDate(p.last_error_at) : "—"} />
+                  {p.backoff?.total_429_events > 0 && (
+                    <>
+                      <KV label="Total 429s" value={p.backoff.total_429_events} />
+                      <KV label="Last 429 At" value={p.backoff.last_429_at ? fmtDate(p.backoff.last_429_at) : "—"} />
+                    </>
+                  )}
                 </div>
+                {p.backoff?.active && (
+                  <div className="mt-2 text-xs bg-orange-50 border border-orange-200 rounded px-3 py-2 text-orange-800">
+                    <b>⏳ Exponential backoff active</b> — next attempt in <b>{p.backoff.remaining_sec}s</b>
+                    {p.backoff.until && <> · resumes at {fmtDate(p.backoff.until)}</>}
+                    <div className="text-[10px] mt-0.5 opacity-70">
+                      Schedule: {(p.backoff.schedule || []).join("s → ")}s (step {p.backoff.step} of {p.backoff.schedule?.length || 5})
+                    </div>
+                  </div>
+                )}
                 {p.last_error && <div className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">{p.last_error}</div>}
               </div>
               <div className="flex flex-col items-end gap-2">

@@ -97,6 +97,18 @@ class Provider:
         """Does this provider have the credentials needed to run?"""
         return True
 
+    def is_backed_off(self) -> bool:
+        """True if the provider is currently in a rate-limit backoff and
+        should be skipped by the ProviderManager. Default: never backed off."""
+        return False
+
+    def backoff_state(self) -> Dict[str, Any]:
+        """Structured backoff info for admin observability."""
+        return {"active": False, "step": 0, "remaining_sec": 0,
+                "until": None, "last_429_at": None, "total_429_events": 0,
+                "schedule": [], "credits_left_minute": None,
+                "credits_left_daily": None}
+
     async def fetch_quotes(self, symbols: List[str]) -> Dict[str, Quote]:
         """Return quotes for given symbols. Providers responsible for symbol translation."""
         t0 = time.perf_counter()

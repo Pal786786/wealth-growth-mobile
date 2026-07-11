@@ -1,14 +1,21 @@
-"""Provider Manager — Sprint 7.5
+"""Provider Manager — Sprint 7.5 (P0 Fix)
 
 Owns:
   * The ordered list of providers (TwelveData → AlphaVantage → Mock)
-  * A per-provider circuit breaker
-  * Background refresh worker (every 10 sec by default)
-  * Automatic fallback on error / rate-limit
+  * A per-provider circuit breaker (NETWORK errors only — 429s handled by
+    the provider's own exponential backoff)
+  * Background refresh worker (every 60 sec by default — free-tier friendly)
+  * Automatic fallback on error / rate-limit / backoff
   * Admin controls (manual provider switch, auto-fallback toggle)
 
+Design principles (Sprint 7.5 P0):
+  * ONE batch HTTP request per refresh interval (never N per interval)
+  * 429s do NOT open the circuit breaker — they trigger provider backoff
+  * Consumers ALWAYS read from cache — never fail because of a provider
+  * Market health status reflects cache age + active provider
+
 Thread safety: single asyncio task refreshes; consumers only READ from the
-QuoteCache. No consumer calls providers directly.
+QuoteCache.
 """
 from __future__ import annotations
 import asyncio
@@ -18,7 +25,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from .base import Provider, ProviderNotConfigured, RateLimitError
-from .cache import QuoteCache
+from .cache import QuoteCache, FRESH_MAX_SEC, STALE_MAX_SEC
 from .mock import MockProvider
 from .twelvedata import TwelveDataProvider
 from .alphavantage import AlphaVantageProvider
@@ -35,11 +42,19 @@ DEFAULT_UNIVERSE = [
     "USOIL", "UKOIL", "NATGAS",
 ]
 
+# Default refresh cadence — free-tier friendly
+DEFAULT_REFRESH_INTERVAL_SEC = 60
+DEFAULT_CACHE_TTL_SEC = 60
+
 
 class CircuitBreaker:
-    """Very small circuit breaker: N consecutive failures → open for `open_secs`."""
+    """N consecutive *hard* failures → open for `open_secs`.
 
-    def __init__(self, name: str, fail_threshold: int = 3, open_secs: int = 60):
+    NOTE: Rate-limit (429) events are NOT counted here — providers handle
+    their own exponential backoff. Only network errors / 5xx trip this.
+    """
+
+    def __init__(self, name: str, fail_threshold: int = 3, open_secs: int = 120):
         self.name = name
         self.fail_threshold = fail_threshold
         self.open_secs = open_secs
@@ -81,11 +96,11 @@ class ProviderManager:
     _HIST_COLL = "market_provider_history"
 
     def __init__(self, db, universe: Optional[List[str]] = None,
-                 refresh_interval_sec: int = 10):
+                 refresh_interval_sec: int = DEFAULT_REFRESH_INTERVAL_SEC):
         self.db = db
         self.universe = list(universe or DEFAULT_UNIVERSE)
         self.refresh_interval_sec = refresh_interval_sec
-        self.cache = QuoteCache(db, ttl_seconds=30)
+        self.cache = QuoteCache(db, ttl_seconds=DEFAULT_CACHE_TTL_SEC)
 
         # Build providers in priority order (lower priority number = tried first)
         self.providers: List[Provider] = [
@@ -106,6 +121,9 @@ class ProviderManager:
         self._last_refresh: Optional[datetime] = None
         self._last_active_provider: Optional[str] = None
         self._last_refresh_error: Optional[str] = None
+        # Track when a real (non-mock) provider last succeeded — for market health
+        self._last_real_success_at: Optional[datetime] = None
+        self._last_real_provider: Optional[str] = None
 
     # ================ lifecycle ================
     async def start(self):
@@ -114,8 +132,8 @@ class ProviderManager:
             return
         self._stop.clear()
         self._task = asyncio.create_task(self._refresh_loop())
-        logger.info("ProviderManager started (interval=%ss, universe=%d)",
-                    self.refresh_interval_sec, len(self.universe))
+        logger.info("ProviderManager started (interval=%ss, ttl=%ss, universe=%d)",
+                    self.refresh_interval_sec, self.cache.ttl_seconds, len(self.universe))
 
     async def stop(self):
         self._stop.set()
@@ -130,7 +148,16 @@ class ProviderManager:
         self._auto_fallback = bool(doc.get("auto_fallback", True))
         self._manual_provider = doc.get("manual_provider")
         self.universe = list(doc.get("universe") or self.universe)
-        self.refresh_interval_sec = int(doc.get("refresh_interval_sec") or self.refresh_interval_sec)
+        # Enforce free-tier friendly minimum (P0 fix — old configs with 10s
+        # cadence would exhaust the free tier).
+        stored_interval = int(doc.get("refresh_interval_sec") or self.refresh_interval_sec)
+        if stored_interval < DEFAULT_REFRESH_INTERVAL_SEC:
+            logger.info("upgrading stored refresh_interval_sec %ss → %ss (P0 free-tier safety)",
+                        stored_interval, DEFAULT_REFRESH_INTERVAL_SEC)
+            self.refresh_interval_sec = DEFAULT_REFRESH_INTERVAL_SEC
+            await self._save_config({"refresh_interval_sec": DEFAULT_REFRESH_INTERVAL_SEC})
+        else:
+            self.refresh_interval_sec = stored_interval
         # Load API keys if stored
         td_key = doc.get("twelvedata_api_key")
         av_key = doc.get("alphavantage_api_key")
@@ -154,19 +181,26 @@ class ProviderManager:
                 logger.exception("refresh loop crashed: %s", e)
             await asyncio.sleep(self.refresh_interval_sec)
 
-    async def refresh_once(self) -> Dict[str, Any]:
-        """Fetch all symbols from best available provider and update cache."""
+    async def refresh_once(self, _visited: Optional[set] = None) -> Dict[str, Any]:
+        """Fetch all symbols from best available provider and update cache.
+
+        On 429: DO NOT trip circuit breaker — provider handles its own
+        exponential backoff. Fall through to next provider if auto_fallback.
+        On network/5xx: count toward circuit breaker.
+        """
+        _visited = _visited or set()
         t0 = time.perf_counter()
-        chosen = await self._choose_provider()
+        chosen = await self._choose_provider(exclude=_visited)
         if not chosen:
             self._last_refresh_error = "no providers available"
             return {"provider": None, "count": 0, "error": self._last_refresh_error}
+        _visited.add(chosen.name)
         try:
             quotes = await chosen.fetch_quotes(self.universe)
             await self.cache.put_many(quotes)
             # Sprint 7.5: also push to in-process memo so sync consumers
-            # (ai_intelligence.feed / TA / signals) can read live prices without
-            # an async round-trip.
+            # (ai_intelligence.feed / TA / signals) can read live prices
+            # without an async round-trip.
             try:
                 from ai_intelligence import feed as _ai_feed
                 for sym, q in quotes.items():
@@ -177,45 +211,71 @@ class ProviderManager:
             self._last_refresh = datetime.now(timezone.utc)
             self._last_active_provider = chosen.name
             self._last_refresh_error = None
+            if chosen.name != "mock":
+                self._last_real_success_at = self._last_refresh
+                self._last_real_provider = chosen.name
             elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
             await self._log_history(chosen.name, ok=True, count=len(quotes), latency_ms=elapsed_ms)
             return {"provider": chosen.name, "count": len(quotes),
                     "latency_ms": elapsed_ms, "auto_fallback": self._auto_fallback}
-        except (RateLimitError, ProviderNotConfigured) as e:
-            self._breakers[chosen.name].record_failure()
-            self._last_refresh_error = f"{chosen.name}: {e}"
+        except RateLimitError as e:
+            # 429 → provider is now in backoff; do NOT trip circuit breaker.
+            self._last_refresh_error = f"{chosen.name}: rate limited ({e})"
+            logger.warning("provider %s rate-limited: %s", chosen.name, e)
+            await self._log_history(chosen.name, ok=False,
+                                    error=f"429/backoff: {e}")
+            if self._auto_fallback:
+                return await self.refresh_once(_visited=_visited)
+            return {"provider": chosen.name, "count": 0, "error": str(e)}
+        except ProviderNotConfigured as e:
+            # Missing creds → don't trip breaker; try next provider
+            self._last_refresh_error = f"{chosen.name}: not configured"
             await self._log_history(chosen.name, ok=False, error=str(e))
             if self._auto_fallback:
-                # Recursively try next provider (breaker will filter out failed one)
-                return await self.refresh_once()
+                return await self.refresh_once(_visited=_visited)
             return {"provider": chosen.name, "count": 0, "error": str(e)}
         except Exception as e:
+            # Real failure (network / 5xx) → count toward circuit breaker
             self._breakers[chosen.name].record_failure()
             self._last_refresh_error = f"{chosen.name}: {e}"
             await self._log_history(chosen.name, ok=False, error=str(e))
             if self._auto_fallback:
-                return await self.refresh_once()
+                return await self.refresh_once(_visited=_visited)
             return {"provider": chosen.name, "count": 0, "error": str(e)}
 
-    async def _choose_provider(self) -> Optional[Provider]:
+    async def _choose_provider(self, exclude: Optional[set] = None) -> Optional[Provider]:
+        exclude = exclude or set()
         # Manual override wins
         if self._manual_provider:
             p = self._by_name.get(self._manual_provider)
-            if p and await p.is_configured() and not self._breakers[p.name].open:
-                return p
-            if p and self._manual_provider == "mock":
-                return p  # mock is always ok
-        # Auto: pick the highest priority provider that is configured & not tripped
+            if p and p.name not in exclude:
+                if p.name == "mock":
+                    return p
+                if not self._breakers[p.name].open and not p.is_backed_off():
+                    try:
+                        if await p.is_configured():
+                            return p
+                    except Exception:
+                        pass
+        # Auto: pick the highest priority provider that is configured,
+        # not tripped, and not in exponential backoff
         for p in self.providers:
+            if p.name in exclude:
+                continue
             if self._breakers[p.name].open:
+                continue
+            if p.is_backed_off():
                 continue
             try:
                 if await p.is_configured():
                     return p
             except Exception:
                 continue
-        # Ultimate fallback: mock always works
-        return self._by_name.get("mock")
+        # Ultimate fallback: mock always works (unless already visited)
+        m = self._by_name.get("mock")
+        if m and m.name not in exclude:
+            return m
+        return None
 
     async def _log_history(self, provider: str, ok: bool,
                            count: int = 0, latency_ms: float = 0.0,
@@ -236,13 +296,58 @@ class ProviderManager:
         except Exception as e:
             logger.debug("history log skipped: %s", e)
 
+    # ================ market health status ================
+    async def _market_status(self) -> Dict[str, Any]:
+        """Derive LIVE / STALE / FALLBACK (MOCK) status for the admin panel.
+
+        LIVE     — real provider active AND newest cache age <30s
+        STALE    — real provider recent but newest cache 30-300s old
+        FALLBACK — active provider is mock (no real provider available)
+        """
+        cache_stats = await self.cache.stats()
+        newest = cache_stats.get("newest_age_sec") or 0
+        active = self._last_active_provider
+        if active == "mock" or active is None:
+            state = "FALLBACK"
+            tint = "blue"
+            reason = "using Mock provider — real providers unavailable"
+        elif newest <= FRESH_MAX_SEC:
+            state = "LIVE"
+            tint = "green"
+            reason = f"{active} — fresh ({newest}s)"
+        elif newest <= STALE_MAX_SEC:
+            state = "STALE"
+            tint = "amber"
+            reason = f"{active} — serving cache ({newest}s old)"
+        else:
+            state = "FALLBACK"
+            tint = "blue"
+            reason = f"cache too old ({newest}s) — falling back to Mock"
+        return {
+            "state": state,
+            "tint": tint,
+            "reason": reason,
+            "newest_age_sec": newest,
+            "oldest_age_sec": cache_stats.get("oldest_age_sec"),
+            "last_real_success_at": self._last_real_success_at.isoformat()
+                if self._last_real_success_at else None,
+            "last_real_provider": self._last_real_provider,
+        }
+
     # ================ admin API surface ================
     async def status(self) -> Dict[str, Any]:
         cache_stats = await self.cache.stats()
-        active = self._last_active_provider or (await self._choose_provider()).name if any(self.providers) else None
+        active = self._last_active_provider
+        if not active:
+            fallback = await self._choose_provider()
+            active = fallback.name if fallback else None
+        market_status = await self._market_status()
         return {
             "active_provider": active,
             "last_active_provider": self._last_active_provider,
+            "last_real_provider": self._last_real_provider,
+            "last_real_success_at": self._last_real_success_at.isoformat()
+                if self._last_real_success_at else None,
             "last_refresh_at": self._last_refresh.isoformat() if self._last_refresh else None,
             "last_refresh_error": self._last_refresh_error,
             "refresh_interval_sec": self.refresh_interval_sec,
@@ -250,11 +355,13 @@ class ProviderManager:
             "manual_provider": self._manual_provider,
             "universe": self.universe,
             "cache": cache_stats,
+            "market_status": market_status,
             "providers": [
                 {**p.stats.to_dict(),
                  "priority": p.priority,
                  "configured": await p.is_configured(),
-                 "circuit": self._breakers[p.name].state()}
+                 "circuit": self._breakers[p.name].state(),
+                 "backoff": p.backoff_state()}
                 for p in self.providers
             ],
         }

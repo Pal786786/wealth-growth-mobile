@@ -4,8 +4,11 @@ Single source of truth for live prices. Every consumer (Forex, AI Signals,
 Watchlist, Copy Trading, Price Alerts) reads from here. NO consumer should
 call providers directly. The Provider Manager writes here after each refresh.
 
-Cache TTL: 30 seconds by default (refresh worker updates every 10 seconds).
-Reads always return the last cached quote plus staleness in seconds.
+Cache TTL: 60 seconds (Sprint 7.5 P0 fix — free-tier friendly).
+Freshness thresholds:
+  * <30s   → LIVE   (green)
+  * 30–300s → STALE  (amber — still serve, retry providers)
+  * >300s  → EXPIRED (blue — force Mock fallback)
 """
 from __future__ import annotations
 import asyncio
@@ -14,13 +17,17 @@ from typing import Any, Dict, Iterable, List, Optional
 
 _COLL = "market_price_cache"
 
+# Freshness thresholds (seconds)
+FRESH_MAX_SEC = 30       # <30s → LIVE
+STALE_MAX_SEC = 300      # 30–300s → STALE; >300s → EXPIRED (fallback)
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
 class QuoteCache:
-    def __init__(self, db, ttl_seconds: int = 30):
+    def __init__(self, db, ttl_seconds: int = 60):
         self.db = db
         self.ttl_seconds = ttl_seconds
         self._lock = asyncio.Lock()
@@ -92,13 +99,42 @@ class QuoteCache:
         total = await self.db[_COLL].estimated_document_count()
         # Freshness distribution
         now = _now()
-        cutoff = now - timedelta(seconds=self.ttl_seconds)
-        fresh = await self.db[_COLL].count_documents({"updated_at": {"$gte": cutoff}})
+        fresh_cutoff = now - timedelta(seconds=FRESH_MAX_SEC)
+        stale_cutoff = now - timedelta(seconds=STALE_MAX_SEC)
+        fresh = await self.db[_COLL].count_documents({"updated_at": {"$gte": fresh_cutoff}})
+        stale = await self.db[_COLL].count_documents({
+            "updated_at": {"$gte": stale_cutoff, "$lt": fresh_cutoff}})
+        expired = await self.db[_COLL].count_documents({"updated_at": {"$lt": stale_cutoff}})
+        # Oldest / newest ages
+        oldest_age_sec = None
+        newest_age_sec = None
+        try:
+            oldest = await self.db[_COLL].find_one({}, {"updated_at": 1, "_id": 0},
+                                                    sort=[("updated_at", 1)])
+            newest = await self.db[_COLL].find_one({}, {"updated_at": 1, "_id": 0},
+                                                    sort=[("updated_at", -1)])
+            if oldest and oldest.get("updated_at"):
+                ua = oldest["updated_at"]
+                if ua.tzinfo is None:
+                    ua = ua.replace(tzinfo=timezone.utc)
+                oldest_age_sec = round((now - ua).total_seconds(), 1)
+            if newest and newest.get("updated_at"):
+                ua = newest["updated_at"]
+                if ua.tzinfo is None:
+                    ua = ua.replace(tzinfo=timezone.utc)
+                newest_age_sec = round((now - ua).total_seconds(), 1)
+        except Exception:
+            pass
         return {
             "total_symbols_cached": total,
             "fresh": fresh,
-            "stale": max(0, total - fresh),
+            "stale": stale,
+            "expired": expired,
+            "oldest_age_sec": oldest_age_sec,
+            "newest_age_sec": newest_age_sec,
             "ttl_sec": self.ttl_seconds,
+            "fresh_max_sec": FRESH_MAX_SEC,
+            "stale_max_sec": STALE_MAX_SEC,
         }
 
     async def clear(self):
