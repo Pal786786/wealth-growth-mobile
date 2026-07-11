@@ -129,6 +129,34 @@ class MutualFundEngine:
             {"_id": "active"},
             {"$setOnInsert": {**self.config, "created_at": _now()}},
             upsert=True)
+        await self._ensure_indexes()
+
+    async def _ensure_indexes(self):
+        """Production-grade indexes for hot query paths (stabilization sprint)."""
+        try:
+            await self.db[FUNDS].create_index("fund_id", unique=True)
+            await self.db[FUNDS].create_index("scheme_code", unique=True)
+            await self.db[FUNDS].create_index([("category", 1), ("aum_cr", -1)])
+            await self.db[FUNDS].create_index([("amc", 1)])
+            await self.db[FUNDS].create_index([("star_rating", -1)])
+            await self.db[NAV_HIST].create_index([("fund_id", 1), ("as_of", 1)])
+            await self.db[INVESTMENTS].create_index("order_id", unique=True)
+            await self.db[INVESTMENTS].create_index([("user_id", 1), ("created_at", -1)])
+            await self.db[INVESTMENTS].create_index([("user_id", 1), ("idempotency_key", 1)], sparse=True)
+            await self.db[INVESTMENTS].create_index("status")
+            await self.db[SIPS].create_index("sip_id", unique=True)
+            await self.db[SIPS].create_index([("user_id", 1), ("status", 1)])
+            await self.db[SIPS].create_index([("status", 1), ("next_run_at", 1)])
+            await self.db[SIP_EXECS].create_index("exec_id", unique=True)
+            await self.db[SIP_EXECS].create_index([("sip_id", 1), ("attempted_at", -1)])
+            await self.db[SIP_EXECS].create_index([("user_id", 1), ("attempted_at", -1)])
+            await self.db[HOLDINGS].create_index([("user_id", 1), ("fund_id", 1)], unique=True)
+            await self.db[HOLDINGS].create_index("user_id")
+            await self.db[GOALS].create_index("goal_id", unique=True)
+            await self.db[GOALS].create_index([("user_id", 1), ("created_at", -1)])
+            await self.db[WATCHLIST].create_index([("user_id", 1), ("fund_id", 1)], unique=True)
+        except Exception as e:
+            logger.warning("mf index creation warning: %s", e)
 
     async def count_funds(self) -> int:
         return await self.db[FUNDS].count_documents({})
@@ -334,7 +362,7 @@ class MutualFundEngine:
         final = await self.db[INVESTMENTS].find_one({"order_id": order_id}, {"_id": 0})
         await self._notify(user_id, "🎯 Investment successful",
                             f"₹{amount:,.0f} invested in {fund['name']} · {units} units @ NAV ₹{nav}",
-                            "mf_investment", {"order_id": order_id, "fund_id": fund_id,
+                            "investments", {"order_id": order_id, "fund_id": fund_id,
                                                 "deeplink": f"/mutual-funds/{fund_id}"})
         await self._audit(user_id, "user", "mf.invest.lumpsum", order_id,
                           after={"amount": amount, "units": units, "nav": nav})
@@ -408,7 +436,7 @@ class MutualFundEngine:
         await self.db[SIPS].insert_one(sip)
         await self._notify(user_id, "📅 SIP scheduled",
                             f"₹{amount:,.0f} · {frequency} · {fund['name']} · runs {day_of_month} of month",
-                            "mf_sip",
+                            "sip",
                             {"sip_id": sip["sip_id"], "deeplink": "/mutual-funds/sips"})
         await self._audit(user_id, "user", "mf.sip.create", sip["sip_id"], after=sip)
         return _iso(sip)
@@ -456,7 +484,7 @@ class MutualFundEngine:
         await self.db[SIPS].update_one({"sip_id": sip_id},
                                          {"$set": {"status": status, "updated_at": _now()}})
         updated = await self.db[SIPS].find_one({"sip_id": sip_id}, {"_id": 0})
-        await self._notify(user_id, f"SIP {status}", f"{sip['fund_name']} · ₹{sip['amount']:,.0f}", "mf_sip",
+        await self._notify(user_id, f"SIP {status}", f"{sip['fund_name']} · ₹{sip['amount']:,.0f}", "sip",
                             {"sip_id": sip_id, "deeplink": "/mutual-funds/sips"})
         await self._audit(user_id, "user", f"mf.sip.{status}", sip_id, after={"status": status})
         return _iso(updated or {})
@@ -533,7 +561,7 @@ class MutualFundEngine:
                 {"$set": {"status": "failed", "reason": str(e), "completed_at": _now()}})
             await self._notify(user_id, "⚠️ SIP failed",
                                 f"{fund['name']} · ₹{amount:,.0f} · {str(e)}{' · Will retry.' if will_retry else ''}",
-                                "mf_sip",
+                                "sip",
                                 {"sip_id": sip["sip_id"], "exec_id": exec_id, "deeplink": "/mutual-funds/sips"})
             return {"ok": False, "reason": str(e), "will_retry": will_retry, "retry_count": retry_count}
 
@@ -549,7 +577,7 @@ class MutualFundEngine:
                        "updated_at": _now()}})
         await self._notify(user_id, "✅ SIP executed",
                             f"{fund['name']} · ₹{amount:,.0f} · {units} units @ NAV ₹{nav}",
-                            "mf_sip",
+                            "sip",
                             {"sip_id": sip["sip_id"], "exec_id": exec_id, "deeplink": "/mutual-funds/sips"})
         return {"ok": True, "exec_id": exec_id, "units": units}
 
@@ -595,7 +623,7 @@ class MutualFundEngine:
         await self._patch_order(order_id, status="completed")
         await self._notify(user_id, ("💰 Redemption profit" if pnl >= 0 else "💰 Redemption at loss"),
                             f"{fund['name']} · Received ₹{proceeds:,.0f} · P/L ₹{pnl:+,.0f}",
-                            "mf_redemption",
+                            "investments",
                             {"order_id": order_id, "deeplink": f"/mutual-funds/{fund_id}"})
         await self._audit(user_id, "user", "mf.redeem", order_id,
                           after={"units": units, "proceeds": proceeds, "pnl": pnl})

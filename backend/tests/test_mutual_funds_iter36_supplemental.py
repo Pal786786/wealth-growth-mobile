@@ -138,18 +138,33 @@ def test_ai_all_kinds(demo_headers, kind):
 
 # ------------- KYC gate on redemption ------------- #
 def test_redeem_kyc_gate_when_required(demo_headers, admin_headers, any_fund):
-    # Turn redemption_kyc_required=true, then attempt redeem — must fail with KYC error
-    orig = requests.get(f"{API}/admin/mf/config", headers=admin_headers, timeout=10).json()
+    """Enable redemption_kyc_required, temporarily set demo user KYC to 'pending',
+    attempt redeem — must fail with KYC error. Restore both afterwards."""
+    from pymongo import MongoClient
+    import os as _os
+    mongo_url = _os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+    _db_name = _os.environ.get("DB_NAME", "my_funding_bank")
+    mc = MongoClient(mongo_url); mdb = mc[_db_name]
+
+    orig_cfg = requests.get(f"{API}/admin/mf/config", headers=admin_headers, timeout=10).json()
+    # resolve demo user_id
+    who = requests.get(f"{API}/auth/me", headers=demo_headers, timeout=10).json()
+    uid = who.get("user_id") or who.get("id")
+    orig_kyc = mdb.kyc_profiles.find_one({"user_id": uid}) or {}
     try:
         requests.put(f"{API}/admin/mf/config",
                      json={"redemption_kyc_required": True},
                      headers=admin_headers, timeout=10)
-        # Invest first so user has units
+        # Invest first so user has units (invest is KYC-open per business rules)
         inv = requests.post(f"{API}/mf/invest",
                             json={"fund_id": any_fund[0]["fund_id"], "amount": 500},
                             headers=demo_headers, timeout=15)
         assert inv.status_code == 200
         units = float(inv.json().get("units", 0))
+        # Now flip user's KYC to pending
+        mdb.kyc_profiles.update_one({"user_id": uid},
+                                     {"$set": {"user_id": uid, "status": "pending"}},
+                                     upsert=True)
         r = requests.post(f"{API}/mf/redeem",
                           json={"fund_id": any_fund[0]["fund_id"], "units": min(units, 0.1)},
                           headers=demo_headers, timeout=10)
@@ -157,10 +172,14 @@ def test_redeem_kyc_gate_when_required(demo_headers, admin_headers, any_fund):
         body_txt = r.text.lower()
         assert "kyc" in body_txt or "verify" in body_txt or "approv" in body_txt, r.text
     finally:
-        # Restore original config
+        # Restore config + user KYC
         requests.put(f"{API}/admin/mf/config",
-                     json={"redemption_kyc_required": orig.get("redemption_kyc_required", False)},
+                     json={"redemption_kyc_required": orig_cfg.get("redemption_kyc_required", False)},
                      headers=admin_headers, timeout=10)
+        mdb.kyc_profiles.update_one({"user_id": uid},
+                                     {"$set": {"status": orig_kyc.get("status", "approved")}},
+                                     upsert=True)
+        mc.close()
 
 
 # ------------- Admin dashboard KPIs ------------- #

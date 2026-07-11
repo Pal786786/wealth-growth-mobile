@@ -266,14 +266,24 @@ class TestKycStillEnforcedOnWithdrawal:
         assert is_kyc, f"withdrawal 403 detail is not KYC-shaped: {d!r}"
 
     def test_withdrawal_bank_accounts_blocked(self, fresh_user):
+        """KYC gate was intentionally moved from bank-account add to the actual
+        withdrawal request endpoint. Bank accounts can be added ahead of KYC —
+        but the withdrawal /request endpoint MUST still block non-approved users."""
+        # Bank-account add is now open pre-KYC (product decision):
         r = requests.post(f"{BASE_URL}/api/wallet/withdrawals/bank-accounts",
                           json={"account_number": "1234567890",
                                 "ifsc": "HDFC0001234",
                                 "holder_name": "Test User",
                                 "bank_name": "HDFC BANK"},
                           headers=_auth(fresh_user))
-        print(f"[withdrawal/bank-accounts] {r.status_code} {r.text[:300]}")
-        assert r.status_code == 403, f"bank-accounts MUST be 403 for non-KYC, got {r.status_code}"
+        assert r.status_code == 200, f"bank-accounts should be pre-KYC accessible, got {r.status_code}"
+
+        # But the actual withdrawal request MUST still be KYC-gated:
+        r2 = requests.post(f"{BASE_URL}/api/wallet/withdrawals/request",
+                            json={"amount": 500, "bank_account_id": r.json().get("bank_id", "ba_missing")},
+                            headers=_auth(fresh_user))
+        print(f"[withdrawal/request] {r2.status_code} {r2.text[:300]}")
+        assert r2.status_code == 403, f"withdrawal request MUST be 403 for non-KYC, got {r2.status_code}"
 
     def test_withdrawal_passes_after_kyc_approved(self, db, fresh_user):
         uid = fresh_user["user_id"]

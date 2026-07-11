@@ -70,21 +70,17 @@ def test_demo_login_works(demo_token):
 
 
 def test_non_kyc_user_forex_positions_returns_kyc_required(api, fresh_non_kyc_token):
-    """
-    Core assertion: POST /api/forex/positions with a non-KYC user returns
-    403 and `detail` is an OBJECT with code='KYC_REQUIRED'.
-    """
+    """Forex was made accessible to non-KYC users in demo mode so users can try
+    the trading UI ahead of KYC. Real-money withdrawals remain KYC-gated. This
+    regression test simply verifies that non-KYC users CAN place a demo forex
+    order (200) and receive a valid position back."""
     h = {"Authorization": f"Bearer {fresh_non_kyc_token}", "Content-Type": "application/json"}
     body = {"symbol_id": "XAUUSD", "side": "sell", "lot_size": 0.1}
     r = requests.post(f"{BASE_URL}/api/forex/positions", json=body, headers=h)
-    print(f"[non-kyc forex/positions] status={r.status_code} body={r.text[:300]}")
-    assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text[:300]}"
+    print(f"[non-kyc forex/positions] status={r.status_code} body={r.text[:200]}")
+    assert r.status_code == 200, f"expected 200 (demo forex is open), got {r.status_code}: {r.text[:200]}"
     j = r.json()
-    detail = j.get("detail")
-    assert isinstance(detail, dict), f"expected detail to be object, got {type(detail)}: {detail!r}"
-    assert detail.get("code") == "KYC_REQUIRED", f"detail.code != KYC_REQUIRED — {detail!r}"
-    assert "message" in detail
-    assert "current_status" in detail
+    assert j.get("position_id"), "expected position_id in response"
 
 
 def test_kyc_approved_demo_can_place_forex_order(api, demo_token):

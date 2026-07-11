@@ -10,12 +10,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  ArrowLeft, Search, ChevronRight, PieChart, Repeat, Target, ListChecks,
+  ArrowLeft, Search, ChevronRight, PieChart, Repeat, Target,
   Sparkles, Star, TrendingUp, TrendingDown, GitCompare, Bookmark,
 } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { mfApi, MFFund, MFPortfolio, fmtINR, CATEGORIES } from "@/src/api/mutualFunds";
-import { Card } from "@/src/components/Card";
 import { shadow } from "@/src/utils/shadow";
 
 const HERO_LIGHT = ["#6366F1", "#4F46E5", "#312E81"] as const;

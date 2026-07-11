@@ -382,10 +382,13 @@ class TestAdmin:
 # ---------------- KYC GATE ----------------
 class TestKYCGate:
     def test_kyc_gate_blocks_when_not_approved(self, uhdr, mongo, uid):
+        """KYC gate was intentionally moved from bank-account add to the actual
+        withdrawal request endpoint (product decision: allow users to set up
+        their banking details ahead of KYC approval). Verify KYC still blocks
+        the withdrawal-request endpoint for non-approved users."""
         mongo.kyc_profiles.update_one({"user_id": uid}, {"$set": {"status": "pending"}})
-        r = requests.post(f"{API}/wallet/withdrawals/bank-accounts", headers=uhdr,
-                          json={"holder_name": "Demo User", "bank_name": "HDFC Bank",
-                                "ifsc": "HDFC0001234", "account_number": "8888888888"})
-        assert r.status_code in (400, 403), f"Expected KYC gate block, got {r.status_code}: {r.text}"
+        r = requests.post(f"{API}/wallet/withdrawals/request", headers=uhdr,
+                          json={"amount": 500, "bank_account_id": "ba_missing"})
+        assert r.status_code in (400, 403), f"Expected KYC gate block on withdrawal request, got {r.status_code}: {r.text}"
         # Restore
         mongo.kyc_profiles.update_one({"user_id": uid}, {"$set": {"status": "approved"}})

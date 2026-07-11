@@ -6,9 +6,9 @@ import {
   View, Text, StyleSheet, TextInput, FlatList, Pressable, ActivityIndicator, Modal,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Search, Filter, X, Star, ChevronRight, SlidersHorizontal } from "lucide-react-native";
+import { Search, X, SlidersHorizontal, Star } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
-import { mfApi, MFFund, CATEGORIES, RISK_META, fmtINR } from "@/src/api/mutualFunds";
+import { mfApi, MFFund, CATEGORIES, RISK_META } from "@/src/api/mutualFunds";
 
 type SortKey = "aum_desc" | "return_1y_desc" | "return_3y_desc" | "return_5y_desc" | "expense_asc" | "rating_desc" | "name_asc";
 

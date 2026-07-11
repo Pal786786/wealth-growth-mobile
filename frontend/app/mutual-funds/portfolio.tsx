@@ -8,7 +8,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, 
 import { useRouter } from "expo-router";
 import { TrendingUp, TrendingDown, PieChart, Sparkles } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
-import { mfApi, MFPortfolio, fmtINR, RISK_META } from "@/src/api/mutualFunds";
+import { mfApi, MFPortfolio, fmtINR } from "@/src/api/mutualFunds";
 import { Card } from "@/src/components/Card";
 
 const COLORS = ["#6366F1", "#F59E0B", "#10B981", "#EF4444", "#0EA5E9", "#8B5CF6", "#EC4899", "#14B8A6"];

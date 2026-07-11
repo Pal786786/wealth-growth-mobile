@@ -3,11 +3,11 @@
  * Invest CTA (opens TradeBottomSheet with Lumpsum + SIP tabs),
  * key stats, portfolio allocation (holdings + sectors), risk meter, docs.
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, TextInput, Platform, Linking, RefreshControl,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { Star, TrendingUp, TrendingDown, Info, Bookmark, FileText } from "lucide-react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import {
@@ -18,11 +18,8 @@ import { TradeBottomSheet, SheetState } from "@/src/components/TradeBottomSheet"
 import { Card } from "@/src/components/Card";
 import { api } from "@/src/api/client";
 
-const CHART_WINDOWS: MFWindow[] = ["1M", "3M", "6M", "1Y", "3Y", "5Y", "MAX"];
-
 export default function FundDetail() {
   const { palette } = useTheme();
-  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [fund, setFund] = useState<MFFund | null>(null);
   const [chartWin, setChartWin] = useState<MFWindow>("1Y");

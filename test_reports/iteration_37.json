@@ -1,0 +1,49 @@
+{
+  "summary": "STABILIZATION smoke test — 14 mobile routes + 20 admin routes verified. CRITICAL FRONTEND CRASH FOUND on admin /audit (React error #31: 'Objects are not valid as a React child; expected string, but got object with keys {keys}'). Root cause: backend /api/admin/audit returns some audit records where the `target` field is a dict like {\"keys\":[\"symbols\"]} or {\"keys\":[\"enabled\"]} instead of a string. AdminAuditLogs.tsx L164 renders `{r.target}` directly in JSX, so React throws. Because the crash happens at the admin app root (no error boundary), the ENTIRE admin SPA goes blank (body text becomes only '100000') and every subsequent navigation shows a white screen until the user hard-refreshes. All 12 anomalous rows contain `target={\"keys\":[...]}` — clearly a backend logging bug where someone stored `{'keys': list(payload.keys())}` (or similar) as the target instead of a scalar/string. Everything else is clean: (1) All 14 mobile routes (/, /gold, /mutual-funds, /mutual-funds/{explore,portfolio,sips,goals,advisor,watchlist,compare,orders}, /ai, /wallet, /withdrawals) load with zero JS errors and each screen triggers its API endpoints ONCE (no duplicate calls observed on any route). (2) All 19 non-audit admin sidebar routes render fully — verified Gold Console (SPRINT 10, live_market provider, ₹10,778.31/g, 6 tabs), Mutual Funds Console (SPRINT 11, mock provider, AUM ₹21,413.76, 40 funds, 16 active SIPs, 8 tabs), Settings (welcome bonus/referral/cashback/SIP minimum/OTP/maintenance toggles), Dashboard, Users, KYC, Transactions, Wallet, Withdrawals, AI Advisor, AI Console, Market Settings, Live Market, Copy Trading, Payments, Notifications, Investments, Insurance, Reports — all render sidebar + main content without errors. (3) Wallet balance ₹1,95,100 shown consistently on /wallet + /withdrawals. Mobile MF hub: portfolio value ₹21,414.17, XIRR 20.19%, 2 funds — matches /mutual-funds/portfolio + /mutual-funds/orders (36 orders). (4) Order lifecycle verified: /mutual-funds/orders shows completed lumpsum orders (e.g. HDFC Balanced Advantage -₹500 · 1.1596 u · COMPLETED). (5) /mutual-funds/explore correctly shows '40 funds found · sorted by AUM'. (6) /mutual-funds/goals renders Retirement goal + Add Goal CTA; /mutual-funds/sips renders 5 status tabs (ALL/ACTIVE/PAUSED/CANCELLED/FAILED/COMPLETED). No React Native red-screen, no 401/500 responses to any mobile endpoint in this run.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/admin/audit",
+        "issue": "Some audit rows have `target` stored as a dict like {\"keys\":[\"symbols\"]} or {\"keys\":[\"enabled\"]} instead of a string. 12/200 rows in the current DB are affected. Frontend types it as `target?: string` and renders it directly, causing React error #31 and a full admin SPA crash. Fix: (a) at write-time, coerce/stringify `target` in the audit-log helper so it is always str|None; (b) run a one-off migration to convert existing dict targets to their JSON string form, e.g. `db.admin_audit.updateMany({target:{$type:'object'}}, [{$set:{target:{$toString:'$target'}}}])` or a Python script that json.dumps them.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminAuditLogs.tsx",
+        "issue": "Renders `{r.target}` directly at line 164 assuming string, but backend can return an object → React error #31 crashes the whole admin app (no ErrorBoundary catches it, so every subsequent route in the same tab shows a blank body containing only '100000'). Reference: /app/admin/src/pages/AdminAuditLogs.tsx:164. Two defensive fixes needed together with the backend fix: (a) coerce non-string target at render: `{typeof r.target === 'string' ? r.target : JSON.stringify(r.target)}`; (b) wrap the admin app root in a React ErrorBoundary so a bad row on ONE page doesn't brick the entire SPA.",
+        "testID": "n/a",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_37.json"
+  ],
+  "action_items": [
+    "CRITICAL: Fix backend audit-log writer to always store `target` as a string (or null). Search backend for the audit_log call site that passes `{'keys': list(payload.keys())}` / similar as target — it should be str(payload_id) or a stable resource identifier, not the raw payload dict.",
+    "CRITICAL: Migrate the 12 existing bad rows in admin_audit collection where target is a BSON object → convert to JSON string (or null). Query: db.admin_audit.find({'target':{$type:'object'}}).",
+    "HIGH: Add a top-level React ErrorBoundary in admin/src (App.tsx or Layout) so a render error on ONE route doesn't wipe the whole SPA. Without this, any future rendering bug on a single page also bricks the admin console until refresh.",
+    "MEDIUM: Defensive fix in AdminAuditLogs.tsx:164 — coerce `r.target` to string before rendering. Same defensive fix for `r.meta` if the shape is ever unexpected."
+  ],
+  "critical_code_review_comments": [
+    "AdminAuditLogs.tsx L164 assumes Log.target is a string, but there is no ErrorBoundary in the admin app root, so an unexpected shape crashes the whole SPA. This is the root cause of the reported bug.",
+    "The audit endpoint (backend) has no schema validation on the `target` column — anything passed to audit_log() lands verbatim in Mongo. Consider adding a Pydantic response model with `target: Optional[str]` and coercing at write-time."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not re-tested this iteration (regression 697/697 per iter36)",
+    "frontend": "mobile 14/14 routes OK · admin 19/20 routes OK · admin /audit CRASHES (1/20 broken)"
+  },
+  "seed_data_creation": "None. Only read-only navigation and audit-log inspection performed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Reproduce the admin /audit crash: (1) login at /api/admin-ui/#/login as admin@mfb.in / Admin@MFB2026, (2) navigate to #/audit — React error #31 appears in the console and the page becomes blank. Body length collapses to 6 chars ('100000' which is a hidden overlay/mask). Once this fires, ALL subsequent hash navigations in the same tab also show a blank page — refresh required to recover, confirming there is no ErrorBoundary. Backend evidence: `GET /api/admin/audit?limit=200` returns 12 rows where `target` is a dict `{\"keys\":[...]}`. IDs of some bad rows: 43bf185d89514daf, 49f5928059384a9b, fb73e056bfe44b5f, 23fee1ffd3ca4991. After main agent fixes: (i) POST an admin login to create a new audit row and confirm its `target` is str|null; (ii) revisit /audit and check the page renders and Export CSV button works; (iii) if ErrorBoundary added, verify it catches synthetic render errors without unmounting the whole app.",
+  "rca_of_issue": "RCA — Admin /audit crash:\n1. Backend audit_log() call site is passing a dict (looks like `{'keys': list(payload.keys())}`) as the `target` field of admin_audit collection when logging market-settings or feature-toggle updates (12 affected rows all have target={'keys':['symbols']} or {'keys':['enabled']}).\n2. GET /api/admin/audit returns rows as-is (no coercion), so the JSON response has `target` as an object.\n3. AdminAuditLogs.tsx line 164 renders `→ {r.target}` inside JSX assuming a string. React sees an object with a `.keys` prop → throws error #31 ('Objects are not valid as a React child ... object with keys {keys}').\n4. There is no ErrorBoundary at the admin app root, so the error unmounts the root React tree. The remaining static shell (body text '100000') is what testing sees, and every subsequent hash-router nav in the same tab shows a blank page.\nReproduction: admin login → click 'Audit Logs' in sidebar → blank white page + console React error #31. Mitigation: (a) coerce target to string on backend write, (b) migrate existing bad rows, (c) add defensive rendering + ErrorBoundary on frontend."
+}

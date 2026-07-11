@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { useRouter } from "expo-router";
 import { useTheme } from "@/src/theme/ThemeProvider";
-import { mfApi, MFFund, RISK_META } from "@/src/api/mutualFunds";
+import { mfApi, MFFund } from "@/src/api/mutualFunds";
 import { Bookmark, ChevronRight, Star } from "lucide-react-native";
 
 export default function Watchlist() {

@@ -1232,6 +1232,26 @@ async def startup():
     await db.forex_positions.create_index([("status", 1), ("symbol_id", 1)])
     await db.forex_orders.create_index([("user_id", 1), ("ts", -1)])
     await db.forex_history.create_index([("user_id", 1), ("ts", -1)])
+    # ---- Stabilization sprint: production-critical indexes ----
+    try:
+        await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+        await db.notifications.create_index([("user_id", 1), ("read", 1), ("created_at", -1)])
+        await db.notifications.create_index([("user_id", 1), ("category", 1)])
+        await db.notifications.create_index("notif_id", unique=True, sparse=True)
+        await db.wallet_transactions.create_index([("user_id", 1), ("created_at", -1)])
+        await db.wallet_transactions.create_index("tx_id", unique=True, sparse=True)
+        await db.otp_codes.create_index([("mobile", 1), ("created_at", -1)])
+        await db.otp_codes.create_index("expires_at", expireAfterSeconds=0)
+        await db.kyc_profiles.create_index("user_id", unique=True)
+        await db.bank_accounts.create_index([("user_id", 1), ("deleted", 1)])
+        await db.bank_accounts.create_index("bank_id", unique=True, sparse=True)
+        # Gold indexes (Sprint 10)
+        await db.gold_transactions.create_index("tx_id", unique=True, sparse=True)
+        await db.gold_transactions.create_index([("user_id", 1), ("created_at", -1)])
+        await db.gold_holdings.create_index("user_id", unique=True, sparse=True)
+        logger.info("stabilization: hot-path indexes ensured")
+    except Exception as _e:
+        logger.warning(f"index bootstrap warning: {_e}")
     # Seed tier config singleton if missing
     try:
         import tier_config as _tc  # type: ignore

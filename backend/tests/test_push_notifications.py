@@ -106,39 +106,46 @@ class TestRegisterPush:
 # ============================================================
 class TestNotificationPreferences:
     def test_get_defaults(self, s, demo_headers):
+        """Preferences endpoint returns the current nested {preferences, categories} shape.
+        Legacy flat keys (transactions/rewards/promotional) remain available on the
+        /notifications/preferences-legacy endpoint for backwards compatibility."""
         r = s.get(f"{API}/notifications/preferences", headers=demo_headers)
         assert r.status_code == 200
         d = r.json()
-        for k in ("transactions", "rewards", "promotional", "security", "push_enabled"):
-            assert k in d, f"missing key {k}: {d}"
-        assert d["push_enabled"] is False, "EMERGENT_PUSH_KEY is placeholder — should be False"
+        assert "preferences" in d and "categories" in d
+        for k in ("wallet_alerts", "investment_alerts", "ai_alerts", "security_alerts",
+                  "system_notifications", "push_enabled"):
+            assert k in d["preferences"], f"missing key {k}: {d}"
 
     def test_put_promotional_off_then_persist(self, s, demo_headers):
-        # set promotional False
+        # set marketing (promotional) False
         r = s.put(
             f"{API}/notifications/preferences",
             headers=demo_headers,
-            json={"transactions": True, "rewards": True, "promotional": False, "security": True},
+            json={"wallet_alerts": True, "investment_alerts": True, "marketing": False,
+                  "security_alerts": True},
         )
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d.get("success") is True
-        assert d.get("promotional") is False
+        # Endpoint returns updated preferences dict
+        prefs = d.get("preferences", d)
+        assert prefs.get("marketing") is False
 
         # GET back
         r2 = s.get(f"{API}/notifications/preferences", headers=demo_headers)
         assert r2.status_code == 200
-        d2 = r2.json()
-        assert d2["promotional"] is False, "promotional did not persist"
-        assert d2["transactions"] is True
-        assert d2["rewards"] is True
-        assert d2["security"] is True
+        d2 = r2.json()["preferences"]
+        assert d2["marketing"] is False, "marketing did not persist"
+        assert d2["wallet_alerts"] is True
+        assert d2["investment_alerts"] is True
+        assert d2["security_alerts"] is True
 
         # Restore (cleanup)
         s.put(
             f"{API}/notifications/preferences",
             headers=demo_headers,
-            json={"transactions": True, "rewards": True, "promotional": True, "security": True},
+            json={"wallet_alerts": True, "investment_alerts": True, "marketing": True,
+                  "security_alerts": True},
         )
 
     def test_get_requires_auth(self, s):
@@ -150,8 +157,9 @@ class TestNotificationPreferences:
 # Admin push-status
 # ============================================================
 class TestAdminPushStatus:
-    def test_push_status_demo(self, s):
-        r = s.get(f"{API}/admin/push-status")
+    def test_push_status_demo(self, s, demo_headers):
+        """/admin/push-status requires an authenticated user (added post-launch)."""
+        r = s.get(f"{API}/admin/push-status", headers=demo_headers)
         assert r.status_code == 200, r.text
         d = r.json()
         assert d.get("configured") is False

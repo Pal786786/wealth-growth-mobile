@@ -5,7 +5,7 @@ import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { mfApi } from "@/src/api/mutualFunds";
-import { Sparkles, TrendingUp, PiggyBank, ShieldCheck, GitBranch, PieChart, LineChart } from "lucide-react-native";
+import { Sparkles, TrendingUp, PiggyBank, ShieldCheck, GitBranch, LineChart } from "lucide-react-native";
 import { Card } from "@/src/components/Card";
 
 const KINDS = [
@@ -27,7 +27,7 @@ export default function AiAdvisor() {
     try {
       const r = await mfApi.ai(kind);
       setAnswers((prev) => [{ kind, answer: r.answer }, ...prev]);
-    } catch (e: any) {
+    } catch {
       setAnswers((prev) => [{ kind, answer: "Failed to fetch advice. Try again." }, ...prev]);
     } finally { setLoading(false); }
   }, []);
