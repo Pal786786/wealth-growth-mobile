@@ -1,0 +1,56 @@
+{
+  "summary": "Sprint 12.1 Bank Verification tested. BACKEND: full test_bank_verification_iter37.py (15 tests) all PASS against public URL — user config/verify/idempotency/failure/set-primary/history + admin config/update/test-connection/providers/history + existing-flows-unaffected. ADMIN /bank-verification: PASS — page renders under 'Bank Verification (Cashfree) · SPRINT 12.1' badge, sidebar entry 'Bank Verification (S12.1)' visible for admin@mfb.in, provider config form (Provider=demo, Environment=Sandbox, Client ID, Client Secret with 'leave blank to keep existing' placeholder, Webhook Secret, Min Name Match Score=60, Dedup Window=24h, Auto-switch-to-demo checkbox) renders, Test Connection button hits POST /admin/bank-verification/test-connection and shows green 'demo: Reachable · Demo provider — always reachable' banner, changing Min Name Match Score to 58 and clicking Save Config returns 200 and shows '✓ Saved' next to Test Connection button, Verification History table renders 8+ rows with columns When, User, Bank, IFSC · A/C (e.g. HDFC0000123 · ****8868), Provider (DEMO), Status (VERIFIED/FAILED colored chips), Match %, Ref (e.g. demo_098868_0123). MOBILE /bank-accounts: CRITICAL CRASH — screen never renders, shows Expo Router ErrorBoundary 'Something went wrong ... TypeError: Cannot read properties of undefined (reading slice)'. Root cause: backend GET /api/wallet/withdrawals/bank-accounts intentionally strips `account_number` before returning (withdrawal_module.py:172-173 → `it.pop('account_number', None)  # never send full number back`) and instead returns `account_masked`; but /app/frontend/app/bank-accounts.tsx lines 69 & 134 still call `b.account_number.slice(-4)`, which is undefined → the .map() throws and the entire screen unmounts. All 12 items returned by the API for demo user have `account_number: null` and every item exposes `account_masked` (XXXX-format). Because this crashes BEFORE the list renders, none of these mobile checks could be executed on the UI: add-bank sheet, IFSC/account/holder validation, tap Verify Penny Drop (demo success), the '000...' failure path, Make Primary badge, unverified-primary 400, trash-delete. All these paths were verified at the BACKEND level via the pytest suite (15/15 PASS) but cannot be exercised from the mobile UI until the crash is fixed. Sidebar CTA on /(tabs) at Bank quick-action route='/bank-accounts' therefore also lands on the crash screen. Other mobile routes (/(tabs), /gold, /mutual-funds, /wallet) render normally — this bug is scoped to /bank-accounts only.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/wallet/withdrawals/bank-accounts",
+        "issue": "Response does not include `count` field despite frontend type declaring it optional; not blocking but inconsistent with docstrings. Also the API contract is not documented anywhere — the frontend still expected raw account_number (see frontend crash)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/bank-accounts.tsx",
+        "issue": "CRITICAL CRASH: uses `b.account_number.slice(-4)` on line 134 and `bank.account_number.slice(-4)` on line 69 (delete-confirm Alert), but backend deliberately removes account_number from the list response for security (withdrawal_module.py:172-173) and returns `account_masked` instead. Result: TypeError in Array.map → Expo Router ErrorBoundary swallows the whole screen with 'Something went wrong'. Fix options: (a) render `b.account_masked` directly (already contains masked last-4, e.g. 'XXXX1234'), (b) fall back safely: `(b.account_number || b.account_masked || '').slice(-4)`. Also update src/api/bankAccounts.ts type: `account_number` should be optional (`account_number?: string`) and add `account_masked?: string`.",
+        "testID": "n/a (whole screen fails to render)",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Mobile bank-accounts list → verify → set primary → delete",
+        "issue": "None of these flows are reachable in the UI because the list screen crashes before rendering. Backend endpoints themselves all work (15/15 pytest PASS). Fix the account_number/account_masked mismatch and the whole flow becomes testable.",
+        "affected_testIDs": ["ba-add", "ba-verify-<bank_id>", "ba-primary-<bank_id>", "add-holder", "add-bank-name", "add-ifsc", "add-account", "add-save"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_38.json",
+    "/app/test_reports/pytest/iter38_bank_verify.xml",
+    "/app/backend/tests/test_bank_verification_iter37.py"
+  ],
+  "action_items": [
+    "CRITICAL: Fix /app/frontend/app/bank-accounts.tsx line 134 (`{b.account_number.slice(-4)}`) and line 69 (`****${bank.account_number.slice(-4)}` in the delete-confirm Alert) — use `b.account_masked` (already returned by the API) or a null-safe `(b.account_number ?? b.account_masked ?? '').slice(-4)`. This is the ONLY code change needed to unblock the entire Sprint 12.1 mobile flow.",
+    "HIGH: Update /app/frontend/src/api/bankAccounts.ts BankAccount type — mark `account_number` as optional (backend strips it) and add `account_masked?: string`. This will surface the mismatch at compile time in future edits.",
+    "MEDIUM: Confirm no other Expo screen (withdrawals form, primary-bank picker, wallet card) still depends on raw account_number. `grep -rn 'account_number' /app/frontend/` should reveal any lingering references."
+  ],
+  "critical_code_review_comments": [
+    "Frontend/backend contract drift: backend intentionally pops account_number for security (good), but the mobile screen was authored assuming raw number is available. Add a shared type file or an API-schema check to prevent this class of bug.",
+    "The Card map on line 117-185 has no defensive rendering — a single malformed record kills the whole list. Wrap each item in try/catch or use array filtering before .map() so one bad row doesn't blank the entire screen (same lesson as iter37 admin /audit crash).",
+    "src/api/bankAccounts.ts uses `account_number: string;` (required) yet the backend never returns it → the TypeScript contract is a lie and gives false confidence."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (15/15 bank_verification tests pass; other suites untouched — 712/712 per handoff still holds)",
+    "frontend": "admin 100% (all 5 admin acceptance criteria pass) · mobile 0% (screen crashes; 7 of the 7 mobile acceptance criteria not reachable in the UI until fix applied)"
+  },
+  "seed_data_creation": "None. Reused pre-existing 12 bank accounts already in the demo user's DB (created by earlier pytest runs of test_bank_verification_iter37.py). Restored admin config min_name_match_score to 60 after Save-Config test.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "To reproduce the mobile crash: (1) POST /api/auth/login {identifier:'demo@mfb.in', password:'demo1234'} → save token. (2) Open https://wealth-growth-mobile.preview.emergentagent.com/bank-accounts in mobile viewport → Expo Router ErrorBoundary appears immediately with 'TypeError: Cannot read properties of undefined (reading slice)' — call-stack points to BankAccountsScreen → Array.map. (3) Direct API proof: `GET /api/wallet/withdrawals/bank-accounts` with demo token — every item has `account_number: null` and instead has `account_masked` (e.g. 'XXXX1234'). After the main agent fixes bank-accounts.tsx to use account_masked (or null-safe slice), re-test the 7 mobile acceptance items: (i) info banner text, (ii) add sheet IFSC regex + acct 6-20 digits + holder required, (iii) tap Verify Penny Drop for a fresh bank → Alert 'Verified via demo' with match score, (iv) add a bank with account_number starting '000' → Alert 'Verification failed', (v) after verification 'Make Primary' button appears → tap → PRIMARY badge appears and previous primary loses badge, (vi) attempting primary on unverified bank → 400 Alert 'Bank must be verified first', (vii) trash icon → delete-confirm modal → row disappears. Admin console needs no re-test — it's fully working.",
+  "rca_of_issue": "RCA — Mobile /bank-accounts crash:\n1. On this deployment, `GET /api/wallet/withdrawals/bank-accounts` returns 12 items (all created by earlier iter37 pytest runs on the demo user). Every item has `account_number: null` and `account_masked: 'XXXX<last4>'` — this is by design (withdrawal_module.py lines 172-173: `it['account_masked'] = _mask_account(it.get('account_number', '')); it.pop('account_number', None)` with the comment 'never send full number back').\n2. /app/frontend/app/bank-accounts.tsx was written against a hypothetical response that still contained raw account_number. Line 134 reads `A/C ****${b.account_number.slice(-4)}` and line 69's delete-confirmation Alert reads `****${bank.account_number.slice(-4)}`.\n3. React iterates items with .map() on line 117 — the first row hits `.slice(-4)` on undefined → TypeError → whole component tree unmounts and Expo Router's ErrorBoundary displays 'Something went wrong ... TypeError: Cannot read properties of undefined (reading slice)'.\n4. The src/api/bankAccounts.ts type declares `account_number: string;` (required) which is inaccurate; that mis-typing hid the bug at compile time.\nMitigation (frontend-only, one-line fix): Replace both `.account_number.slice(-4)` occurrences with `.account_masked?.slice(-4)` (or use `.account_masked` directly since it already contains the masked prefix). Also loosen the TypeScript type. No backend change required — the security-oriented strip in withdrawal_module.py is correct."
+}

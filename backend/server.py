@@ -1172,6 +1172,17 @@ try:
 except Exception as _e:
     logger.warning(f"mutual_funds attach failed: {_e}")
 
+# ------ Sprint 12.1: Bank Account Verification (Cashfree Penny Drop) ------
+try:
+    import bank_verification as _bv
+    _bv.attach(
+        app, db=db, get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+    )
+    logger.info("bank_verification subsystem attached (Sprint 12.1)")
+except Exception as _e:
+    logger.warning(f"bank_verification attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as

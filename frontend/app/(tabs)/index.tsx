@@ -5,7 +5,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import {
   Bell, Send, Plus, QrCode, Smartphone, Receipt, Wallet as WalletIcon,
   Plane, TrendingUp, ShieldCheck, Gift, ChevronRight, ArrowDownLeft, ArrowUpRight, Eye, EyeOff, TrendingDown,
-  AlertTriangle, Bot, LineChart, Users, Copy as CopyIcon, Brain, Coins, Repeat
+  AlertTriangle, Bot, LineChart, Users, Copy as CopyIcon, Brain, Coins, Repeat, Building2
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
@@ -67,6 +67,8 @@ export default function HomeTab() {
     { icon: Receipt, label: "Bills", route: "/bills", color: "#8B5CF6" },
     { icon: TrendingUp, label: "Invest", route: "/(tabs)/invest", color: palette.success },
     { icon: Coins, label: "Gold", route: "/gold", color: "#D97706" },
+    { icon: Repeat, label: "SIP & MF", route: "/mutual-funds", color: "#6366F1" },
+    { icon: Building2, label: "Bank", route: "/bank-accounts", color: "#0EA5E9" },
     { icon: Bot, label: "AI Advisor", route: "/advisor", color: "#4F46E5" },
     { icon: LineChart, label: "Markets", route: "/market", color: "#0EA5E9" },
     { icon: Users, label: "Copy Traders", route: "/traders", color: "#EC4899" },

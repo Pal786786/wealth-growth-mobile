@@ -38,6 +38,7 @@ import AdminAIConsole from "./pages/AdminAIConsole";
 import AdminPayments from "./pages/AdminPayments";
 import AdminGoldConsole from "./pages/AdminGoldConsole";
 import AdminMutualFundsConsole from "./pages/AdminMutualFundsConsole";
+import AdminBankVerification from "./pages/AdminBankVerification";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
 
@@ -94,6 +95,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="payments" element={<AdminPayments />} />
               <Route path="gold" element={<AdminGoldConsole />} />
               <Route path="mutual-funds" element={<AdminMutualFundsConsole />} />
+              <Route path="bank-verification" element={<AdminBankVerification />} />
               <Route path="api-management" element={<ApiManagement />} />
               <Route path="settings" element={<Settings />} />
               <Route path="admins" element={<AdminUsers />} />
