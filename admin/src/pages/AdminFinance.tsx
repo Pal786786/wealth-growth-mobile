@@ -62,7 +62,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 // ---------------------------------------------------------------- Component
 export default function AdminFinance() {
-  const [tab, setTab] = useState<"dashboard" | "reconciliation" | "settlements" | "reports">("dashboard");
+  const [tab, setTab] = useState<"dashboard" | "reconciliation" | "settlements" | "reports" | "alerts" | "health">("dashboard");
 
   return (
     <div className="p-6 space-y-4">
@@ -72,13 +72,13 @@ export default function AdminFinance() {
             <Wallet className="w-6 h-6" /> Finance Console
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Reconciliation · Settlements · Reports — read-only over the immutable finance journal.
+            Reconciliation · Settlements · Reports · Alerts · Health — read-only over the immutable finance journal.
           </p>
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-slate-200">
-        {(["dashboard", "reconciliation", "settlements", "reports"] as const).map((t) => (
+      <div className="flex gap-2 border-b border-slate-200 flex-wrap">
+        {(["dashboard", "reconciliation", "settlements", "reports", "alerts", "health"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
                   className={`px-4 py-2 text-sm font-bold ${tab === t
                     ? "text-brand-primary border-b-2 border-brand-primary"
@@ -92,6 +92,8 @@ export default function AdminFinance() {
       {tab === "reconciliation" && <ReconciliationTab />}
       {tab === "settlements" && <SettlementsTab />}
       {tab === "reports" && <ReportsTab />}
+      {tab === "alerts" && <AlertsTab />}
+      {tab === "health" && <HealthTab />}
     </div>
   );
 }
@@ -595,3 +597,229 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
+
+// ---------------------------------------------------------------- Alerts Tab
+const SEV_TINT: Record<string, string> = {
+  critical: "bg-rose-100 text-rose-700 border-rose-300",
+  warning: "bg-amber-100 text-amber-700 border-amber-300",
+  info: "bg-sky-100 text-sky-700 border-sky-300",
+};
+const ALERT_STATUS_TINT: Record<string, string> = {
+  active: "bg-rose-500 text-white",
+  acknowledged: "bg-amber-500 text-white",
+  resolved: "bg-emerald-500 text-white",
+};
+
+function AlertsTab() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sevFilter, setSevFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<any>(null);
+  const [noteText, setNoteText] = useState("");
+  const [running, setRunning] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [lst, sm] = await Promise.all([
+        api.get("/admin/finance/alerts", {
+          params: {
+            status: statusFilter || undefined,
+            severity: sevFilter || undefined,
+            type: typeFilter || undefined, q: q || undefined, limit: 200,
+          },
+        }),
+        api.get("/admin/finance/alerts/summary"),
+      ]);
+      setRows(lst.data.items); setSummary(sm.data);
+    } finally { setLoading(false); }
+  }, [statusFilter, sevFilter, typeFilter, q]);
+  useEffect(() => { load(); }, [load]);
+
+  const evaluate = async () => {
+    setRunning(true);
+    try { await api.post("/admin/finance/alerts/evaluate"); await load(); }
+    finally { setRunning(false); }
+  };
+
+  const action = async (kind: "ack" | "resolve" | "note", id: string, note?: string) => {
+    await api.post(`/admin/finance/alerts/${id}/${kind}`, { note });
+    await load();
+    if (kind !== "note") setSelected(null);
+    setNoteText("");
+  };
+
+  return (
+    <div className="space-y-3">
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Critical"
+                    value={String(summary.by_severity?.critical || 0)} tint="rose" />
+          <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Warning"
+                    value={String(summary.by_severity?.warning || 0)} tint="amber" />
+          <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Active"
+                    value={String(summary.by_status?.active || 0)} tint="rose" />
+          <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Resolved"
+                    value={String(summary.by_status?.resolved || 0)} tint="emerald" />
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={evaluate} disabled={running}
+                className="px-4 py-2 rounded-lg bg-brand-primary text-white font-bold text-sm inline-flex items-center gap-2 disabled:opacity-50">
+          <RefreshCw className={`w-4 h-4 ${running ? "animate-spin" : ""}`} />
+          {running ? "Evaluating…" : "Evaluate Rules Now"}
+        </button>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-slate-200 text-sm">
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="acknowledged">Acknowledged</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <select value={sevFilter} onChange={(e) => setSevFilter(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-slate-200 text-sm">
+          <option value="">All severities</option>
+          <option value="critical">Critical</option>
+          <option value="warning">Warning</option>
+          <option value="info">Info</option>
+        </select>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…"
+               className="px-3 py-2 rounded-lg border border-slate-200 text-sm w-40" />
+        <p className="ml-auto text-xs text-slate-500">{rows.length} row(s)</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200 text-xs">
+            <tr className="text-slate-600 text-left">
+              <th className="p-3">Type</th><th className="p-3">Severity</th>
+              <th className="p-3">Status</th><th className="p-3">Message</th>
+              <th className="p-3">Created</th><th className="p-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (<tr><td colSpan={6} className="p-8 text-center text-slate-400">Loading…</td></tr>) :
+              rows.length === 0 ? (<tr><td colSpan={6} className="p-8 text-center text-slate-400">No alerts ✨</td></tr>) :
+                rows.map((r) => (
+                  <tr key={r.alert_id} className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="p-3 text-xs font-mono">{r.type}</td>
+                    <td className="p-3"><span className={`inline-flex px-2 py-0.5 rounded-full border text-[10px] font-bold ${SEV_TINT[r.severity] || ""}`}>{r.severity.toUpperCase()}</span></td>
+                    <td className="p-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${ALERT_STATUS_TINT[r.status] || "bg-slate-500 text-white"}`}>{r.status.toUpperCase()}</span></td>
+                    <td className="p-3 text-xs">{r.message}</td>
+                    <td className="p-3 text-[10px] text-slate-500">{new Date(r.created_at).toLocaleString()}</td>
+                    <td className="p-3">
+                      <div className="flex gap-1">
+                        {r.status === "active" && <button onClick={() => action("ack", r.alert_id)} className="px-2 py-1 text-[10px] rounded bg-amber-100 text-amber-700 font-bold">Ack</button>}
+                        {r.status !== "resolved" && <button onClick={() => action("resolve", r.alert_id)} className="px-2 py-1 text-[10px] rounded bg-emerald-100 text-emerald-700 font-bold">Resolve</button>}
+                        <button onClick={() => setSelected(r)} className="px-2 py-1 text-[10px] rounded bg-slate-100 text-slate-700 font-bold">Detail</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+          </tbody>
+        </table>
+      </div>
+
+      {selected && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-xl w-full max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-200">
+              <div>
+                <p className="font-black text-brand-navy">{selected.label || selected.type}</p>
+                <p className="text-xs text-slate-500 font-mono">{selected.alert_id}</p>
+              </div>
+              <button onClick={() => setSelected(null)} className="p-1"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <Info label="Severity" value={selected.severity.toUpperCase()} />
+              <Info label="Status" value={selected.status.toUpperCase()} />
+              <Info label="Message" value={selected.message} />
+              {selected.entity_id && <Info label="Entity" value={selected.entity_id} />}
+              {selected.context && (
+                <details className="bg-slate-50 rounded p-2 border border-slate-200">
+                  <summary className="text-xs font-bold text-slate-600 cursor-pointer">Context</summary>
+                  <pre className="text-[10px] mt-2 overflow-auto">{JSON.stringify(selected.context, null, 2)}</pre>
+                </details>
+              )}
+              {selected.notes && selected.notes.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold text-slate-600 mb-2">Notes</p>
+                  {selected.notes.map((n: any, i: number) => (
+                    <div key={i} className="p-2 bg-amber-50 border border-amber-200 rounded text-xs mb-1">
+                      <span className="font-bold">{n.action}</span> · {n.by} · {new Date(n.at).toLocaleString()}
+                      <p className="mt-1">{n.note}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <input value={noteText} onChange={(e) => setNoteText(e.target.value)}
+                     className="w-full p-2 border border-slate-200 rounded text-sm"
+                     placeholder="Add a note" />
+              <div className="flex gap-2">
+                {selected.status === "active" && <button onClick={() => action("ack", selected.alert_id, noteText)} className="flex-1 py-2 text-sm font-bold rounded-lg bg-amber-500 text-white">Acknowledge</button>}
+                {selected.status !== "resolved" && <button onClick={() => action("resolve", selected.alert_id, noteText)} className="flex-1 py-2 text-sm font-bold rounded-lg bg-emerald-600 text-white">Resolve</button>}
+                <button onClick={() => noteText && action("note", selected.alert_id, noteText)}
+                        disabled={!noteText}
+                        className="flex-1 py-2 text-sm font-bold rounded-lg bg-slate-600 text-white disabled:opacity-40">Note</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Health Tab
+function HealthTab() {
+  const [providers, setProviders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    const r = await api.get("/admin/finance/health");
+    setProviders(r.data.providers);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, [load]);
+  const trigger = async () => {
+    await api.post("/admin/finance/jobs/health/trigger");
+    await load();
+  };
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-between items-center">
+        <p className="text-xs text-slate-500">Auto-refreshes every 60s. Read-only.</p>
+        <button onClick={trigger} className="px-3 py-1.5 rounded-lg bg-brand-navy text-white text-xs font-bold inline-flex items-center gap-1">
+          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} /> Refresh
+        </button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {providers.map((p) => (
+          <div key={p.provider} className="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="font-black text-brand-navy uppercase">{p.provider}</p>
+              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                p.status === "online" ? "bg-emerald-100 text-emerald-700" :
+                p.status === "degraded" ? "bg-amber-100 text-amber-700" :
+                "bg-rose-100 text-rose-700"}`}>{p.status.toUpperCase()}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div><p className="text-slate-500">Requests 24h</p><p className="font-bold">{p.requests_24h ?? 0}</p></div>
+              <div><p className="text-slate-500">Error %</p><p className={`font-bold ${p.error_rate_pct > 10 ? "text-rose-600" : "text-slate-800"}`}>{p.error_rate_pct?.toFixed(1) ?? 0}%</p></div>
+              <div><p className="text-slate-500">Last Success</p><p className="font-bold text-[10px]">{p.last_success_at ? new Date(p.last_success_at).toLocaleString() : "—"}</p></div>
+              <div><p className="text-slate-500">Last Failure</p><p className="font-bold text-[10px]">{p.last_failure_at ? new Date(p.last_failure_at).toLocaleString() : "—"}</p></div>
+              <div><p className="text-slate-500">Circuit</p><p className={`font-bold ${p.circuit_breaker === "open" ? "text-rose-600" : "text-emerald-600"}`}>{p.circuit_breaker?.toUpperCase()}</p></div>
+              <div><p className="text-slate-500">Backoff</p><p className="font-bold">{p.backoff?.toUpperCase()}</p></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+

@@ -219,3 +219,30 @@ Export Center.
 **Phase C** (queued): Recharts finance dashboards polish, Finance Alerts
 (settlement fail / large withdrawal / ledger mismatch / negative balance /
 provider offline / high failure rate) with in-app + email notification.
+
+---
+## Sprint 12.3 · Phase C — Finance Alerts + Provider Health (June 2026)
+
+Background finance alert engine + provider health probes + in-process
+scheduler. Read-only, non-invasive.
+
+**13 alert rules** evaluated every 15 min via scheduler:
+settlement_failed / provider_offline / high_payment_failure_rate /
+ledger_mismatch / negative_balance / large_withdrawal / large_refund /
+large_wallet_adjustment / high_mismatch_rate / low_provider_balance /
+cashfree_unavailable / razorpay_unavailable / pending_settlement_exceeded.
+
+**Severities**: info / warning / critical  →  **Statuses**: active / acknowledged / resolved.
+
+**Provider Health** — derives online/degraded/offline from 24h success/failure
+counters (Razorpay + Cashfree + Live Market + MF + Gold). Exposes circuit
+breaker + backoff status.
+
+**Admin UI** — new "Alerts" and "Health" tabs in Finance Console with full
+workflow (ack/resolve/note + audit trail).
+
+**Deps**: none new. All admin actions audited.
+
+**Final PRR**: `/app/PRODUCTION_READINESS_REPORT_v2.md` — feature completion
+matrix, security checklist, performance summary, Go-Live + Beta→GA
+deployment checklist.

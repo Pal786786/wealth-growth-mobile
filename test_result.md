@@ -1512,3 +1512,65 @@ GET /api/admin/finance/reports/deposit.csv   → 37 KB · text/csv
 ### Next
 Phase C (Recharts finance dashboards + Finance Alerts) queued — will start
 after your Phase B validation.
+
+---
+## Sprint 12.3 · Phase C — Alerts + Health + Scheduler (June 2026)
+
+**Scope**: Background finance alert engine (13 rule types, dedupe, severities),
+provider health probes, in-process scheduler, admin Alerts + Health tabs.
+Read-only — never touches balances or the journal.
+
+### Backend
+- ADD: `/app/backend/finance_ledger/alerts.py`
+  - `AlertEngine.run_all_rules()` — evaluates 13 rule types, dedupes by
+    time-bucketed `dedupe_key`, fires in-app notification.
+  - `ProviderHealth.snapshot()` — derives online/degraded/offline status
+    from recent txn success/failure counters (24h). Zero network probes.
+  - `Scheduler` — in-process asyncio task; runs health every 15 min,
+    reconciliation hourly, alerts every 15 min. Startup-hooked.
+- EXTEND `routes.py` — added 12 endpoints:
+  * `POST /api/admin/finance/alerts/evaluate`
+  * `GET  /api/admin/finance/alerts` (filter: status/severity/type/q)
+  * `GET  /api/admin/finance/alerts/summary`
+  * `GET  /api/admin/finance/alerts/types`
+  * `POST /api/admin/finance/alerts/{id}/{ack|resolve|note}`
+  * `GET  /api/admin/finance/health`
+  * `POST /api/admin/finance/jobs/{kind}/trigger` (health|alerts|reconcile)
+  * `GET  /api/admin/finance/jobs/runs`
+- WIRED: notifier passed through to alerts so critical alerts fire in-app.
+
+### Alert rules (13)
+settlement_failed · provider_offline · high_payment_failure_rate ·
+ledger_mismatch · negative_balance · large_withdrawal · large_refund ·
+large_wallet_adjustment · high_mismatch_rate · low_provider_balance ·
+cashfree_unavailable · razorpay_unavailable · pending_settlement_exceeded.
+
+### Admin UI
+- EDIT `AdminFinance.tsx` — added 2 tabs:
+  * **Alerts** — severity/status KPI cards, filter+search, ack/resolve/note
+    workflow, detail modal with context JSON + notes timeline.
+  * **Health** — auto-refreshing (60s) provider cards with status badge,
+    24h requests/error rate, last success/failure timestamps, circuit
+    breaker + backoff status.
+
+### Safety invariants (locked in tests)
+- 🔒 Alerts never write to journal (journal-count invariant test)
+- 🔒 Dedupe: 2nd evaluate in the same window ≤ 1st + new-raised count
+- 🔒 All alert ack/resolve/note actions audited via `finance_audit_trail`
+- 🔒 Scheduler failures logged but never crash the app
+
+### Tests
+- ADD `test_finance_ledger_phase_c.py` — 16 tests: types list, evaluate +
+  list, dedupe, severity filter, summary, ack/resolve/note flow + audit,
+  note requires body, alert-not-found → 404, provider health shape, manual
+  scheduler trigger (health/alerts + unknown → 400), job run history,
+  read-only journal invariant, auth guards.
+
+### Regression: 799/799 PASS · 1 skipped · 0 failed  🎯
+Full backend suite green (+16 new Phase C tests over Phase B's 783).
+Zero regressions across all modules.
+
+### Docs
+- ADD `/app/PRODUCTION_READINESS_REPORT_v2.md` — feature completion matrix,
+  security checklist, performance summary, remaining integrations (live
+  keys only), Go-Live checklist, Beta → GA deployment plan.

@@ -36,6 +36,7 @@ from .backfill import Backfiller
 from .reconciliation import Reconciler, RECON_COLL, RECON_RUNS_COLL
 from .kpi import compute_dashboard, build_report_data, provider_settlements
 from .reports import render_pdf, render_excel, render_csv
+from .alerts import AlertEngine, ProviderHealth, Scheduler, ALERTS_COLL, HEALTH_COLL, JOBS_COLL, ALERT_TYPES
 
 logger = logging.getLogger("finance_ledger.routes")
 
@@ -51,9 +52,13 @@ REPORT_RANGE_DAYS = {"daily": 1, "weekly": 7, "monthly": 30,
                        "quarterly": 90, "yearly": 365}
 
 
-def attach(app, db, get_current_user, get_current_admin):
+def attach(app, db, get_current_user, get_current_admin, notifier=None):
     api = APIRouter()
     reconciler = Reconciler(db)
+    from . import kpi as _kpi_mod
+    alert_engine = AlertEngine(db, notifier=notifier)
+    health_probe = ProviderHealth(db)
+    scheduler = Scheduler(db, alert_engine, health_probe, reconciler, _kpi_mod)
 
     async def _j() -> Journal:
         j = get_default_journal()
@@ -422,6 +427,134 @@ def attach(app, db, get_current_user, get_current_admin):
             "X-Report-Rows": str(data.get("entry_count", 0)),
         })
 
+    # =========================================== Phase C — Alerts + Health
+    @api.post("/admin/finance/alerts/evaluate")
+    async def admin_alerts_evaluate(request: Request, adm=Depends(get_current_admin)):
+        summary = await alert_engine.run_all_rules()
+        await audit(actor_id=adm["admin_id"], actor_type="admin",
+                     action="finance.alerts.evaluate", resource_type="finance_alerts",
+                     after={"raised": summary["raised"]}, request=request)
+        return summary
+
+    @api.get("/admin/finance/alerts")
+    async def admin_alerts(
+        status: Optional[str] = None, severity: Optional[str] = None,
+        type: Optional[str] = None, q: Optional[str] = None,
+        limit: int = Query(50, ge=1, le=500), skip: int = Query(0, ge=0),
+        adm=Depends(get_current_admin),
+    ):
+        query: Dict[str, Any] = {}
+        if status: query["status"] = status
+        if severity: query["severity"] = severity
+        if type: query["type"] = type
+        if q: query["$or"] = [{"message": {"$regex": q, "$options": "i"}},
+                               {"entity_id": {"$regex": q, "$options": "i"}}]
+        total = await db[ALERTS_COLL].count_documents(query)
+        rows = await db[ALERTS_COLL].find(query, {"_id": 0})\
+                    .sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+        return {"items": rows, "total": total}
+
+    @api.get("/admin/finance/alerts/types")
+    async def admin_alert_types(adm=Depends(get_current_admin)):
+        return {"types": ALERT_TYPES}
+
+    @api.get("/admin/finance/alerts/summary")
+    async def admin_alerts_summary(adm=Depends(get_current_admin)):
+        pipeline = [{"$group": {"_id": {"status": "$status", "severity": "$severity"},
+                                  "count": {"$sum": 1}}}]
+        rows = await db[ALERTS_COLL].aggregate(pipeline).to_list(200)
+        buckets: Dict[str, Any] = {"by_status": {}, "by_severity": {}}
+        for r in rows:
+            s = r["_id"].get("status"); sev = r["_id"].get("severity"); c = r["count"]
+            buckets["by_status"][s] = buckets["by_status"].get(s, 0) + c
+            buckets["by_severity"][sev] = buckets["by_severity"].get(sev, 0) + c
+        return buckets
+
+    async def _load_alert(alert_id: str) -> Dict[str, Any]:
+        a = await db[ALERTS_COLL].find_one({"alert_id": alert_id}, {"_id": 0})
+        if not a: raise HTTPException(404, "Alert not found")
+        return a
+
+    @api.post("/admin/finance/alerts/{alert_id}/ack")
+    async def admin_alert_ack(alert_id: str, request: Request,
+                                body: Dict[str, Any] = Body(default_factory=dict),
+                                adm=Depends(get_current_admin)):
+        a = await _load_alert(alert_id)
+        from datetime import datetime as _dt, timezone as _tz
+        upd = {"status": "acknowledged", "acknowledged_by": adm["admin_id"],
+                "acknowledged_at": _dt.now(_tz.utc)}
+        note = (body.get("note") or "").strip()
+        push = {"notes": {"note": note, "by": adm["admin_id"],
+                            "action": "ack", "at": _dt.now(_tz.utc)}} if note else None
+        ops = {"$set": upd}
+        if push: ops["$push"] = push
+        await db[ALERTS_COLL].update_one({"alert_id": alert_id}, ops)
+        await audit(actor_id=adm["admin_id"], actor_type="admin",
+                     action="finance.alert.ack", resource_type="finance_alert",
+                     resource_id=alert_id, before={"status": a["status"]},
+                     after={"status": "acknowledged", "note": note}, request=request)
+        return {"ok": True}
+
+    @api.post("/admin/finance/alerts/{alert_id}/resolve")
+    async def admin_alert_resolve(alert_id: str, request: Request,
+                                    body: Dict[str, Any] = Body(default_factory=dict),
+                                    adm=Depends(get_current_admin)):
+        a = await _load_alert(alert_id)
+        from datetime import datetime as _dt, timezone as _tz
+        upd = {"status": "resolved", "resolved_by": adm["admin_id"],
+                "resolved_at": _dt.now(_tz.utc)}
+        note = (body.get("note") or "").strip()
+        push = {"notes": {"note": note, "by": adm["admin_id"],
+                           "action": "resolve", "at": _dt.now(_tz.utc)}} if note else None
+        ops = {"$set": upd}
+        if push: ops["$push"] = push
+        await db[ALERTS_COLL].update_one({"alert_id": alert_id}, ops)
+        await audit(actor_id=adm["admin_id"], actor_type="admin",
+                     action="finance.alert.resolve", resource_type="finance_alert",
+                     resource_id=alert_id, before={"status": a["status"]},
+                     after={"status": "resolved", "note": note}, request=request)
+        return {"ok": True}
+
+    @api.post("/admin/finance/alerts/{alert_id}/note")
+    async def admin_alert_note(alert_id: str, request: Request,
+                                 body: Dict[str, Any] = Body(...),
+                                 adm=Depends(get_current_admin)):
+        note = (body.get("note") or "").strip()
+        if not note: raise HTTPException(400, "note required")
+        await _load_alert(alert_id)
+        from datetime import datetime as _dt, timezone as _tz
+        await db[ALERTS_COLL].update_one({"alert_id": alert_id},
+            {"$push": {"notes": {"note": note, "by": adm["admin_id"],
+                                    "action": "note", "at": _dt.now(_tz.utc)}}})
+        await audit(actor_id=adm["admin_id"], actor_type="admin",
+                     action="finance.alert.note", resource_type="finance_alert",
+                     resource_id=alert_id, metadata={"note": note}, request=request)
+        return {"ok": True}
+
+    @api.get("/admin/finance/health")
+    async def admin_provider_health(adm=Depends(get_current_admin)):
+        return {"providers": await health_probe.all_snapshots()}
+
+    @api.post("/admin/finance/jobs/{kind}/trigger")
+    async def admin_trigger_job(kind: str, request: Request,
+                                  adm=Depends(get_current_admin)):
+        try:
+            result = await scheduler.trigger_now(kind)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        await audit(actor_id=adm["admin_id"], actor_type="admin",
+                     action=f"finance.job.trigger.{kind}",
+                     resource_type="finance_scheduler",
+                     after=result, request=request)
+        return result
+
+    @api.get("/admin/finance/jobs/runs")
+    async def admin_job_runs(limit: int = Query(30, ge=1, le=200),
+                               adm=Depends(get_current_admin)):
+        rows = await db[JOBS_COLL].find({}, {"_id": 0})\
+                    .sort("at", -1).limit(limit).to_list(limit)
+        return {"items": rows}
+
     app.include_router(api, prefix="/api", tags=["finance-ledger"])
 
     # ensure reconciler indexes on startup
@@ -429,8 +562,15 @@ def attach(app, db, get_current_user, get_current_admin):
     async def _recon_indexes():
         try:
             await reconciler.ensure_indexes()
+            await alert_engine.ensure_indexes()
+            await scheduler.start()
         except Exception as _e:
             logger.warning(f"reconciliation indexes failed: {_e}")
+
+    @app.on_event("shutdown")
+    async def _scheduler_stop():
+        try: await scheduler.stop()
+        except Exception: pass
 
 
 def _parse_dt(s: Optional[str]) -> Optional[datetime]:

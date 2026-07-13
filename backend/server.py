@@ -1213,6 +1213,7 @@ try:
     _fl.attach(
         app, db=db, get_current_user=get_current_user,
         get_current_admin=admin_module.get_current_admin,
+        notifier=globals().get("notify_user"),
     )
     import wallet_module as _wallet_module
     install_wallet_hooks(_wallet_module)
