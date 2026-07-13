@@ -1271,3 +1271,68 @@ Copy Trading / Bank Verification (Sprint 12.1) / Notifications.
 - User can move to production Cashfree by adding client_id / client_secret /
   env in Admin Console → Withdrawals → Settings and clicking the "Test
   connection" button.
+
+---
+## Sprint 12.2.1 — Wallet UPI QR Top-up (MFB-owned QR only, June 2026)
+
+**Scope**: Added QR-scan path to Wallet Top-up. Reuses the existing Razorpay
+engine — no changes to payment business logic, HMAC verification, idempotency,
+webhooks, audit logs or reconciliation. Only MFB-owned UPI QR codes accepted.
+
+### Backend
+- ADD: `/app/backend/wallet_qr/{__init__.py,routes.py}` — new module
+  - `GET  /api/wallet/qr/config`    — public config (allowed VPAs)
+  - `POST /api/wallet/qr/parse`     — parse + validate scanned URI
+  - `POST /api/wallet/qr/initiate`  — creates Razorpay order + server-crafted UPI intent URI
+  - `GET  /api/wallet/qr/status/{order_id}` — status polling
+  - `GET  /api/admin/wallet/qr/config`, `PUT /api/admin/wallet/qr/config`
+  - `GET  /api/admin/wallet/qr/scans` — scan audit list
+- EDIT: `/app/backend/payments/__init__.py` — `attach()` now returns engine
+  so downstream modules (wallet_qr) can reuse it. **No behaviour change.**
+- EDIT: `/app/backend/server.py` — wire wallet_qr after payments.
+
+### Security invariants (locked-in tests)
+- Third-party VPA → `422 not supported` (never creates an order, never touches wallet).
+- Amount-mismatch guard: if QR embeds an amount, client-side amount must match.
+- Wallet credit only via existing Razorpay webhook — never client-driven.
+- Idempotency-Key header honoured through existing payments engine.
+- `enabled: false` config kill-switch blocks all QR flows (parse + initiate).
+- Auth-required on every endpoint (401/403 for unauth).
+
+### Mobile UI
+- ADD: `/app/frontend/app/wallet/topup-scan.tsx` — full scanner screen:
+  camera permission flow (with "Open Settings" fallback), live QR reticle
+  with corner brackets, "Verifying QR" overlay, confirmation view with
+  amount input (locked if QR has fixed amount, chips for quick-fill if
+  static), "This QR is not supported for Wallet Top-up" state for
+  third-party QRs, order/UPI-intent launch + auto-polling for capture,
+  completed/failed/pending outcome screens.
+- EDIT: `/app/frontend/app/wallet/topup.tsx` — added "Scan MFB UPI QR" CTA
+  card above the amount input (existing methods preserved: UPI ID, Card,
+  Net Banking).
+- EDIT: `/app/frontend/app.json` — added `expo-camera` plugin block with
+  friendly `cameraPermission` string (already had `NSCameraUsageDescription`).
+- DEP: `expo-camera@17.0.10` installed (built-in QR/barcode scanning —
+  no need for the deprecated `expo-barcode-scanner`).
+
+### Tests
+- ADD: `/app/backend/tests/test_wallet_qr_sprint1221.py` — 18 tests:
+  admin config CRUD (incl. VPA format validation), user config exposure,
+  parse (static/dynamic MFB QR, domain-level VPA match, third-party rejection,
+  malformed URIs), initiate (third-party rejected 422, MFB order creation,
+  amount mismatch guard, idempotency, min/max amount limits), status shows
+  uncredited until webhook, kill-switch blocks all endpoints, auth guards.
+
+### Regression: 742/742 PASS · 2 skipped · 0 failed  🎯
+Full backend suite green (+18 new Sprint 12.2.1 tests over Sprint 12.2's 724).
+Zero regressions in Wallet / Payments (Razorpay) / Withdrawals (Sprint 12.2) /
+Gold / Mutual Funds / Forex / Bank Verification (Sprint 12.1) / Copy Trading /
+AI Intelligence / Notifications.
+
+### Demo / Prod fallback
+- When Razorpay is in DEMO mode (default), the initiate endpoint returns
+  `checkout.demo=true` and the mobile app auto-triggers `/api/payments/demo/capture`
+  in place of opening a UPI app — useful for the sandboxed preview.
+- In LIVE mode, the mobile app opens the UPI intent via `Linking.openURL` and
+  polls `/api/wallet/qr/status/{order_id}` until the Razorpay webhook credits
+  the wallet.

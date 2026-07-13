@@ -12,7 +12,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Plus, CreditCard, CheckCircle2, Smartphone, Building2 } from "lucide-react-native";
+import { ChevronLeft, Plus, CreditCard, CheckCircle2, Smartphone, Building2, QrCode } from "lucide-react-native";
 import * as WebBrowser from "expo-web-browser";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { Screen } from "@/src/components/Screen";
@@ -176,6 +176,30 @@ export default function TopUp() {
 
         {!completed && (
           <View style={s.form}>
+            {/* Sprint 12.2.1 — Scan MFB QR CTA */}
+            <Pressable
+              onPress={() => router.push("/wallet/topup-scan")}
+              style={[s.scanCard, { backgroundColor: palette.primary + "10", borderColor: palette.primary + "44" }]}
+              testID="topup-scan-qr-btn"
+            >
+              <View style={[s.scanIcon, { backgroundColor: palette.primary + "22" }]}>
+                <QrCode color={palette.primary} size={22} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: palette.textPrimary, fontWeight: "900", fontSize: 14 }}>Scan MFB UPI QR</Text>
+                <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 2 }}>
+                  Pay via any UPI app — GPay, PhonePe, Paytm, BHIM
+                </Text>
+              </View>
+              <ChevronLeft color={palette.textMuted} size={18} style={{ transform: [{ rotate: "180deg" }] }} />
+            </Pressable>
+
+            <View style={s.dividerRow}>
+              <View style={[s.dividerLine, { backgroundColor: palette.border }]} />
+              <Text style={[s.dividerText, { color: palette.textMuted }]}>OR ENTER AMOUNT</Text>
+              <View style={[s.dividerLine, { backgroundColor: palette.border }]} />
+            </View>
+
             <Input
               label="Amount (₹)"
               placeholder="e.g. 1000"
@@ -260,4 +284,9 @@ const s = StyleSheet.create({
   methodRow: { flexDirection: "row", gap: 8 },
   methodBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 10, borderWidth: 1 },
   infoBox: { flexDirection: "row", gap: 10, alignItems: "center", padding: 12, borderRadius: 12, borderWidth: 1 },
+  scanCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5 },
+  scanIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6, marginBottom: 2 },
+  dividerLine: { height: 1, flex: 1 },
+  dividerText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.6 },
 });

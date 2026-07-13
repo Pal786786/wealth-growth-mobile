@@ -47,7 +47,9 @@ def attach(app, db, get_current_user, get_current_admin):
 
     app.add_event_handler("startup", _startup)
     app.add_event_handler("shutdown", _shutdown)
-    return router
+    # Sprint 12.2.1 — expose the engine so downstream modules (wallet_qr) can reuse
+    # the same order-creation + webhook-credit pipeline.
+    return {"router": router, "engine": engine, "recon": recon}
 
 
 __all__ = ["attach"]

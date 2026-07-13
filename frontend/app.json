@@ -64,7 +64,13 @@
       ],
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
-      "@react-native-firebase/messaging"
+      "@react-native-firebase/messaging",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan MFB UPI QR codes to top up your wallet"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -1129,9 +1129,10 @@ except Exception as _e:
     logger.warning(f"ai_news attach failed: {_e}")
 
 # ------ Sprint 8: Production Payments (Razorpay) ------
+_payments_ctx: Optional[Dict[str, Any]] = None
 try:
     import payments as _payments
-    _payments.attach(
+    _payments_ctx = _payments.attach(
         app, db=db, get_current_user=get_current_user,
         get_current_admin=admin_module.get_current_admin,
     )
@@ -1182,6 +1183,22 @@ try:
     logger.info("bank_verification subsystem attached (Sprint 12.1)")
 except Exception as _e:
     logger.warning(f"bank_verification attach failed: {_e}")
+
+# ------ Sprint 12.2.1: Wallet QR Top-up (MFB-owned UPI QR only) ------
+try:
+    if _payments_ctx and _payments_ctx.get("engine"):
+        import wallet_qr as _wqr
+        _wqr.attach(
+            app, db=db, get_current_user=get_current_user,
+            get_current_admin=admin_module.get_current_admin,
+            payments_engine=_payments_ctx["engine"],
+            log_action=getattr(admin_module, "_log_action", None),
+        )
+        logger.info("wallet_qr subsystem attached (Sprint 12.2.1)")
+    else:
+        logger.warning("wallet_qr skipped — payments engine not initialised")
+except Exception as _e:
+    logger.warning(f"wallet_qr attach failed: {_e}")
 
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside

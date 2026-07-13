@@ -111,3 +111,40 @@ auto-approval engine. Reuses verified bank accounts from Sprint 12.1.
 - Demo payout provider always succeeds & stamps a `MFB<12-digit>` UTR.
 - To simulate failure in demo: use an account number containing the string `FAIL`.
 - Real Cashfree creds required for production payouts.
+
+---
+## Sprint 12.2.1 — Wallet UPI QR Top-up (MFB-owned QR only, June 2026)
+
+**Goal**: Add a scan-QR path to Wallet Top-up while preserving all existing
+payment methods (UPI ID / Card / Net Banking) — Razorpay production flow
+unchanged.
+
+### Rules
+- Only **MFB-owned** UPI QR codes accepted (whitelisted VPAs + optional domain
+  match). Third-party QRs are rejected client- and server-side with a friendly
+  "This QR is not supported for Wallet Top-up." message.
+- Wallet is **never credited** without a successful Razorpay webhook — the
+  existing HMAC-verified webhook is the sole source of truth.
+- QR intent URI is **server-crafted** (never assembled by client) to prevent
+  tampering.
+- Idempotency-Key honoured through the existing payments engine — duplicate
+  requests return the same order.
+- Kill-switch: admin can flip `enabled=false` to disable QR path platform-wide
+  without touching any other payment method.
+
+### Admin console (new)
+- `GET/PUT /api/admin/wallet/qr/config` — merchant name, merchant category
+  code, allowed VPAs list, allowed VPA domains list, min/max amount, note
+  template, enable/disable flag.
+- `GET /api/admin/wallet/qr/scans` — audit list of scanned QRs (user id,
+  order id, payee VPA, amount, timestamp, match type).
+
+### Configuration required to go live
+Admin must populate `allowed_vpas` (and optionally `allowed_vpa_domains`)
+under Admin Console once Razorpay generates the merchant's UPI collect
+handle(s). Until then the QR flow returns "not supported" for every scan
+by design.
+
+### Mobile permission
+Camera permission (`NSCameraUsageDescription` + `expo-camera` plugin block)
+handled with graceful denial + "Open Settings" fallback.
