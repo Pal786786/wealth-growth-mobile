@@ -53,7 +53,20 @@ export default function VerifyOtpScreen() {
     try {
       const r = await withdrawalApi.verifyOtp(wid, code);
       if (r.ok) {
-        show("success", "OTP verified. Withdrawal under review.");
+        // Sprint 12.2 — auto-approve path returns terminal / near-terminal state
+        if (r.auto_approved) {
+          if (r.status === "completed" && r.utr) {
+            show("success", `Sent! UTR ${r.utr}`);
+          } else if (r.status === "processing") {
+            show("success", "Auto-approved. Processing at bank…");
+          } else if (r.status === "failed") {
+            show("error", "Payout failed. Refunded to wallet.");
+          } else {
+            show("success", "OTP verified. Auto-approved.");
+          }
+        } else {
+          show("success", "OTP verified. Withdrawal under review.");
+        }
         router.replace({ pathname: "/withdrawals/[id]", params: { id: wid } });
       }
     } catch (e: any) {

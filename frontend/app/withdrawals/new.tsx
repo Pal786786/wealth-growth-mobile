@@ -32,7 +32,12 @@ export default function NewWithdrawalScreen() {
         api.get("/wallet").then((r) => r.data),
       ]);
       setBanks(b); setSettings(s); setBalance(w?.balance || 0);
-      if (b.length && !selectedBank) setSelectedBank(b[0].bank_id);
+      // Sprint 12.2 — prefer verified + primary if any
+      if (!selectedBank) {
+        const verified = b.filter((x) => x.verified);
+        const primary = verified.find((x) => x.is_primary) || verified[0];
+        if (primary) setSelectedBank(primary.bank_id);
+      }
     } catch (e: any) {
       show("error", e?.response?.data?.detail || "Failed to load");
     } finally { setLoading(false); }
@@ -44,12 +49,20 @@ export default function NewWithdrawalScreen() {
   const validation = useMemo(() => {
     if (!settings) return { ok: false, err: null as string | null };
     if (amt <= 0) return { ok: false, err: null };
+    if (settings.compliance_hold) return { ok: false, err: "Withdrawals are temporarily on hold" };
     if (amt < settings.min_amount) return { ok: false, err: `Minimum ${formatINR(settings.min_amount)}` };
     if (amt > settings.max_amount) return { ok: false, err: `Max per txn ${formatINR(settings.max_amount)}` };
+    if (settings.hard_reject_amount && amt > settings.hard_reject_amount) {
+      return { ok: false, err: `Above self-service limit — contact support for ${formatINR(settings.hard_reject_amount)}+` };
+    }
     if (amt > balance) return { ok: false, err: `Only ${formatINR(balance)} available` };
-    if (!selectedBank) return { ok: false, err: "Select a bank account" };
+    if (!selectedBank) return { ok: false, err: "Select a verified bank account" };
+    const chosen = banks.find((x) => x.bank_id === selectedBank);
+    if (settings.require_verified_bank !== false && chosen && !chosen.verified) {
+      return { ok: false, err: "Selected bank must be verified via Penny Drop" };
+    }
     return { ok: true, err: null };
-  }, [amt, settings, balance, selectedBank]);
+  }, [amt, settings, balance, selectedBank, banks]);
 
   const charge = useMemo(() => {
     if (!settings || !amt) return 0;
@@ -133,28 +146,43 @@ export default function NewWithdrawalScreen() {
 
         {/* Bank picker */}
         <View style={s.sectionHead}>
-          <Text style={[s.sectionTitle, { color: palette.textPrimary }]}>To Bank Account</Text>
-          <Pressable onPress={() => router.push("/withdrawals/add-bank")}>
-            <Text style={[s.link, { color: palette.primary }]}>+ Add</Text>
+          <Text style={[s.sectionTitle, { color: palette.textPrimary }]}>To Verified Bank Account</Text>
+          <Pressable onPress={() => router.push("/bank-accounts")}>
+            <Text style={[s.link, { color: palette.primary }]}>Manage</Text>
           </Pressable>
         </View>
 
         {banks.length === 0 ? (
-          <Pressable onPress={() => router.push("/withdrawals/add-bank")}>
+          <Pressable onPress={() => router.push("/bank-accounts")}>
             <Card>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 6 }}>
                 <View style={[s.bIcon, { backgroundColor: palette.primary + "22" }]}>
                   <Plus color={palette.primary} size={18} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: palette.textPrimary, fontWeight: "700" }}>Add your first bank account</Text>
-                  <Text style={{ color: palette.textSecondary, fontSize: 12 }}>Required for withdrawals</Text>
+                  <Text style={{ color: palette.textPrimary, fontWeight: "700" }}>Add & verify a bank account</Text>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12 }}>Penny-drop verified — required for withdrawals</Text>
                 </View>
                 <ChevronRight color={palette.textMuted} size={18} />
               </View>
             </Card>
           </Pressable>
-        ) : banks.map((b) => (
+        ) : banks.filter((x) => x.verified).length === 0 ? (
+          <Pressable onPress={() => router.push("/bank-accounts")}>
+            <Card>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 6 }}>
+                <View style={[s.bIcon, { backgroundColor: palette.warning + "22" }]}>
+                  <AlertTriangle color={palette.warning} size={18} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: palette.textPrimary, fontWeight: "700" }}>No verified bank accounts</Text>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12 }}>Tap to verify a bank via Penny Drop</Text>
+                </View>
+                <ChevronRight color={palette.textMuted} size={18} />
+              </View>
+            </Card>
+          </Pressable>
+        ) : banks.filter((x) => x.verified).map((b) => (
           <Pressable key={b.bank_id} onPress={() => setSelectedBank(b.bank_id)}>
             <Card style={{ ...(selectedBank === b.bank_id ? { borderColor: palette.primary, borderWidth: 2 } : {}) }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
@@ -162,7 +190,17 @@ export default function NewWithdrawalScreen() {
                   <Landmark color={palette.primary} size={18} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: palette.textPrimary, fontWeight: "800" }} numberOfLines={1}>{b.bank_name}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ color: palette.textPrimary, fontWeight: "800" }} numberOfLines={1}>{b.bank_name}</Text>
+                    {b.is_primary && (
+                      <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: palette.primary + "22" }}>
+                        <Text style={{ fontSize: 9, fontWeight: "900", color: palette.primary }}>PRIMARY</Text>
+                      </View>
+                    )}
+                    <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: palette.success + "22" }}>
+                      <Text style={{ fontSize: 9, fontWeight: "900", color: palette.success }}>✓ VERIFIED</Text>
+                    </View>
+                  </View>
                   <Text style={{ color: palette.textSecondary, fontSize: 11 }}>{b.account_masked} · {b.ifsc}</Text>
                 </View>
                 {selectedBank === b.bank_id && <CheckCircle2 color={palette.primary} size={20} />}

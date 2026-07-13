@@ -1197,3 +1197,77 @@ p50 ~10 ms.
 
 ### Deliverable
 `/app/PRODUCTION_READINESS_REPORT.md` — sign-off document with caveats.
+
+---
+## Sprint 12.2 — Withdrawals + Cashfree Payouts (June 2026)
+
+**Scope**: Extended existing `withdrawal_module.py` (Sprint 2A) with production-grade
+Cashfree Payouts integration + hybrid auto-approval engine. Reuses the verified
+bank accounts introduced in Sprint 12.1 (Penny Drop).
+
+### Backend
+- ADD: `/app/backend/withdrawals_payout/{__init__.py,providers.py}` — pluggable
+  payout provider abstraction (Cashfree + Demo w/ auto-fallback).
+- EDIT: `/app/backend/withdrawal_module.py`
+  - New settings: `require_verified_bank`, `single_pending_only`,
+    `hard_reject_amount` (default ₹2L), `auto_approve_enabled`,
+    `auto_approve_threshold` (default ₹25K), `monthly_max_amount` (default ₹20L),
+    `payout_provider`, `payout_env`, `payout_client_id`, `payout_client_secret`,
+    `auto_dispatch_on_approve`, `compliance_hold`, `otp_enabled`.
+  - Preflight: verified bank required, single-in-flight rule, monthly cap,
+    hard-reject cap, compliance-hold kill-switch.
+  - OTP verify: hybrid auto-approve path (amount ≤ threshold → auto-approve +
+    immediate Cashfree payout dispatch → completed/processing).
+  - Admin `/approve` now dispatches Cashfree payout automatically (settings
+    toggle `auto_dispatch_on_approve`).
+  - NEW admin endpoints: `POST /{wid}/dispatch-payout`, `POST /{wid}/mark-utr`,
+    `POST /create-override` (admin-authored withdrawal), `GET /payout/providers`,
+    `POST /payout/test`.
+  - Settlement records collection `withdrawal_settlements` (immutable audit).
+  - Settings GET masks the payout_client_secret; PUT ignores masked placeholder.
+
+### Mobile UI
+- EDIT: `/app/frontend/app/withdrawals/new.tsx` — verified-banks-only picker;
+  shows verified badge; guides unverified users to Sprint 12.1 `/bank-accounts`;
+  Sprint 12.2 validation copy (hard-reject cap, compliance-hold, monthly cap).
+- EDIT: `/app/frontend/app/withdrawals/verify.tsx` — auto-approve outcome toast +
+  UTR-on-success feedback.
+- EDIT: `/app/frontend/app/withdrawals/[id].tsx` — new SETTLEMENT card showing
+  provider / UTR / provider-ref / settlement status; new timeline events.
+- EDIT: `/app/frontend/src/api/withdrawal.ts` — new response types
+  (auto_approved, utr, provider_reference, settlement_status), updated
+  BankAccount to include `verified`, `is_primary`, `verified_at`.
+
+### Admin Panel
+- EDIT: `/app/admin/src/pages/AdminWithdrawals.tsx`
+  - Settings page: Compliance-hold kill-switch card, Cashfree Payouts config
+    card (client_id/secret/env + Test-connection button), Auto-approval engine
+    card (enable + threshold + hard-reject), Eligibility rules card (verified
+    bank / single-pending / OTP toggles), Monthly cap field.
+  - Queue: shows ⚡ Auto badge + UTR mini-column.
+  - Detail drawer: Settlement panel (UTR/provider/ref/status) + Admin-initiated
+    override banner. New "Dispatch Payout (Cashfree)" + "Mark Completed + UTR"
+    buttons for approved/processing rows.
+
+### Tests
+- ADD: `/app/backend/tests/test_withdrawals_sprint122.py` — 12 new tests covering
+  verified-bank gate, hard-reject cap, single-pending rule, hybrid auto-approve
+  full cycle with demo payout + UTR, admin manual approve → auto-dispatch,
+  admin mark-utr, compliance-hold kill-switch, settings mask, payout provider
+  registry & test endpoint.
+- EDIT: `/app/backend/tests/test_withdrawals.py` — extended `_seed` fixture to
+  relax new Sprint 12.2 defaults (backwards-compat for legacy Sprint 2A tests).
+
+### Regression: 724/724 PASS · 2 skipped · 0 failed  🎯
+Full backend suite green including 12 new Sprint 12.2 tests. Zero regressions
+in Forex / Wallet / Payments / Gold / Mutual Funds / KYC / AI Intelligence /
+Copy Trading / Bank Verification (Sprint 12.1) / Notifications.
+
+### Demo / Prod fallback
+- Payout provider defaults to `demo` when Cashfree creds are missing.
+- Demo provider auto-succeeds and stamps a `MFB<12-digit>` UTR.
+- To simulate a failure in demo mode, create a bank account whose account
+  number contains `FAIL`.
+- User can move to production Cashfree by adding client_id / client_secret /
+  env in Admin Console → Withdrawals → Settings and clicking the "Test
+  connection" button.

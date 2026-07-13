@@ -64,11 +64,25 @@ def _seed(mongo, uid):
     # Ensure KYC approved + wallet balance sufficient
     mongo.kyc_profiles.update_one({"user_id": uid}, {"$set": {"status": "approved", "user_id": uid}}, upsert=True)
     mongo.wallets.update_one({"user_id": uid}, {"$set": {"balance": 200000, "user_id": uid, "currency": "INR"}}, upsert=True)
-    # Boost rate limit + daily count for testing
+    # Boost rate limit + daily count for testing.
+    # Sprint 12.2 — also relax the new gates so this legacy Sprint 2A suite still passes:
+    #   * `require_verified_bank`: legacy tests create banks without penny-drop.
+    #   * `single_pending_only`: legacy tests intentionally issue multiple in-flight requests.
+    #   * `auto_approve_enabled`: legacy tests expect the manual admin approval flow.
+    #   * `hard_reject_amount`: keep aligned with legacy `max_amount` (₹100k).
+    #   * `compliance_hold`: never on during regression.
     mongo.withdrawal_settings.update_one({"_id": "singleton"},
         {"$set": {"rate_limit_per_hour": 50, "daily_max_count": 50,
                   "duplicate_window_seconds": 60, "min_amount": 100,
-                  "max_amount": 100000, "promo_waiver": True}}, upsert=True)
+                  "max_amount": 100000, "promo_waiver": True,
+                  # Sprint 12.2 compat toggles
+                  "require_verified_bank": False,
+                  "single_pending_only": False,
+                  "auto_approve_enabled": False,
+                  "auto_dispatch_on_approve": False,
+                  "hard_reject_amount": 100000,
+                  "monthly_max_amount": 10_000_000,
+                  "compliance_hold": False}}, upsert=True)
     # Clean past withdrawal requests for the demo user to keep counters low
     mongo.withdrawal_requests.delete_many({"user_id": uid})
     mongo.withdrawal_otps.delete_many({"user_id": uid})

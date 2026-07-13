@@ -29,12 +29,19 @@ const EVENT_LABELS: Record<string, string> = {
   otp_verified: "OTP Verified",
   under_review: "Under Review",
   approved: "Approved",
+  auto_approved: "Auto-approved ⚡",
   processing: "Processing",
   completed: "Completed",
   rejected: "Rejected",
   failed: "Failed",
   cancelled: "Cancelled",
   refunded: "Refunded",
+  payout_completed: "Payout Completed",
+  payout_processing: "Payout Sent to Bank",
+  payout_failed: "Payout Failed",
+  refunded_on_payout_failure: "Refunded (Payout Failed)",
+  utr_stamped: "UTR Recorded",
+  admin_override_created: "Admin-Initiated",
 };
 
 export default function WithdrawalDetailScreen() {
@@ -139,6 +146,26 @@ export default function WithdrawalDetailScreen() {
           <Row label="Net credit to bank" value={formatINR(w.net_amount)} palette={palette} bold />
           {w.reason && <Row label="Reason" value={w.reason} palette={palette} />}
         </Card>
+
+        {/* Sprint 12.2 — Settlement / UTR */}
+        {(w.utr || w.provider_reference || w.provider || w.auto_approved) && (
+          <Card>
+            <Text style={[s.small, { color: palette.textSecondary, marginBottom: 8 }]}>SETTLEMENT</Text>
+            {w.auto_approved && (
+              <Row label="Approval" value="Auto-approved ⚡" palette={palette} valueColor={palette.success} />
+            )}
+            {w.provider && <Row label="Provider" value={w.provider.toUpperCase()} palette={palette} />}
+            {w.utr && (
+              <Row label="UTR" value={w.utr} palette={palette} bold valueColor={palette.success} />
+            )}
+            {w.provider_reference && (
+              <Row label="Provider Ref" value={w.provider_reference} palette={palette} />
+            )}
+            {w.settlement_status && (
+              <Row label="Settlement" value={w.settlement_status.toUpperCase()} palette={palette} />
+            )}
+          </Card>
+        )}
 
         {/* Timeline */}
         <Card>

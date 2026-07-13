@@ -15,6 +15,15 @@ type Withdrawal = {
   refunded?: boolean; verified_at?: string; approved_at?: string;
   processing_at?: string; completed_at?: string; rejected_at?: string; failed_at?: string;
   user?: { full_name?: string; email?: string; mobile?: string };
+  // Sprint 12.2
+  auto_approved?: boolean;
+  utr?: string;
+  provider?: string;
+  provider_reference?: string;
+  settlement_status?: string;
+  provider_reason?: string;
+  admin_override?: boolean;
+  override_hard_reject?: boolean;
 };
 type Dash = {
   stats: {
@@ -30,10 +39,23 @@ type Dash = {
 };
 type Settings = {
   min_amount: number; max_amount: number; daily_max_amount: number; daily_max_count: number;
+  monthly_max_amount?: number;
   charge_type: "flat" | "percentage"; charge_flat: number; charge_percent: number;
   free_threshold: number; promo_waiver: boolean;
   otp_expiry_seconds: number; otp_max_attempts: number; otp_resend_cooldown: number;
   rate_limit_per_hour: number; duplicate_window_seconds: number; processing_time_hours: number;
+  // Sprint 12.2
+  require_verified_bank?: boolean;
+  single_pending_only?: boolean;
+  hard_reject_amount?: number;
+  auto_approve_enabled?: boolean;
+  auto_approve_threshold?: number;
+  payout_provider?: "demo" | "cashfree";
+  payout_env?: "sandbox" | "production";
+  payout_client_id?: string;
+  payout_client_secret?: string;
+  compliance_hold?: boolean;
+  otp_enabled?: boolean;
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -148,7 +170,7 @@ export default function AdminWithdrawals() {
     return rows;
   };
 
-  const doAction = async (wid: string, action: "approve" | "processing" | "completed" | "reject" | "failed" | "refund", reason?: string) => {
+  const doAction = async (wid: string, action: "approve" | "processing" | "completed" | "reject" | "failed" | "refund" | "dispatch-payout", reason?: string) => {
     setBusyId(wid);
     try {
       if (action === "reject" || action === "failed") {
@@ -156,12 +178,28 @@ export default function AdminWithdrawals() {
       } else {
         await api.post(`/admin/withdrawals/${wid}/${action}`);
       }
-      flashToast("success", `Withdrawal ${action === "reject" ? "rejected" : action}`);
+      const successMsg = action === "dispatch-payout" ? "Payout dispatched to Cashfree" :
+                          action === "reject" ? "Withdrawal rejected" : `Withdrawal ${action}`;
+      flashToast("success", successMsg);
       await Promise.all([loadList(), loadDash()]);
       if (detail?.withdrawal_id === wid) setDetail(null);
       setRejectModal(null); setRejectReason("");
     } catch (e: any) {
       flashToast("error", e?.response?.data?.detail || "Action failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const doMarkUtr = async (wid: string, utr: string) => {
+    setBusyId(wid);
+    try {
+      await api.post(`/admin/withdrawals/${wid}/mark-utr`, { utr });
+      flashToast("success", `UTR stamped: ${utr}`);
+      await Promise.all([loadList(), loadDash()]);
+      if (detail?.withdrawal_id === wid) setDetail(null);
+    } catch (e: any) {
+      flashToast("error", e?.response?.data?.detail || "Failed to stamp UTR");
     } finally {
       setBusyId(null);
     }
@@ -406,7 +444,9 @@ export default function AdminWithdrawals() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-bold ${STATUS_TONE[w.status] || ""}`}>
                         {STATUS_LABEL[w.status] || w.status}
                       </span>
+                      {w.auto_approved && <p className="text-[9px] text-sky-600 font-bold mt-1">⚡ Auto</p>}
                       {w.refunded && <p className="text-[10px] text-emerald-600 font-bold mt-1">✓ Refunded</p>}
+                      {w.utr && <p className="text-[9px] text-slate-500 font-mono mt-0.5" title={w.utr}>UTR: {w.utr.slice(0, 12)}…</p>}
                     </td>
                     <td className="p-3 text-xs text-slate-500">{fmtDate(w.created_at)}</td>
                     <td className="p-3 text-right">
@@ -472,6 +512,24 @@ export default function AdminWithdrawals() {
                     <p className="text-sm text-rose-700 font-semibold">{detail.reason_admin}</p>
                   </div>
                 )}
+                {/* Sprint 12.2 — Settlement panel */}
+                {(detail.utr || detail.provider_reference || detail.provider || detail.auto_approved) && (
+                  <div className="bg-emerald-50 p-3 rounded-lg col-span-2 border border-emerald-200 space-y-1">
+                    <p className="text-[10px] uppercase text-emerald-700 font-bold tracking-wide">Settlement</p>
+                    {detail.auto_approved && <p className="text-xs font-bold text-emerald-800">⚡ Auto-approved</p>}
+                    {detail.provider && <p className="text-xs text-slate-700"><span className="font-bold">Provider:</span> {detail.provider.toUpperCase()}</p>}
+                    {detail.utr && <p className="text-sm font-mono font-bold text-emerald-800"><span className="text-xs text-slate-600 font-sans font-bold">UTR:</span> {detail.utr}</p>}
+                    {detail.provider_reference && <p className="text-xs text-slate-700"><span className="font-bold">Provider Ref:</span> {detail.provider_reference}</p>}
+                    {detail.settlement_status && <p className="text-xs text-slate-700"><span className="font-bold">Status:</span> {detail.settlement_status.toUpperCase()}</p>}
+                    {detail.provider_reason && <p className="text-xs text-slate-600 italic">{detail.provider_reason}</p>}
+                  </div>
+                )}
+                {detail.admin_override && (
+                  <div className="bg-amber-50 p-3 rounded-lg col-span-2 border border-amber-200">
+                    <p className="text-[10px] uppercase text-amber-700 font-bold tracking-wide">Admin-initiated</p>
+                    <p className="text-xs text-amber-800 font-semibold">This withdrawal was created by an admin{detail.override_hard_reject ? " with hard-reject override" : ""}.</p>
+                  </div>
+                )}
               </div>
 
               {/* USER */}
@@ -514,13 +572,14 @@ export default function AdminWithdrawals() {
                   )}
                   {detail.status === "approved" && (
                     <>
+                      <button disabled={busyId === detail.withdrawal_id} onClick={() => doAction(detail.withdrawal_id, "dispatch-payout" as any)} className="col-span-2 py-2.5 rounded-lg bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold text-sm hover:from-sky-700 hover:to-indigo-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"><ArrowRight className="w-4 h-4" />Dispatch Payout (Cashfree)</button>
                       <button disabled={busyId === detail.withdrawal_id} onClick={() => doAction(detail.withdrawal_id, "processing")} className="py-2.5 rounded-lg bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"><Timer className="w-4 h-4" />Mark Processing</button>
-                      <button disabled={busyId === detail.withdrawal_id} onClick={() => doAction(detail.withdrawal_id, "completed")} className="py-2.5 rounded-lg bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"><CheckCircle2 className="w-4 h-4" />Mark Completed</button>
+                      <button disabled={busyId === detail.withdrawal_id} onClick={() => { const u = prompt("UTR number (12-22 chars)"); if (u && u.trim().length >= 6) doMarkUtr(detail.withdrawal_id, u.trim()); }} className="py-2.5 rounded-lg bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"><CheckCircle2 className="w-4 h-4" />Mark Completed + UTR</button>
                     </>
                   )}
                   {detail.status === "processing" && (
                     <>
-                      <button disabled={busyId === detail.withdrawal_id} onClick={() => doAction(detail.withdrawal_id, "completed")} className="py-2.5 rounded-lg bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"><CheckCircle2 className="w-4 h-4" />Mark Completed</button>
+                      <button disabled={busyId === detail.withdrawal_id} onClick={() => { const u = prompt("UTR number (from bank)"); if (u && u.trim().length >= 6) doMarkUtr(detail.withdrawal_id, u.trim()); else doAction(detail.withdrawal_id, "completed"); }} className="py-2.5 rounded-lg bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"><CheckCircle2 className="w-4 h-4" />Mark Completed</button>
                       <button disabled={busyId === detail.withdrawal_id} onClick={() => { const r = prompt("Failure reason?"); if (r) doAction(detail.withdrawal_id, "failed", r); }} className="py-2.5 rounded-lg bg-red-600 text-white font-bold text-sm hover:bg-red-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"><AlertTriangle className="w-4 h-4" />Mark Failed</button>
                     </>
                   )}
@@ -585,21 +644,119 @@ export default function AdminWithdrawals() {
 
 function SettingsPanel({ settings, onSave, saving }: { settings: Settings; onSave: (p: Partial<Settings>) => Promise<void>; saving: boolean }) {
   const [s, setS] = useState<Settings>(settings);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<any>(null);
   useEffect(() => setS(settings), [settings]);
   const num = (k: keyof Settings) => ({
-    value: s[k] as any,
+    value: (s[k] as any) ?? 0,
     onChange: (e: any) => setS({ ...s, [k]: parseFloat(e.target.value) || 0 }),
     type: "number" as const,
     className: "w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:border-brand-primary outline-none",
   });
+  const testPayout = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const { data } = await api.post("/admin/withdrawals/payout/test");
+      setTestResult(data);
+    } catch (e: any) {
+      setTestResult({ ok: false, error: e?.response?.data?.detail || "Test failed" });
+    } finally { setTesting(false); }
+  };
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Sprint 12.2 — Compliance kill-switch */}
+      <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-5 flex items-center gap-4">
+        <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${s.compliance_hold ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"}`}>
+          {s.compliance_hold ? <AlertTriangle className="w-6 h-6" /> : <ShieldCheck className="w-6 h-6" />}
+        </div>
+        <div className="flex-1">
+          <p className="font-black text-brand-navy">{s.compliance_hold ? "Withdrawals are PAUSED (compliance hold)" : "Withdrawals are OPEN"}</p>
+          <p className="text-xs text-slate-500">Enable to instantly halt all new withdrawal requests app-wide. Existing in-flight requests are unaffected.</p>
+        </div>
+        <label className="inline-flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" className="w-5 h-5" checked={!!s.compliance_hold} onChange={(e) => setS({ ...s, compliance_hold: e.target.checked })} />
+          <span className="text-sm font-bold">{s.compliance_hold ? "PAUSED" : "ACTIVE"}</span>
+        </label>
+      </div>
+
+      {/* Sprint 12.2 — Cashfree Payouts */}
+      <div className="lg:col-span-2 bg-gradient-to-br from-sky-50 to-indigo-50 rounded-2xl border border-sky-200 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="font-black text-brand-navy flex items-center gap-2"><Wallet className="w-4 h-4" />Cashfree Payouts (Sprint 12.2)</p>
+          <button onClick={testPayout} disabled={testing} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-brand-navy text-white hover:bg-slate-800 disabled:opacity-50 inline-flex items-center gap-1">
+            {testing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />} Test connection
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Field label="Payout Provider">
+            <select value={s.payout_provider || "demo"} onChange={(e) => setS({ ...s, payout_provider: e.target.value as any })} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold">
+              <option value="demo">Demo (dev fallback)</option>
+              <option value="cashfree">Cashfree Payouts</option>
+            </select>
+          </Field>
+          <Field label="Environment">
+            <select value={s.payout_env || "sandbox"} onChange={(e) => setS({ ...s, payout_env: e.target.value as any })} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold">
+              <option value="sandbox">Sandbox</option>
+              <option value="production">Production</option>
+            </select>
+          </Field>
+          <Field label="Client ID"><input value={s.payout_client_id || ""} onChange={(e) => setS({ ...s, payout_client_id: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold" placeholder="CF payout client id" /></Field>
+          <Field label="Client Secret" hint="Stored securely. Only last 4 chars visible after save.">
+            <input value={s.payout_client_secret || ""} onChange={(e) => setS({ ...s, payout_client_secret: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold" placeholder="•••" type="password" />
+          </Field>
+        </div>
+        {testResult && (
+          <div className={`text-xs p-3 rounded-lg font-semibold ${testResult.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>
+            {testResult.ok
+              ? `✓ Provider: ${testResult.provider} · configured: ${testResult.configured ? "yes" : "no"} · ${testResult.note}`
+              : `✗ ${testResult.error || testResult.reason || "Test failed"}`}
+          </div>
+        )}
+      </div>
+
+      {/* Sprint 12.2 — Auto-approval Engine */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+        <p className="font-black text-brand-navy flex items-center gap-2"><ShieldCheck className="w-4 h-4" />Auto-approval Engine</p>
+        <Field label="Enable auto-approval" hint="If OFF, every withdrawal needs manual admin approval.">
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" checked={!!s.auto_approve_enabled} onChange={(e) => setS({ ...s, auto_approve_enabled: e.target.checked })} />
+            <span className="text-sm font-semibold">{s.auto_approve_enabled ? "Enabled" : "Disabled"}</span>
+          </label>
+        </Field>
+        <Field label="Auto-approve threshold (₹)" hint="Amounts ≤ this are auto-approved + immediately dispatched to Cashfree."><input {...num("auto_approve_threshold")} /></Field>
+        <Field label="Hard-reject amount (₹)" hint="Users cannot self-service above this. Admin-override still possible."><input {...num("hard_reject_amount")} /></Field>
+      </div>
+
+      {/* Sprint 12.2 — Eligibility */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+        <p className="font-black text-brand-navy flex items-center gap-2"><Landmark className="w-4 h-4" />Eligibility Rules</p>
+        <Field label="Require verified bank account">
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" checked={s.require_verified_bank !== false} onChange={(e) => setS({ ...s, require_verified_bank: e.target.checked })} />
+            <span className="text-sm font-semibold">{s.require_verified_bank !== false ? "Required (Penny-Drop verified)" : "Any bank allowed"}</span>
+          </label>
+        </Field>
+        <Field label="Allow only 1 in-flight request per user">
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" checked={s.single_pending_only !== false} onChange={(e) => setS({ ...s, single_pending_only: e.target.checked })} />
+            <span className="text-sm font-semibold">{s.single_pending_only !== false ? "Enforced" : "Multiple allowed"}</span>
+          </label>
+        </Field>
+        <Field label="Enable OTP flow">
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" checked={s.otp_enabled !== false} onChange={(e) => setS({ ...s, otp_enabled: e.target.checked })} />
+            <span className="text-sm font-semibold">{s.otp_enabled !== false ? "OTP required" : "OTP off (unsafe!)"}</span>
+          </label>
+        </Field>
+      </div>
+
       <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
         <p className="font-black text-brand-navy flex items-center gap-2"><Landmark className="w-4 h-4" />Amount Limits</p>
         <Field label="Minimum per request (₹)" hint="Users can't withdraw below this."><input {...num("min_amount")} /></Field>
         <Field label="Maximum per request (₹)" hint="Cap on a single withdrawal."><input {...num("max_amount")} /></Field>
         <Field label="Daily cap – amount (₹)" hint="Cumulative daily ceiling per user."><input {...num("daily_max_amount")} /></Field>
         <Field label="Daily cap – count" hint="Max # requests per user per day."><input {...num("daily_max_count")} /></Field>
+        <Field label="Monthly cap – amount (₹)" hint="Cumulative monthly ceiling per user."><input {...num("monthly_max_amount")} /></Field>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">

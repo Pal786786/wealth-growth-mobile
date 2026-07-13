@@ -72,3 +72,42 @@ insurance, and a rewards/referral program — built with FastAPI + MongoDB backe
 - **KYC verification** auto-marks "verified" — no real PAN/Aadhaar API
 - **Recharge & Bills** debit wallet but no real telecom/utility provider
 - **AI investment suggestions** were skipped per user choice
+
+---
+## Sprint 12.2 — Withdrawal Module (June 2026)
+Full production withdrawal flow with **Cashfree Payouts** integration + hybrid
+auto-approval engine. Reuses verified bank accounts from Sprint 12.1.
+
+### Business rules (all configurable via Admin Console)
+- Min ₹100, Max per-txn ₹2,00,000, Daily ₹5,00,000, Monthly ₹20,00,000
+- Max 5 requests/day; only 1 in-flight (pending/under_review/approved/processing)
+- Hybrid approval: ≤ ₹25,000 → auto-approve; > ₹25K → manual admin approval;
+  > ₹2L → hard-reject (admin override endpoint available)
+- Compliance-hold kill-switch for platform-wide pause
+- OTP required (6-digit / 5-min / 3 attempts / 30s resend)
+- Only Sprint 12.1 verified bank accounts (Penny-Drop verified) eligible
+- KYC-verified required (existing gate)
+
+### Payout provider
+- **Cashfree Payouts** (`payout-api.cashfree.com` v2 / 2024-01-01) — configured
+  via Admin Console with client_id / client_secret / sandbox|production env.
+- **Demo provider** auto-fallback when creds missing (dev / testing).
+- Provider abstraction (`/app/backend/withdrawals_payout/`) supports adding
+  more providers in future.
+
+### New endpoints (backend)
+- User: (existing user endpoints unchanged; `/wallet/withdrawals/settings` now
+  exposes Sprint 12.2 fields)
+- Admin (Sprint 12.2 additions):
+  - `POST /api/admin/withdrawals/{wid}/dispatch-payout` — manually (re)dispatch
+    a Cashfree payout for an approved withdrawal
+  - `POST /api/admin/withdrawals/{wid}/mark-utr` — manually stamp UTR + complete
+  - `POST /api/admin/withdrawals/create-override` — admin-authored withdrawal
+    (bypasses OTP + hard-reject cap with `override_hard_reject=true`)
+  - `GET  /api/admin/withdrawals/payout/providers` — provider registry + config status
+  - `POST /api/admin/withdrawals/payout/test` — connectivity check
+
+### Mocked / demo
+- Demo payout provider always succeeds & stamps a `MFB<12-digit>` UTR.
+- To simulate failure in demo: use an account number containing the string `FAIL`.
+- Real Cashfree creds required for production payouts.

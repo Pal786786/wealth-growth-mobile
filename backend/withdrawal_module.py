@@ -34,6 +34,13 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body, Header, Response
 from pydantic import BaseModel, Field
 
+# Sprint 12.2 — Cashfree Payouts abstraction
+try:
+    from withdrawals_payout import resolve_payout_provider, REGISTRY as PAYOUT_REGISTRY
+except Exception:  # pragma: no cover
+    resolve_payout_provider = None  # type: ignore
+    PAYOUT_REGISTRY = ["demo"]
+
 logger = logging.getLogger("mfb.withdrawal")
 _db = None
 
@@ -43,9 +50,10 @@ STATUS = {"pending", "under_review", "approved", "processing", "completed",
 
 DEFAULT_SETTINGS = {
     "min_amount": 100.0,
-    "max_amount": 100_000.0,
+    "max_amount": 200_000.0,               # Sprint 12.2: raised to ₹2L
     "daily_max_amount": 500_000.0,
     "daily_max_count": 5,
+    "monthly_max_amount": 2_000_000.0,      # Sprint 12.2: ₹20L monthly cap
     "charge_type": "flat",        # flat | percentage
     "charge_flat": 0.0,
     "charge_percent": 0.0,
@@ -54,9 +62,22 @@ DEFAULT_SETTINGS = {
     "otp_expiry_seconds": 300,
     "otp_max_attempts": 3,
     "otp_resend_cooldown": 30,
-    "rate_limit_per_hour": 3,
+    "rate_limit_per_hour": 5,      # Sprint 12.2: was 3, aligned with daily_max_count
     "duplicate_window_seconds": 60,
     "processing_time_hours": 24,
+    # ----- Sprint 12.2 additions -----
+    "require_verified_bank": True,      # Only verified bank accounts (via bank_verification)
+    "single_pending_only": True,        # Block new requests while another is in-flight
+    "hard_reject_amount": 200_000.0,    # Auto-reject > this unless admin override
+    "auto_approve_enabled": True,       # Toggle hybrid approval engine
+    "auto_approve_threshold": 25_000.0, # ≤ this = auto-approve + immediate payout
+    "payout_provider": "demo",          # demo | cashfree
+    "payout_env": "sandbox",            # sandbox | production
+    "payout_client_id": "",
+    "payout_client_secret": "",
+    "auto_dispatch_on_approve": True,   # If False, admin `/approve` won't dispatch payout automatically
+    "compliance_hold": False,           # Global "maintenance" kill-switch
+    "otp_enabled": True,                # Sprint 12.2: admin can disable OTP flow
 }
 
 
@@ -141,6 +162,7 @@ class SettingsReq(BaseModel):
     max_amount: Optional[float] = None
     daily_max_amount: Optional[float] = None
     daily_max_count: Optional[int] = None
+    monthly_max_amount: Optional[float] = None
     charge_type: Optional[str] = None
     charge_flat: Optional[float] = None
     charge_percent: Optional[float] = None
@@ -152,6 +174,28 @@ class SettingsReq(BaseModel):
     rate_limit_per_hour: Optional[int] = None
     duplicate_window_seconds: Optional[int] = None
     processing_time_hours: Optional[int] = None
+    # ----- Sprint 12.2 additions -----
+    require_verified_bank: Optional[bool] = None
+    single_pending_only: Optional[bool] = None
+    hard_reject_amount: Optional[float] = None
+    auto_approve_enabled: Optional[bool] = None
+    auto_approve_threshold: Optional[float] = None
+    payout_provider: Optional[str] = None
+    payout_env: Optional[str] = None
+    payout_client_id: Optional[str] = None
+    payout_client_secret: Optional[str] = None
+    auto_dispatch_on_approve: Optional[bool] = None
+    compliance_hold: Optional[bool] = None
+    otp_enabled: Optional[bool] = None
+
+
+class AdminOverrideCreateReq(BaseModel):
+    """Sprint 12.2: admin-authored withdrawal (skips OTP, skips hard-reject cap)."""
+    user_id: str
+    amount: float = Field(..., gt=0)
+    bank_account_id: str
+    reason: str = Field(..., min_length=3)
+    override_hard_reject: bool = False
 
 
 def attach(api: APIRouter, db, get_current_user, get_current_admin,
@@ -210,11 +254,17 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
     @user.get("/settings")
     async def user_settings():
         s = await _settings()
-        return {k: s[k] for k in ["min_amount", "max_amount", "daily_max_amount",
-                                   "daily_max_count", "charge_type", "charge_flat",
-                                   "charge_percent", "free_threshold", "promo_waiver",
-                                   "processing_time_hours", "otp_expiry_seconds",
-                                   "otp_resend_cooldown"]}
+        keys = ["min_amount", "max_amount", "daily_max_amount",
+                "daily_max_count", "monthly_max_amount",
+                "charge_type", "charge_flat", "charge_percent",
+                "free_threshold", "promo_waiver",
+                "processing_time_hours", "otp_expiry_seconds",
+                "otp_resend_cooldown",
+                # Sprint 12.2 additions
+                "require_verified_bank", "single_pending_only",
+                "hard_reject_amount", "auto_approve_enabled",
+                "auto_approve_threshold", "compliance_hold"]
+        return {k: s[k] for k in keys if k in s}
 
     @user.post("/quote")
     async def quote(body: WithdrawRequestReq, u=Depends(get_current_user)):
@@ -230,6 +280,10 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
         await kyc_gate(u)
         s = await _settings()
 
+        # Sprint 12.2 — compliance hold kill-switch
+        if s.get("compliance_hold"):
+            raise HTTPException(423, "Withdrawals are temporarily on hold. Please try again later.")
+
         # Idempotency
         if idempotency_key:
             dup = await db.withdrawal_requests.find_one(
@@ -244,17 +298,34 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
         if body.amount > s["max_amount"]:
             raise HTTPException(400, f"Maximum per request is ₹{s['max_amount']:.0f}")
 
+        # Sprint 12.2 — hard-reject cap (user cannot self-service above this)
+        hard_reject = float(s.get("hard_reject_amount", s["max_amount"]) or s["max_amount"])
+        if body.amount > hard_reject:
+            raise HTTPException(400, f"Amount exceeds allowed limit (₹{hard_reject:.0f}). Contact support for higher-value transfers.")
+
         # Bank account
         bank = await db.bank_accounts.find_one(
             {"bank_id": body.bank_account_id, "user_id": u["user_id"], "deleted": {"$ne": True}})
         if not bank:
             raise HTTPException(404, "Bank account not found")
+        # Sprint 12.2 — verified bank required
+        if s.get("require_verified_bank", True) and not bank.get("verified"):
+            raise HTTPException(400, "Bank account must be verified via Penny Drop before withdrawal.")
 
         # Wallet balance check
         w = await db.wallets.find_one({"user_id": u["user_id"]}, {"_id": 0, "balance": 1}) or {}
         balance = float(w.get("balance", 0.0))
         if body.amount > balance:
             raise HTTPException(400, f"Insufficient balance. Available: ₹{balance:.2f}")
+
+        # Sprint 12.2 — single-pending rule
+        if s.get("single_pending_only", True):
+            active = await db.withdrawal_requests.find_one({
+                "user_id": u["user_id"],
+                "status": {"$in": ["pending", "under_review", "approved", "processing"]},
+            }, {"_id": 0, "withdrawal_id": 1, "reference_no": 1, "status": 1})
+            if active:
+                raise HTTPException(409, f"You already have a withdrawal in progress ({active.get('reference_no')} — {active.get('status')}). Please wait for it to complete.")
 
         # Anti-duplicate
         window = _now() - timedelta(seconds=s["duplicate_window_seconds"])
@@ -282,6 +353,18 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
             raise HTTPException(429, f"Daily limit reached ({s['daily_max_count']} requests/day)")
         if sum(x["amount"] for x in today) + body.amount > s["daily_max_amount"]:
             raise HTTPException(429, f"Daily amount cap of ₹{s['daily_max_amount']:.0f} would be exceeded")
+
+        # Sprint 12.2 — monthly cap
+        month_start = _now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_agg = await db.withdrawal_requests.aggregate([
+            {"$match": {"user_id": u["user_id"], "created_at": {"$gte": month_start},
+                        "status": {"$in": ["under_review", "approved", "processing", "completed"]}}},
+            {"$group": {"_id": None, "s": {"$sum": "$amount"}}},
+        ]).to_list(1)
+        month_sum = float(month_agg[0]["s"]) if month_agg else 0.0
+        monthly_cap = float(s.get("monthly_max_amount", 0) or 0)
+        if monthly_cap and month_sum + body.amount > monthly_cap:
+            raise HTTPException(429, f"Monthly amount cap of ₹{monthly_cap:.0f} would be exceeded")
 
         charge = _compute_charge(body.amount, s)
         wid = _gid("wd")
@@ -361,13 +444,46 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
         await db.withdrawal_requests.update_one({"withdrawal_id": body.withdrawal_id},
             {"$set": {"status": "under_review", "verified_at": _now(), "updated_at": _now()}})
         await _timeline(body.withdrawal_id, "otp_verified", "user")
+
+        # ==================== Sprint 12.2 — Hybrid auto-approval ====================
+        auto_approved = False
+        payout_result: Optional[Dict[str, Any]] = None
+        if s.get("auto_approve_enabled") and float(wd["amount"]) <= float(s.get("auto_approve_threshold", 0) or 0):
+            # Auto-approve → mark approved → dispatch payout immediately (if allowed)
+            await db.withdrawal_requests.update_one({"withdrawal_id": body.withdrawal_id},
+                {"$set": {"status": "approved", "approved_at": _now(),
+                          "approved_by": "system_auto", "updated_at": _now(),
+                          "auto_approved": True}})
+            await _timeline(body.withdrawal_id, "auto_approved", "system:auto",
+                             {"threshold": s.get("auto_approve_threshold"), "amount": wd["amount"]})
+            await log_action("system_auto", "withdrawal.auto_approved", target=body.withdrawal_id,
+                              meta={"amount": wd["amount"], "threshold": s.get("auto_approve_threshold")})
+            if s.get("auto_dispatch_on_approve", True):
+                payout_result = await _dispatch_payout(body.withdrawal_id)
+            auto_approved = True
+
         try:
-            await notify_user(u["user_id"], "Withdrawal Under Review",
-                              f"Your withdrawal of ₹{wd['amount']:.2f} is queued for admin approval.",
-                              "/wallet/withdrawals")
+            title = "Withdrawal Approved" if auto_approved else "Withdrawal Under Review"
+            body_msg = (
+                f"Auto-approved. ₹{wd['amount']:.2f} is being sent to {wd['bank_snapshot']['account_masked']}."
+                if auto_approved else
+                f"Your withdrawal of ₹{wd['amount']:.2f} is queued for admin approval."
+            )
+            await notify_user(u["user_id"], title, body_msg, "/wallet/withdrawals")
         except Exception:
             pass
-        return {"ok": True, "status": "under_review"}
+
+        # Get fresh status to return
+        fresh = await db.withdrawal_requests.find_one({"withdrawal_id": body.withdrawal_id},
+                                                       {"_id": 0, "status": 1, "utr": 1,
+                                                        "provider_reference": 1, "settlement_status": 1})
+        return {
+            "ok": True, "status": fresh.get("status") if fresh else "under_review",
+            "auto_approved": auto_approved,
+            "utr": (fresh or {}).get("utr"),
+            "provider_reference": (fresh or {}).get("provider_reference"),
+            "settlement_status": (fresh or {}).get("settlement_status"),
+        }
 
     @user.post("/resend-otp")
     async def resend_otp(body: ResendOTPReq, u=Depends(get_current_user)):
@@ -443,6 +559,137 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
         pdf = build_receipt_pdf(tx, u, float(w.get("balance", 0.0)))
         return Response(content=pdf, media_type="application/pdf",
                         headers={"Content-Disposition": f'attachment; filename="MFB_Withdrawal_{wd["reference_no"]}.pdf"'})
+
+    # ==================== Sprint 12.2 — Payout Dispatcher ====================
+    async def _dispatch_payout(wid: str) -> Dict[str, Any]:
+        """Dispatch a payout via the configured provider (Cashfree Payouts w/
+        demo fallback). Called on approval (auto or admin). Transitions:
+          approved -> processing (on provider success/pending)
+          approved -> failed + refund (on provider failure)
+          approved -> completed (on provider synchronous success + UTR)
+        Idempotent: safe to re-invoke; will skip if already terminal.
+        """
+        wd = await db.withdrawal_requests.find_one({"withdrawal_id": wid}, {"_id": 0})
+        if not wd:
+            return {"ok": False, "reason": "not_found"}
+        if wd.get("status") in ("processing", "completed", "failed", "rejected", "cancelled"):
+            return {"ok": True, "already_dispatched": True, "status": wd.get("status")}
+        if wd.get("status") != "approved":
+            return {"ok": False, "reason": f"wrong_status:{wd.get('status')}"}
+
+        # Full account number needed for payout — fetch from bank_accounts
+        bank = await db.bank_accounts.find_one({"bank_id": wd["bank_account_id"]}, {"_id": 0})
+        if not bank or not bank.get("account_number"):
+            # Force manual admin action
+            await db.withdrawal_requests.update_one({"withdrawal_id": wid},
+                {"$set": {"status": "failed", "failed_at": _now(),
+                          "failed_by": "system_auto", "updated_at": _now(),
+                          "reason_admin": "Bank account not found or missing account number"}})
+            await credit_wallet(user_id=wd["user_id"], amount=float(wd["amount"]),
+                                 category="refund",
+                                 description=f"Withdrawal failed: {wd['reference_no']}",
+                                 provider="system", reference_id=wd["reference_no"])
+            await _timeline(wid, "failed", "system:auto", {"reason": "no_bank_account"})
+            return {"ok": False, "status": "failed", "reason": "no_bank_account"}
+
+        s = await _settings()
+        if resolve_payout_provider is None:
+            provider = None
+            provider_name = "unavailable"
+        else:
+            provider = resolve_payout_provider(s)
+            provider_name = provider.name
+
+        transfer_id = wd["reference_no"]
+        try:
+            if provider is None:
+                # Should never happen (demo always available) — guard anyway.
+                res = {"ok": False, "status": "failed", "reason": "provider_unavailable",
+                       "provider_reference": None, "utr": None,
+                       "settlement_status": "failed", "raw": {}}
+            else:
+                res = await provider.transfer(
+                    transfer_id=transfer_id,
+                    amount=float(wd["net_amount"] or wd["amount"]),
+                    account_number=bank["account_number"],
+                    ifsc=bank["ifsc"],
+                    holder_name=bank.get("holder_name") or bank.get("name_at_bank") or "MFB User",
+                    remarks=f"MFB {wd['reference_no']}",
+                )
+        except Exception as e:
+            logger.warning(f"[payout.dispatch] {wid}: {e}")
+            res = {"ok": False, "status": "failed", "reason": str(e),
+                   "provider_reference": None, "utr": None,
+                   "settlement_status": "failed", "raw": {"exception": str(e)}}
+
+        # Persist settlement record (immutable audit)
+        await db.withdrawal_settlements.insert_one({
+            "settlement_id": _gid("wst"),
+            "withdrawal_id": wid,
+            "user_id": wd["user_id"],
+            "amount": float(wd["amount"]),
+            "provider": provider_name,
+            "provider_reference": res.get("provider_reference"),
+            "utr": res.get("utr"),
+            "status": res.get("status"),
+            "settlement_status": res.get("settlement_status"),
+            "reason": res.get("reason"),
+            "raw": res.get("raw", {}),
+            "created_at": _now(),
+        })
+
+        base_update = {
+            "provider": provider_name,
+            "provider_reference": res.get("provider_reference"),
+            "utr": res.get("utr"),
+            "settlement_status": res.get("settlement_status"),
+            "provider_reason": res.get("reason"),
+            "updated_at": _now(),
+        }
+        if res.get("status") == "success":
+            base_update.update({"status": "completed", "completed_at": _now(),
+                                 "completed_by": "system_auto"})
+            new_status = "completed"
+        elif res.get("status") == "processing":
+            base_update.update({"status": "processing", "processing_at": _now(),
+                                 "processing_by": "system_auto"})
+            new_status = "processing"
+        else:
+            base_update.update({"status": "failed", "failed_at": _now(),
+                                 "failed_by": "system_auto",
+                                 "reason_admin": res.get("reason") or "Payout provider rejected the transfer"})
+            new_status = "failed"
+
+        await db.withdrawal_requests.update_one({"withdrawal_id": wid}, {"$set": base_update})
+        await _timeline(wid, f"payout_{new_status}", f"provider:{provider_name}",
+                          {"utr": res.get("utr"), "reason": res.get("reason")})
+
+        # Refund on failure
+        if new_status == "failed":
+            await credit_wallet(user_id=wd["user_id"], amount=float(wd["amount"]),
+                                 category="refund",
+                                 description=f"Withdrawal payout failed: {wd['reference_no']}",
+                                 provider="system", reference_id=wd["reference_no"])
+            await _timeline(wid, "refunded_on_payout_failure", "system:auto",
+                              {"amount": wd["amount"]})
+
+        # Notify user
+        try:
+            title = {"completed": "Withdrawal Completed", "processing": "Withdrawal Processing",
+                     "failed": "Withdrawal Failed"}[new_status]
+            body_msg = (
+                f"₹{wd['amount']:.2f} → {wd['bank_snapshot']['account_masked']}."
+                + (f" UTR: {res.get('utr')}" if res.get("utr") else "")
+                + (f"\nReason: {res.get('reason')}" if new_status == "failed" and res.get("reason") else "")
+            )
+            await notify_user(wd["user_id"], title, body_msg, "/wallet/withdrawals")
+        except Exception:
+            pass
+
+        return {"ok": res.get("ok"), "status": new_status,
+                "utr": res.get("utr"),
+                "provider": provider_name,
+                "provider_reference": res.get("provider_reference")}
 
     # ============ ADMIN ============
     @admin.get("")
@@ -546,7 +793,54 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
 
     @admin.post("/{wid}/approve")
     async def a_approve(wid: str, adm=Depends(get_current_admin)):
-        return await _transition(wid, "approved", adm, allow_from=["under_review"])
+        # Sprint 12.2: on approval, immediately trigger Cashfree payout (unless disabled)
+        res = await _transition(wid, "approved", adm, allow_from=["under_review"])
+        s = await _settings()
+        if s.get("auto_dispatch_on_approve", True):
+            payout = await _dispatch_payout(wid)
+            return {**res, "payout": payout}
+        return res
+
+    @admin.post("/{wid}/dispatch-payout")
+    async def a_dispatch(wid: str, adm=Depends(get_current_admin)):
+        """Sprint 12.2: manually (re)dispatch a payout for an already-approved
+        withdrawal. Useful when the initial provider call failed / rate-limited."""
+        wd = await db.withdrawal_requests.find_one({"withdrawal_id": wid}, {"_id": 0})
+        if not wd:
+            raise HTTPException(404, "Not found")
+        if wd["status"] != "approved":
+            raise HTTPException(400, f"Cannot dispatch from {wd['status']}. Approve first.")
+        payout = await _dispatch_payout(wid)
+        await log_action(adm["admin_id"], "withdrawal.dispatch_payout",
+                          target=wid, meta={"result": payout})
+        return payout
+
+    @admin.post("/{wid}/mark-utr")
+    async def a_mark_utr(wid: str, body: Dict[str, Any] = Body(...),
+                          adm=Depends(get_current_admin)):
+        """Sprint 12.2: admin can manually stamp a UTR + mark completed for
+        externally-settled transfers (edge case)."""
+        utr = (body.get("utr") or "").strip()
+        if not utr:
+            raise HTTPException(400, "utr required")
+        wd = await db.withdrawal_requests.find_one({"withdrawal_id": wid}, {"_id": 0})
+        if not wd:
+            raise HTTPException(404, "Not found")
+        if wd["status"] not in ("approved", "processing"):
+            raise HTTPException(400, f"Cannot mark UTR from {wd['status']}")
+        await db.withdrawal_requests.update_one({"withdrawal_id": wid},
+            {"$set": {"utr": utr, "status": "completed", "completed_at": _now(),
+                      "completed_by": adm["admin_id"], "settlement_status": "credited",
+                      "updated_at": _now()}})
+        await _timeline(wid, "utr_stamped", f"admin:{adm['admin_id']}", {"utr": utr})
+        await log_action(adm["admin_id"], "withdrawal.mark_utr", target=wid, meta={"utr": utr})
+        try:
+            await notify_user(wd["user_id"], "Withdrawal Completed",
+                               f"₹{wd['amount']:.2f} credited. UTR: {utr}",
+                               "/wallet/withdrawals")
+        except Exception:
+            pass
+        return {"ok": True, "utr": utr, "status": "completed"}
 
     @admin.post("/{wid}/reject")
     async def a_reject(wid: str, body: AdminActionReq, adm=Depends(get_current_admin)):
@@ -622,20 +916,122 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
 
     @admin.get("/settings")
     async def get_settings(adm=Depends(get_current_admin)):
-        return await _settings()
+        s = await _settings()
+        # Sprint 12.2 — never leak the raw payout secret
+        if s.get("payout_client_secret"):
+            s = dict(s)
+            s["payout_client_secret"] = "•••" + s["payout_client_secret"][-4:]
+        return s
 
     @admin.put("/settings")
     async def put_settings(body: SettingsReq, adm=Depends(get_current_admin)):
         if adm["role"] not in ("super_admin", "admin"):
             raise HTTPException(403, "Only super_admin/admin can update settings")
         updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+        # Never overwrite the payout secret with the masked placeholder
+        if isinstance(updates.get("payout_client_secret"), str) and updates["payout_client_secret"].startswith("•••"):
+            updates.pop("payout_client_secret", None)
         if not updates:
             raise HTTPException(400, "No changes")
         updates["updated_at"] = _now()
         updates["updated_by"] = adm["admin_id"]
         await db.withdrawal_settings.update_one({"_id": "singleton"}, {"$set": updates}, upsert=True)
-        await log_action(adm["admin_id"], "withdrawal.settings_update", meta=updates)
-        return {"ok": True, "settings": await _settings()}
+        await log_action(adm["admin_id"], "withdrawal.settings_update",
+                          meta={k: v for k, v in updates.items() if k != "payout_client_secret"})
+        # Mask before returning
+        fresh = await _settings()
+        if fresh.get("payout_client_secret"):
+            fresh = dict(fresh)
+            fresh["payout_client_secret"] = "•••" + fresh["payout_client_secret"][-4:]
+        return {"ok": True, "settings": fresh}
+
+    @admin.get("/payout/providers")
+    async def payout_providers(adm=Depends(get_current_admin)):
+        s = await _settings()
+        return {
+            "registry": list(PAYOUT_REGISTRY),
+            "active": s.get("payout_provider") or "demo",
+            "configured": bool(s.get("payout_client_id") and s.get("payout_client_secret")),
+            "env": s.get("payout_env") or "sandbox",
+        }
+
+    @admin.post("/payout/test")
+    async def payout_test(adm=Depends(get_current_admin)):
+        """Sprint 12.2 — sanity-check the payout provider connectivity."""
+        if resolve_payout_provider is None:
+            return {"ok": False, "provider": "unavailable", "reason": "module_missing"}
+        s = await _settings()
+        p = resolve_payout_provider(s)
+        return {
+            "ok": True, "provider": p.name, "real": getattr(p, "real", False),
+            "configured": p.is_configured(),
+            "note": "Demo provider — always reachable." if p.name == "demo"
+                    else "Cashfree provider — creds present." if p.is_configured()
+                    else "Cashfree creds missing — will fallback to demo.",
+        }
+
+    @admin.post("/create-override")
+    async def admin_create_override(body: AdminOverrideCreateReq, adm=Depends(get_current_admin)):
+        """Sprint 12.2 — admin-authored withdrawal that bypasses hard-reject cap +
+        OTP (still runs KYC + verified-bank gates). Goes directly to `under_review`
+        so admin still has a formal approve step (unless super_admin auto-approves)."""
+        if adm.get("role") not in ("super_admin", "admin"):
+            raise HTTPException(403, "Insufficient permissions")
+        target_user = await db.users.find_one({"user_id": body.user_id}, {"_id": 0})
+        if not target_user:
+            raise HTTPException(404, "User not found")
+        s = await _settings()
+        if body.amount < s["min_amount"]:
+            raise HTTPException(400, f"Below minimum ₹{s['min_amount']:.0f}")
+        # override can exceed hard_reject_amount only if flag set
+        hard_reject = float(s.get("hard_reject_amount", s["max_amount"]) or s["max_amount"])
+        if body.amount > hard_reject and not body.override_hard_reject:
+            raise HTTPException(400, f"Amount > ₹{hard_reject:.0f} — set override_hard_reject=true to proceed")
+
+        bank = await db.bank_accounts.find_one(
+            {"bank_id": body.bank_account_id, "user_id": body.user_id, "deleted": {"$ne": True}})
+        if not bank:
+            raise HTTPException(404, "Bank account not found")
+        if s.get("require_verified_bank", True) and not bank.get("verified"):
+            raise HTTPException(400, "Bank account must be verified")
+
+        w = await db.wallets.find_one({"user_id": body.user_id}, {"_id": 0, "balance": 1}) or {}
+        balance = float(w.get("balance", 0.0))
+        if body.amount > balance:
+            raise HTTPException(400, f"Insufficient user balance. Available: ₹{balance:.2f}")
+
+        # Debit wallet immediately (skip OTP path)
+        await debit_wallet(user_id=body.user_id, amount=float(body.amount),
+                            category="withdraw",
+                            description=f"Admin-override withdrawal: {body.reason}",
+                            provider="bank", reference_id="MFB-W-" + secrets.token_hex(4).upper())
+        wid = _gid("wd")
+        ref = "MFB-W-" + secrets.token_hex(4).upper()
+        charge = _compute_charge(body.amount, s)
+        doc = {
+            "withdrawal_id": wid, "user_id": body.user_id,
+            "amount": float(body.amount), "charge": charge,
+            "net_amount": float(body.amount) - charge,
+            "status": "under_review", "reference_no": ref,
+            "reason": body.reason, "admin_override": True,
+            "created_by_admin": adm["admin_id"],
+            "override_hard_reject": bool(body.override_hard_reject),
+            "bank_account_id": bank["bank_id"],
+            "bank_snapshot": {
+                "holder_name": bank["holder_name"], "bank_name": bank["bank_name"],
+                "ifsc": bank["ifsc"], "account_masked": _mask_account(bank["account_number"]),
+            },
+            "created_at": _now(), "updated_at": _now(),
+            "verified_at": _now(),  # OTP-equivalent
+        }
+        await db.withdrawal_requests.insert_one(doc)
+        await _timeline(wid, "admin_override_created", f"admin:{adm['admin_id']}",
+                          {"amount": body.amount, "override_hard_reject": body.override_hard_reject,
+                           "reason": body.reason})
+        await log_action(adm["admin_id"], "withdrawal.admin_override_create", target=wid,
+                          meta={"amount": body.amount, "user_id": body.user_id,
+                                "override_hard_reject": body.override_hard_reject})
+        return {"ok": True, "withdrawal_id": wid, "reference_no": ref, "status": "under_review"}
 
     @admin.post("/bank-accounts/{bank_id}/verify")
     async def verify_bank(bank_id: str, adm=Depends(get_current_admin)):
