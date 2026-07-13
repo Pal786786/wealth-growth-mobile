@@ -148,3 +148,38 @@ by design.
 ### Mobile permission
 Camera permission (`NSCameraUsageDescription` + `expo-camera` plugin block)
 handled with graceful denial + "Open Settings" fallback.
+
+---
+## Sprint 12.3 · Phase A — Finance Ledger Foundation (June 2026)
+
+Double-entry, immutable finance journal + Chart of Accounts + enhanced audit
+trail + user passbook + idempotent backfill.
+
+**Chart of Accounts** — `assets:*`, `liab:*`, `rev:*`, `exp:*`, `eq:*`, `susp:*`.
+Every journal entry is BALANCED (sum(DR) == sum(CR)) and IMMUTABLE — reversals
+are new negated entries linked to the original.
+
+**Collections created**
+- `finance_journal` — the immutable ledger (unique-index dedupe_key)
+- `finance_ledger_balances` — denormalized per-account balance
+- `finance_audit_trail` — enhanced audit (IP / device / actor / before / after)
+- `finance_migrations` — backfill run reports (audit)
+
+**Backfill** — one-time, admin-triggered, idempotent, supports dry-run.
+Migrated 199 historical rows across wallet_ledger / payments / withdrawals /
+gold / mutual_funds / forex / referrals on activation.
+
+**Endpoints**
+- User: `GET /api/wallet/passbook`, `GET /api/wallet/passbook/{id}`
+- Admin: journal search / balances / balance-by-account / reverse /
+  audit query / backfill (dry_run|apply) / backfill status
+
+**Mobile**
+- New `/app/wallet/passbook.tsx` screen — running-balance passbook with
+  date-range filter, grouped-by-day rows, per-row detail modal
+  (opening/closing/UTR/reference/journal_id with copy).
+
+**Phase B** (Reconciliation, Settlement Dashboard, PDF/Excel/CSV Reports,
+Provider Settlement) queued next — will start after Phase A validation.
+
+**Phase C** (Recharts finance dashboards, Finance Alerts) queued after Phase B.

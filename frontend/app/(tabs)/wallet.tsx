@@ -103,7 +103,10 @@ export default function WalletTab() {
 
             <View style={s.sectionHeader}>
               <Text style={[s.sectionTitle, { color: palette.textPrimary }]}>Transactions</Text>
-              <History color={palette.textSecondary} size={18} />
+              <Pressable onPress={() => router.push("/wallet/passbook")} style={{ flexDirection: "row", alignItems: "center", gap: 4 }} testID="open-passbook">
+                <Text style={{ color: palette.primary, fontWeight: "800", fontSize: 12 }}>Passbook</Text>
+                <History color={palette.primary} size={16} />
+              </Pressable>
             </View>
           </View>
         }

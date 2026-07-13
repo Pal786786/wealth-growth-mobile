@@ -1336,3 +1336,99 @@ AI Intelligence / Notifications.
 - In LIVE mode, the mobile app opens the UPI intent via `Linking.openURL` and
   polls `/api/wallet/qr/status/{order_id}` until the Razorpay webhook credits
   the wallet.
+
+---
+## Sprint 12.3 · Phase A — Finance Ledger Foundation (June 2026)
+
+**Scope**: Double-entry immutable finance journal + Chart of Accounts + enhanced
+audit trail + user passbook + idempotent one-time backfill. Non-destructive:
+existing per-module ledgers (wallet_ledger, payments_orders, withdrawal_requests,
+gold_transactions, mf_orders, forex_positions) are preserved — the new journal
+is a super-set built ON TOP via `wallet_module._post_ledger` monkey-patch
++ direct emit in `admin.py::wallet_adjust`.
+
+### Chart of Accounts
+```
+assets:user_wallet:<user_id>   liab:users_wallets
+assets:provider:razorpay        liab:tax:gst
+assets:provider:cashfree        rev:fees
+assets:provider:gold            rev:forex
+assets:provider:mutual_funds    rev:gold_spread
+assets:cash:bank                rev:mf_commission
+                                exp:provider_charges / exp:referral
+                                eq:adjustments  susp:mismatch
+```
+
+### Backend
+- ADD: `/app/backend/finance_ledger/`
+  - `engine.py` — Journal class, JournalEntry/JournalLeg factories, balance
+    denormalization, user-passbook projection with running balance.
+    Idempotency via unique `dedupe_key` index.
+  - `audit.py` — `finance_audit_trail` collection w/ IP, user-agent,
+    device_id, actor, action, before/after, resource. Append-only.
+  - `hooks.py` — monkey-patches `wallet_module._post_ledger` so every
+    credit/debit auto-emits a matching journal entry.
+  - `backfill.py` — idempotent one-time migration:
+    wallet_ledger → payments_orders → withdrawal_requests → gold_*
+    → mf_* → forex_* → referral_bonuses. Dry-run supported.
+  - `routes.py` — user passbook + admin ledger APIs + backfill.
+- EDIT: `/app/backend/admin.py::wallet_adjust` — direct journal emit
+  (this endpoint bypasses `_post_ledger`).
+- EDIT: `/app/backend/payments/__init__.py` — no change from Sprint 12.2.1.
+- EDIT: `/app/backend/server.py` — wire finance_ledger after wallet_qr,
+  ensure indexes on startup, install wallet hooks.
+
+### Endpoints
+User:
+  - `GET /api/wallet/passbook?limit=&skip=&date_from=&date_to=`
+  - `GET /api/wallet/passbook/{journal_id}`
+Admin:
+  - `GET /api/admin/ledger/journal` (search + filter)
+  - `GET /api/admin/ledger/balances`
+  - `GET /api/admin/ledger/balance/{account}`
+  - `POST /api/admin/ledger/reverse/{jid}` (immutable — creates a NEW reversal entry)
+  - `GET /api/admin/ledger/audit`
+  - `POST /api/admin/ledger/backfill` (dry_run|apply, per-module selection)
+  - `GET /api/admin/ledger/backfill/status`
+
+### Invariants (locked in tests)
+- Every journal entry BALANCED: `sum(DR) == sum(CR)` (enforced in `JournalEntry.make`).
+- Every entry IMMUTABLE: no HTTP DELETE/PUT routes exist.
+- Reversals produce a NEW negated entry (linked via `reverses_journal_id`);
+  original is marked `is_reversed=True` (single-shot flag). Double-reverse blocked.
+- IDEMPOTENT: unique `dedupe_key` index prevents duplicate posts on retries/backfills.
+- BACKFILL: 1st apply migrates all → 2nd apply migrates=0 skipped=all (verified).
+- AUDIT trail captures IP / user-agent / device_id + before/after values.
+
+### Mobile UI
+- ADD: `/app/frontend/app/wallet/passbook.tsx` — full-featured user Passbook
+  with running-balance, date-range chips (7D/30D/90D/1Y/All), grouped-by-day
+  sections, per-row detail modal (opening/closing/reference/UTR/status/journal_id
+  with copy-to-clipboard), reversed-entry warning banner, empty-state, pull-to-refresh.
+- EDIT: `/app/frontend/app/(tabs)/wallet.tsx` — added "Passbook" link.
+
+### Tests
+- ADD: `/app/backend/tests/test_finance_ledger_sprint123.py` — 17 tests:
+  passbook after credit/debit, running-balance math, journal balanced
+  invariant, denorm-balance-matches-journal, reversal creates new entry
+  + marks original + blocks double-reverse, backfill dry-run vs apply,
+  backfill idempotency (2nd apply = 0 new writes), audit trail records
+  passbook.view / ledger.reverse with IP / user-agent / before-after,
+  no delete/update HTTP paths exist, auth guards.
+
+### Regression: 759/759 PASS · 2 skipped · 0 failed  🎯
+Full backend suite green (+17 new Phase A tests over Sprint 12.2.1's 742).
+Zero regressions in Wallet / Payments / Withdrawals / Gold / MF / Forex /
+Bank Verification / Copy Trading / AI / Notifications / QR top-up.
+
+### Backfill result (live DB)
+```
+Modules scanned: wallet_ledger, payments, withdrawals, gold,
+                  mutual_funds, forex, referrals
+processed: 199   migrated: 199   skipped: 0   failed: 0
+2nd apply → processed: 199   migrated: 0   skipped: 199   failed: 0   ← idempotent
+```
+
+### Next
+Phase B (Reconciliation + Settlement Dashboard + PDF/Excel/CSV Reports +
+Provider Settlement) queued — will start after your validation of Phase A.

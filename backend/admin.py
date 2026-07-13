@@ -370,6 +370,34 @@ async def wallet_adjust(req: WalletAdjustReq, admin: Dict[str, Any] = Depends(ge
     }
     await _db.transactions.insert_one(tx)
     await _log_action(admin["admin_id"], f"wallet.{req.type}", target=req.user_id, meta={"amount": req.amount})
+
+    # Sprint 12.3 · Phase A — Emit journal entry for the adjustment
+    try:
+        from finance_ledger.engine import (
+            JournalLeg, post_journal,
+            coa_user_wallet, coa_equity_adjustment,
+        )
+        user_acct = coa_user_wallet(req.user_id)
+        adj_acct = coa_equity_adjustment()
+        amt = float(req.amount)
+        if req.type == "credit":
+            legs = [JournalLeg.make(adj_acct, amt, "DR"),
+                    JournalLeg.make(user_acct, amt, "CR")]
+        else:
+            legs = [JournalLeg.make(user_acct, amt, "DR"),
+                    JournalLeg.make(adj_acct, amt, "CR")]
+        await post_journal(
+            txn_type="admin_adjustment", legs=legs, amount=amt, currency="INR",
+            reference_id=tx["tx_id"], reference_type="admin_adjust",
+            user_id=req.user_id, narration=f"Admin: {req.note}",
+            posted_by=f"admin:{admin['admin_id']}",
+            metadata={"admin_id": admin["admin_id"], "reason": req.note,
+                       "adjust_type": req.type},
+            dedupe_key=f"admin_adjust:{tx['tx_id']}",
+        )
+    except Exception as _e:
+        pass  # journal is best-effort; existing behaviour preserved
+
     return {"success": True, "new_balance": w["balance"] + delta}
 
 

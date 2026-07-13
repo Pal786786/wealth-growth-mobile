@@ -1200,6 +1200,34 @@ try:
 except Exception as _e:
     logger.warning(f"wallet_qr attach failed: {_e}")
 
+# ------ Sprint 12.3 Phase A: Finance Ledger (double-entry journal) ------
+try:
+    import finance_ledger as _fl
+    from finance_ledger.engine import Journal as _Journal, set_default_journal
+    from finance_ledger.audit import AuditTrail as _AuditTrail, set_default_trail
+    from finance_ledger.hooks import install_wallet_hooks
+    _fl_journal = _Journal(db)
+    _fl_trail = _AuditTrail(db)
+    set_default_journal(_fl_journal)
+    set_default_trail(_fl_trail)
+    _fl.attach(
+        app, db=db, get_current_user=get_current_user,
+        get_current_admin=admin_module.get_current_admin,
+    )
+    import wallet_module as _wallet_module
+    install_wallet_hooks(_wallet_module)
+    @app.on_event("startup")
+    async def _fl_startup():
+        try:
+            await _fl_journal.ensure_indexes()
+            await _fl_trail.ensure_indexes()
+            logger.info("finance_ledger indexes ensured")
+        except Exception as _e2:
+            logger.warning(f"finance_ledger index init failed: {_e2}")
+    logger.info("finance_ledger subsystem attached (Sprint 12.3 Phase A)")
+except Exception as _e:
+    logger.warning(f"finance_ledger attach failed: {_e}")
+
 # Serve built admin SPA at /api/admin-ui/
 # Production deploy only ships /app/backend, so the SPA build is bundled inside
 # backend/static/admin-ui (committed). Preview also has /app/admin/dist as
