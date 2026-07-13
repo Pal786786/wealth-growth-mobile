@@ -5,7 +5,8 @@ export type BankAccount = {
   holder_name: string;
   bank_name: string;
   ifsc: string;
-  account_number: string;
+  account_number?: string;   // stripped by API for security
+  account_masked?: string;   // "XXXX<last4>" from API
   verified: boolean;
   verification_method?: string | null;
   last_verification_status?: "verified" | "pending" | "failed" | "error" | null;

@@ -17,6 +17,15 @@ import { Card } from "@/src/components/Card";
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
+/** Robust account-number masking: prefers server-provided `account_masked`
+ *  (backend strips full account_number for security), falls back to the raw
+ *  number if ever exposed, else generic dots. Never throws on undefined. */
+const maskedAcct = (b: BankAccount) => {
+  if (b.account_masked) return b.account_masked;
+  if (b.account_number && b.account_number.length >= 4) return `****${b.account_number.slice(-4)}`;
+  return "•••• ••••";
+};
+
 export default function BankAccountsScreen() {
   const { palette } = useTheme();
   const router = useRouter();
@@ -66,7 +75,7 @@ export default function BankAccountsScreen() {
   };
 
   const remove = (bank: BankAccount) => Alert.alert(
-    "Delete bank account?", `${bank.bank_name} · ****${bank.account_number.slice(-4)}`,
+    "Delete bank account?", `${bank.bank_name} · ${maskedAcct(bank)}`,
     [
       { text: "Keep", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
@@ -131,7 +140,7 @@ export default function BankAccountsScreen() {
                   ) : null}
                 </View>
                 <Text style={{ color: palette.textMuted, fontSize: 11 }}>{b.holder_name} · {b.ifsc}</Text>
-                <Text style={{ color: palette.textSecondary, fontSize: 11, fontWeight: "700" }}>A/C ****{b.account_number.slice(-4)}</Text>
+                <Text style={{ color: palette.textSecondary, fontSize: 11, fontWeight: "700" }}>A/C {maskedAcct(b)}</Text>
                 {b.verified ? (
                   <Text style={{ color: palette.success, fontSize: 10, fontWeight: "800" }}>
                     Verified via {b.last_verified_provider || b.verification_method || "penny drop"}

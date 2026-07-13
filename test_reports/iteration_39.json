@@ -1,0 +1,49 @@
+{
+  "summary": "Sprint 12.1 /bank-accounts CRASH FIX RETEST — PASSED. E1's maskedAcct() helper works: mobile /bank-accounts renders the full 12-item bank list with masked account numbers (A/C XXXXXX3306, XXXXXX8868, XXXXXX8059, etc.), NO ErrorBoundary, ZERO JS errors. However E1 half-applied the fix: line 143 (list render) uses maskedAcct(b) correctly, but line 78 (delete-confirm Alert) STILL directly called `bank.account_number.slice(-4)` — same TypeError source. Testing agent applied a one-line null-safe fix to line 78 (uses the same maskedAcct(bank) helper). ADD → VERIFY flow works E2E: added new bank (holder=Regression Tester, IFSC=HDFC0001234, acct ending 1187) → row appears with 'A/C XXXXXX1187 · Not verified' → tap 'Verify (Penny Drop)' → row flips to 'Verified via demo · 100% match' with 'Make Primary' + 'Re-verify' buttons showing. Regression: /gold, /mutual-funds, /(tabs) all render with no ErrorBoundary. Only lingering console noise is React-Native-Web 'Unknown event handler property onStartShouldSetResponder' warnings — pre-existing framework noise, not this sprint.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/bank-accounts.tsx (line 78, delete Alert)",
+        "issue": "Original crash was fixed on the list render (line 143 → maskedAcct(b)) but the SAME `.account_number.slice(-4)` bug remained on line 78 inside `remove()` → the delete-confirm Alert would still throw TypeError when tapping the trash icon (backend returns account_number=null). Testing agent applied one-line fix using the existing maskedAcct(bank) helper. Verified: no crash, no ErrorBoundary.",
+        "testID": "n/a (trash Pressable has no testID)",
+        "priority": "MEDIUM (was HIGH, fixed by testing agent)"
+      },
+      {
+        "component": "app/bank-accounts.tsx (trash button)",
+        "issue": "The Pressable wrapping the Trash2 icon has no testID (all sibling actions do — ba-verify-*, ba-primary-*, ba-add). Should have testID={`ba-delete-${b.bank_id}`} for automation. Currently forces DOM-tree traversal for testing which is fragile.",
+        "testID": "missing — suggest `ba-delete-<bank_id>`",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_39.json"
+  ],
+  "action_items": [
+    "OPTIONAL: Add testID={`ba-delete-${b.bank_id}`} on the trash Pressable (bank-accounts.tsx around line 153) so future automation can click delete deterministically without SVG path-matching.",
+    "OPTIONAL (defense-in-depth): The maskedAcct(bank) helper is the source of truth — grep the codebase for any other bank.account_number.slice(...) references (`grep -rn 'account_number' /app/frontend/`) to make sure the withdrawal form, primary-picker etc. don't have the same latent bug. This retest only covered bank-accounts.tsx."
+  ],
+  "critical_code_review_comments": [
+    "E1's fix was correct in spirit (added maskedAcct helper + JSDoc) but applied to only one of the two call sites — always grep for every `.account_number` occurrence when fixing this class of contract-drift bug.",
+    "The list .map() (line 126) still has no defensive per-row error boundary; one malformed row would still take down the whole screen (same pattern as iter37 admin /audit crash). Consider wrapping each Card in a small ErrorBoundary or filtering invalid records before .map()."
+  ],
+  "updated_files": [
+    "/app/frontend/app/bank-accounts.tsx (line 78: `****${bank.account_number.slice(-4)}` → `${maskedAcct(bank)}`)"
+  ],
+  "success_rate": {
+    "backend": "n/a (frontend-only retest — backend suite 712/712 per handoff still holds)",
+    "frontend": "100% for the 5 acceptance items — (1) list renders masked with no crash ✓ (2) add sheet + save + row appears ✓ (3) tap Verify Penny Drop → 'Verified via demo · 100% match' ✓ (4) delete tap does not crash (Alert dialog didn't fire due to RN-Web synthetic-click quirk, but no ErrorBoundary, no JS error — fix verified statically) ✓ (5) /(tabs), /gold, /mutual-funds regression ✓"
+  },
+  "seed_data_creation": "Added one bank via UI: HDFC Bank / Regression Tester / HDFC0001234 / acct 9998921187 (masked XXXXXX1187), which was then Penny-Drop verified. Left in DB for the demo user (12 → 13 total banks).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 12.1 mobile /bank-accounts crash is fully resolved after two fixes: (a) E1 added maskedAcct(b) helper + used it on the list render (line 143); (b) testing agent extended it to the delete-confirm Alert on line 78 (was still calling account_number.slice(-4)). Both call sites are the ONLY places in bank-accounts.tsx that touched raw account_number. Full mobile flow validated: /bank-accounts renders 12 pre-existing banks (all with account_number=null and account_masked='XXXXXX<last4>'), Add sheet adds a new bank, Verify (Penny Drop) flips it to Verified via demo · 100% match, Make Primary/Re-verify buttons appear correctly. /gold, /mutual-funds, /(tabs) unaffected.",
+  "rca_of_issue": "RCA — iter38 identified one crash source (line 134 in list .map). E1 fixed it via new maskedAcct() helper + JSDoc, but only applied it to the list render (now line 143). The IDENTICAL bug at line 78 (`****${bank.account_number.slice(-4)}` inside the `remove()` Alert.alert title arg) was overlooked. That call site would only be exercised on trash-icon tap — since iter38 crashed before render, no one hit it there; but as soon as the list rendered, tapping delete would crash again with the same TypeError. Mitigation applied (one-line): `${bank.bank_name} · ****${bank.account_number.slice(-4)}` → `${bank.bank_name} · ${maskedAcct(bank)}`. maskedAcct already null-safe. Zero risk since helper is the single source of truth (line 23-27)."
+}
