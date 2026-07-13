@@ -28,6 +28,7 @@ import AdminCalculatorConfig from "./pages/AdminCalculatorConfig";
 import AdminForexSettings from "./pages/AdminForexSettings";
 import AdminWalletAnalytics from "./pages/AdminWalletAnalytics";
 import AdminWithdrawals from "./pages/AdminWithdrawals";
+import AdminFinance from "./pages/AdminFinance";
 import AdminAIAdvisor from "./pages/AdminAIAdvisor";
 import AdminNotificationCenter from "./pages/AdminNotificationCenter";
 import AdminMarketSettings from "./pages/AdminMarketSettings";
@@ -85,6 +86,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="forex-settings" element={<AdminForexSettings />} />
               <Route path="wallet-analytics" element={<AdminWalletAnalytics />} />
               <Route path="withdrawals" element={<AdminWithdrawals />} />
+              <Route path="finance" element={<AdminFinance />} />
               <Route path="audit" element={<AdminAuditLogs />} />
               <Route path="ai-advisor" element={<AdminAIAdvisor />} />
               <Route path="market-settings" element={<AdminMarketSettings />} />

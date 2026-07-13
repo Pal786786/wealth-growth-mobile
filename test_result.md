@@ -1432,3 +1432,83 @@ processed: 199   migrated: 199   skipped: 0   failed: 0
 ### Next
 Phase B (Reconciliation + Settlement Dashboard + PDF/Excel/CSV Reports +
 Provider Settlement) queued — will start after your validation of Phase A.
+
+---
+## Sprint 12.3 · Phase B — Reconciliation + Reports + Settlements (June 2026)
+
+**Scope**: Read-only reconciliation engine, mismatch queue, admin Settlement
+Dashboard KPIs, per-provider settlement views, on-demand PDF/Excel/CSV
+finance report exports. Zero journal mutations. Full audit trail.
+
+### Backend
+- ADD: `/app/backend/finance_ledger/reconciliation.py` — Reconciler with
+  matched/pending/mismatch/manual_review buckets per module (payments,
+  withdrawals, wallet, gold, mutual_funds, forex). Idempotent per pair_key.
+- ADD: `/app/backend/finance_ledger/kpi.py` — dashboard KPIs, per-day
+  charts (deposits/withdrawals), provider settlement lists, report data builder.
+- ADD: `/app/backend/finance_ledger/reports.py` — 3 renderers:
+  * `render_pdf` — ReportLab with branded header, KPI cards, reconciliation
+    table, settlement table, transactions table, footer with page numbers.
+  * `render_excel` — openpyxl workbook w/ Summary + Reconciliation + Entries
+    sheets, frozen header rows, currency formatting, totals row.
+  * `render_csv` — flat report with executive summary + entries + recon summary.
+- EXTEND: `/app/backend/finance_ledger/routes.py` — added Phase B routes:
+  * `POST /api/admin/finance/reconcile` — run recon
+  * `GET  /api/admin/finance/mismatches` — mismatch queue w/ filters
+  * `POST /api/admin/finance/mismatches/{pk}/retry|resolve|ignore|note`
+  * `GET  /api/admin/finance/reconciliation/runs` — run history
+  * `GET  /api/admin/finance/dashboard?range=today|week|month|quarter|year|custom`
+  * `GET  /api/admin/finance/settlements/{razorpay|cashfree}`
+  * `GET  /api/admin/finance/reports/{report_type}.{pdf|xlsx|csv}` (streaming)
+  * `GET  /api/admin/finance/reports` — list types + formats
+- DEPS: `reportlab==4.2.5`, `openpyxl==3.1.5` added to `requirements.txt`.
+
+### Safety invariants (locked in tests)
+- Reconciliation is **read-only** — never modifies journal (verified by
+  journal-total invariant test).
+- All admin actions (retry/resolve/ignore/note/export) audited via
+  `finance_audit_trail` with IP + user-agent + before/after.
+- Reports are **regenerated fresh** per request; no GridFS persistence.
+- Once a mismatch is resolved/ignored the recon status is preserved
+  even if a subsequent run would auto-flip it to "matched" —
+  admin resolution decisions are respected.
+
+### Admin UI
+- ADD: `/app/admin/src/pages/AdminFinance.tsx` — Finance Console with 4 tabs:
+  * **Dashboard** — 8 KPI cards + ComposedChart (deposits area + withdrawals
+    bars) + Pie chart of provider balances + provider status badges.
+  * **Reconciliation** — mismatch queue with status/module filters, detail
+    modal (expected vs actual JSON, admin notes timeline), retry/resolve/
+    ignore/note actions.
+  * **Settlements** — toggle Razorpay ↔ Cashfree, full settlement list w/
+    UTR + delay hours.
+  * **Reports** — export form (report type × PDF/XLSX/CSV × date range ×
+    provider filter) → blob download.
+- EDIT: `/app/admin/src/main.tsx` — wired `/finance` route.
+- EDIT: `/app/admin/src/pages/Layout.tsx` — added "Finance Console (S12.3)"
+  sidebar entry.
+
+### Tests
+- ADD: `/app/backend/tests/test_finance_ledger_phase_b.py` — 23 tests:
+  recon run + per-module + read-only invariant, mismatch queue,
+  resolve/ignore/note/retry workflows + audit records, recon run history,
+  dashboard all range keys + chart series shape, settlement lists (rz + cf +
+  400 for unknown), report type list + all 3 formats (PDF magic bytes,
+  XLSX zip magic, CSV textual assertions), bad report type/format 400,
+  filters honoured, export audited, auth guards.
+
+### Regression: 783/783 PASS · 1 skipped · 0 failed  🎯
+Full backend suite green (+24 net new tests over Phase A's 759).
+Zero regressions in Wallet / Payments / Withdrawals / Gold / MF / Forex /
+Bank Verification / Copy Trading / AI / Notifications / QR top-up / Passbook.
+
+### Report export smoke test (live)
+```
+GET /api/admin/finance/reports/monthly.pdf   → 19 KB · application/pdf
+GET /api/admin/finance/reports/monthly.xlsx  → 23 KB · openxml spreadsheet
+GET /api/admin/finance/reports/deposit.csv   → 37 KB · text/csv
+```
+
+### Next
+Phase C (Recharts finance dashboards + Finance Alerts) queued — will start
+after your Phase B validation.

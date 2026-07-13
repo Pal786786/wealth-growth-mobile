@@ -35,6 +35,7 @@ const NAV = [
   { to: "/gold", label: "Gold Console (S10)", icon: Coins },
   { to: "/mutual-funds", label: "Mutual Funds (S11)", icon: Repeat },
   { to: "/bank-verification", label: "Bank Verification (S12.1)", icon: Building2 },
+  { to: "/finance", label: "Finance Console (S12.3)", icon: LineChart },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/push-logs", label: "Push Logs", icon: Activity },
   { to: "/investments", label: "Investments", icon: TrendingUp },

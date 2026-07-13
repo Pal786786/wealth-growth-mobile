@@ -183,3 +183,39 @@ gold / mutual_funds / forex / referrals on activation.
 Provider Settlement) queued next — will start after Phase A validation.
 
 **Phase C** (Recharts finance dashboards, Finance Alerts) queued after Phase B.
+
+---
+## Sprint 12.3 · Phase B — Reconciliation + Reports + Settlements (June 2026)
+
+Read-only reconciliation engine, mismatch queue, admin Settlement Dashboard
+KPIs, per-provider settlement views, on-demand PDF/Excel/CSV finance report
+exports. Zero journal mutations.
+
+**Reconciliation** — 6 modules (payments, withdrawals, wallet, gold,
+mutual_funds, forex) → matched | pending | mismatch | manual_review.
+Idempotent per `pair_key`. Admin can retry / resolve / ignore / add notes,
+all audited.
+
+**Settlement Dashboard KPIs** — total deposits/withdrawals, wallet balance,
+platform liability, provider balance (per provider), fees, GST, refunds,
+failed payments, pending withdrawals/settlements, net revenue. Filterable
+by today / week / month / quarter / year / custom.
+
+**Provider Settlements** — Razorpay + Cashfree, with settlement id / amount /
+date / status / fees / GST / UTR / delay hours.
+
+**Reports** — PDF (ReportLab, branded, KPI cards + tables + footer w/ page
+numbers), Excel (openpyxl, multi-sheet w/ frozen headers + currency
+formatting), CSV. On-demand only, no persistence. Types: daily / weekly /
+monthly / quarterly / yearly / deposit / withdrawal / gold / mf / forex /
+fees / tax. Filters: date range, provider, module, user, status.
+
+**Admin UI** — new `/finance` page with 4 tabs: Dashboard (Recharts
+ComposedChart + Pie), Reconciliation queue, Settlements viewer, Reports
+Export Center.
+
+**Deps**: `reportlab==4.2.5`, `openpyxl==3.1.5`.
+
+**Phase C** (queued): Recharts finance dashboards polish, Finance Alerts
+(settlement fail / large withdrawal / ledger mismatch / negative balance /
+provider offline / high failure rate) with in-app + email notification.
