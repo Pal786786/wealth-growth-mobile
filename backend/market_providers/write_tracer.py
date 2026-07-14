@@ -62,6 +62,9 @@ _current_endpoint: contextvars.ContextVar[Optional[str]] = contextvars.ContextVa
 _current_admin: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "mfb_current_admin", default=None
 )
+_current_request_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "mfb_current_request_id", default=None
+)
 
 
 def _fp(v: Any) -> Optional[str]:
@@ -144,6 +147,7 @@ async def _record(db, *, op: str, collection: str, filter_: Any,
             "collection":      collection,
             "endpoint":        _current_endpoint.get(),
             "admin":           _current_admin.get(),
+            "request_id":      _current_request_id.get(),
             "filter":          filter_ if isinstance(filter_, dict) else str(filter_),
             "update_fingerprints":  update_fps,
             "before_fingerprints":  before_fps,
@@ -291,22 +295,40 @@ def _wrap_write_methods(db, coll, coll_name: str) -> None:
 
 # --------------------------------------------------------------------------- #
 def attach_endpoint_context_middleware(app) -> None:
-    """FastAPI middleware — captures request path + admin id into contextvars
-    so the tracer can attribute each write to the caller."""
+    """FastAPI middleware — captures request path + admin id + X-Request-ID
+    into contextvars so the tracer can attribute each write to the caller.
+
+    Also sets response header `X-Request-ID` (auto-generated if the client
+    didn't send one) so the browser Network tab shows the SAME id that ends
+    up in the write audit row — a bulletproof correlation for save-path
+    diagnosis.
+    """
     from starlette.middleware.base import BaseHTTPMiddleware
+    import uuid as _uuid
 
     class _Middleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
+            rid = (request.headers.get("x-request-id")
+                   or request.headers.get("X-Request-ID")
+                   or _uuid.uuid4().hex[:16])
             tok_ep = _current_endpoint.set(f"{request.method} {request.url.path}")
             tok_ad = _current_admin.set(None)
+            tok_rid = _current_request_id.set(rid)
             try:
-                # Best-effort: read admin id from Authorization header context
-                # (set by admin.get_current_admin dependency). If unavailable,
-                # falls back to remote_addr.
-                return await call_next(request)
+                resp = await call_next(request)
+                # Expose the id so the browser can read it from the Network tab
+                resp.headers["X-Request-ID"] = rid
+                # Also expose CORS header so the browser is allowed to READ it
+                existing = resp.headers.get("Access-Control-Expose-Headers", "")
+                if "X-Request-ID" not in existing:
+                    resp.headers["Access-Control-Expose-Headers"] = (
+                        (existing + ", " if existing else "") + "X-Request-ID"
+                    )
+                return resp
             finally:
                 _current_endpoint.reset(tok_ep)
                 _current_admin.reset(tok_ad)
+                _current_request_id.reset(tok_rid)
 
     app.add_middleware(_Middleware)
 
@@ -328,6 +350,7 @@ def build_router(db, get_current_admin) -> APIRouter:
         since_min: int = Query(60, ge=1, le=10080),
         collection: Optional[str] = Query(None),
         op: Optional[str] = Query(None),
+        request_id: Optional[str] = Query(None, description="Correlate with browser X-Request-ID header"),
         limit: int = Query(200, ge=1, le=1000),
         admin=Depends(get_current_admin),
     ):
@@ -337,6 +360,7 @@ def build_router(db, get_current_admin) -> APIRouter:
         q: Dict[str, Any] = {"at": {"$gte": since}}
         if collection: q["collection"] = collection
         if op:         q["operation"]  = op
+        if request_id: q["request_id"] = request_id
         rows = await db[AUDIT_COLL].find(q, {"_id": 0}).sort("at", -1).limit(limit).to_list(limit)
         return {
             "count": len(rows),
@@ -344,6 +368,7 @@ def build_router(db, get_current_admin) -> APIRouter:
             "audit_collection": AUDIT_COLL,
             "monitored_collections": sorted(SENSITIVE),
             "monitored_fields": list(SENSITIVE_FIELDS),
+            "correlation_hint": "grab X-Request-ID from the browser Network tab and query ?request_id=<id> here",
             "rows": rows,
         }
 
