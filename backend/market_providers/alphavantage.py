@@ -121,4 +121,47 @@ class AlphaVantageProvider(Provider):
         return None    # unsupported → let manager fall to next provider
 
     def set_api_key(self, key: str):
+        """Rotate the key and clear rolling health stats so an old failure
+        state doesn't leak into the new key's dashboard row."""
         self._api_key = (key or "").strip()
+        self.stats.reset()
+
+    async def test_connection(self) -> Dict[str, object]:
+        """Lightweight probe. Returns the same shape as TwelveData's variant.
+        Uses one credit against the 25/day free tier — call sparingly."""
+        if not self._api_key:
+            return {"ok": False, "status_code": None, "response": None,
+                    "error": "no_api_key"}
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    "https://www.alphavantage.co/query",
+                    params={"function": "CURRENCY_EXCHANGE_RATE",
+                             "from_currency": "EUR", "to_currency": "USD",
+                             "apikey": self._api_key},
+                )
+        except Exception as e:
+            err = f"network error: {type(e).__name__}: {e}"[:300]
+            self.stats.record_failure(err)
+            return {"ok": False, "status_code": None, "response": None, "error": err}
+
+        body_preview = r.text[:600].replace(self._api_key, "<REDACTED>") if r.text else ""
+        try:
+            data = r.json()
+        except Exception:
+            data = None
+
+        # Alpha Vantage signals throttling / issues via "Information" or "Note" keys.
+        if isinstance(data, dict) and (data.get("Information") or data.get("Note") or data.get("Error Message")):
+            err = str(data.get("Information") or data.get("Note") or data.get("Error Message"))[:300]
+            self.stats.record_failure(err, is_rate_limit=("limit" in err.lower() or "throttle" in err.lower()))
+            return {"ok": False, "status_code": r.status_code, "response": body_preview, "error": err}
+
+        # Success shape: {"Realtime Currency Exchange Rate": {...}}
+        if isinstance(data, dict) and "Realtime Currency Exchange Rate" in data:
+            self.stats.record_success(latency_ms=r.elapsed.total_seconds() * 1000)
+            return {"ok": True, "status_code": r.status_code, "response": body_preview, "error": None}
+
+        self.stats.record_failure("unexpected response shape")
+        return {"ok": False, "status_code": r.status_code, "response": body_preview,
+                "error": "unexpected response shape"}

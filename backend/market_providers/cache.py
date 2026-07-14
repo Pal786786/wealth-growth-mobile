@@ -139,3 +139,13 @@ class QuoteCache:
 
     async def clear(self):
         await self.db[_COLL].delete_many({})
+
+    async def invalidate_by_source(self, source: str) -> int:
+        """Delete cached quotes that were last written by the given provider.
+        Called after an api-key rotation so the follower cache doesn't keep
+        serving prices from the previous key. Returns the number of deleted docs.
+        """
+        if not source:
+            return 0
+        result = await self.db[_COLL].delete_many({"source": source})
+        return int(result.deleted_count or 0)

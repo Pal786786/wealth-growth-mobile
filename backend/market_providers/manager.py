@@ -405,16 +405,68 @@ class ProviderManager:
         self.universe = clean
         await self._save_config({"universe": clean})
 
-    async def set_api_key(self, provider: str, key: str):
+    async def set_api_key(self, provider: str, key: str) -> Dict[str, Any]:
+        """Rotate the API key of a provider and immediately test it.
+
+        Returns the test-connection result so the admin UI can display the
+        exact provider response (success or exact error text). Also clears:
+          * provider backoff (failure_count, backoff_step, next_retry_at)
+          * provider rolling stats (last_error, failed_requests, ...)
+          * circuit breaker state (breaker.opened_at, consecutive_failures)
+          * cached quotes for this provider's supported symbols (best-effort;
+            the shared price cache is short-TTL so stale prices roll off
+            within the next refresh cycle regardless)
+        """
         p = self._by_name.get(provider)
         if not p or not hasattr(p, "set_api_key"):
             raise ValueError(f"provider {provider} does not accept API keys")
+
+        # 1. Rotate key on provider (this also calls stats.reset + backoff reset)
         p.set_api_key(key)  # type: ignore[attr-defined]
+
+        # 2. Persist to DB
         field = f"{provider}_api_key"
         await self._save_config({field: (key or "").strip()})
-        # Reset breaker so it retries immediately
-        self._breakers[provider].opened_at = None
-        self._breakers[provider].consecutive_failures = 0
+
+        # 3. Reset circuit breaker for this provider
+        br = self._breakers.get(provider)
+        if br is not None:
+            br.opened_at = None
+            br.consecutive_failures = 0
+
+        # 4. Best-effort clear of any cached prices last-served BY this provider,
+        # so followers stop seeing stale values from the old key run.
+        try:
+            await self.cache.invalidate_by_source(provider)   # type: ignore[attr-defined]
+        except AttributeError:
+            pass    # cache may not implement this — non-fatal
+
+        # 5. Immediately probe the API with the new key
+        test_result: Dict[str, Any] = {"ok": None, "skipped": "no test_connection"}
+        if hasattr(p, "test_connection"):
+            try:
+                test_result = await p.test_connection()  # type: ignore[attr-defined]
+            except Exception as e:                       # pragma: no cover
+                test_result = {"ok": False, "error": f"probe raised: {type(e).__name__}: {e}"}
+
+        # 6. Record a provider-history event for auditing
+        try:
+            await self.db[self._HIST_COLL].insert_one({
+                "at": datetime.now(timezone.utc),
+                "provider": provider,
+                "event": "api_key_rotated",
+                "test_ok": bool(test_result.get("ok")),
+                "test_error": (test_result.get("error") or None) if not test_result.get("ok") else None,
+            })
+        except Exception:
+            pass
+
+        return {
+            "provider": provider,
+            "configured": bool((key or "").strip()),
+            "test_ok": bool(test_result.get("ok")),
+            "test_result": test_result,
+        }
 
     async def recent_history(self, limit: int = 100) -> List[Dict[str, Any]]:
         cur = self.db[self._HIST_COLL].find({}, {"_id": 0}).sort("at", -1).limit(limit)

@@ -31,6 +31,14 @@ BASE_URL = "https://api.twelvedata.com"
 # Exponential backoff schedule (seconds). Index into this list by consecutive 429 count.
 BACKOFF_SCHEDULE = [30, 60, 120, 240, 600]
 
+
+def _redact_api_key(text: str, api_key: str) -> str:
+    """Return `text` with `api_key` replaced by <REDACTED> — used before we log
+    or return API response bodies. Never trust upstream to omit our key."""
+    if not text or not api_key:
+        return text
+    return text.replace(api_key, "<REDACTED>")
+
 # Canonical symbol → TwelveData symbol
 SYMBOL_MAP: Dict[str, str] = {
     # Forex majors
@@ -74,9 +82,110 @@ class TwelveDataProvider(Provider):
         return bool(self._api_key)
 
     def set_api_key(self, key: str):
+        """Rotate the API key and clear ALL prior failure/backoff state so the
+        next call starts with a clean slate. Also resets rolling ProviderStats.
+        Does NOT auto-call the API — use `test_connection()` for that.
+        """
         self._api_key = (key or "").strip()
-        # New key → clear backoff, give it a fresh chance
+        # 1. Backoff state (step, until, last_429 timestamps kept as historical)
         self._reset_backoff(reason="api key updated")
+        # 2. Credit-header cache
+        self._credits_left_minute = None
+        self._credits_left_daily = None
+        # 3. Rolling health stats (failure_count, last_error, etc.)
+        self.stats.reset()
+        logger.info("TwelveData: api-key rotated → backoff + stats + credits cleared")
+
+    async def test_connection(self) -> Dict[str, object]:
+        """Perform a single lightweight probe of the API using the current key.
+
+        Returns::
+            {
+              "ok": bool,
+              "status_code": int | None,
+              "response": <redacted-body-preview>,
+              "error": str | None,
+              "credits_left_minute": int | None,
+              "credits_left_daily":  int | None,
+            }
+
+        The API key is never included in the returned payload or the log line.
+        On success, this call is *also* counted toward `stats.successful_requests`
+        via `_fetch_quotes → record_success`, so the admin banner clears immediately.
+        On failure, `stats.last_error` is populated with the exact provider
+        response message (not a generic "Failed").
+        """
+        if not self._api_key:
+            return {"ok": False, "status_code": None, "response": None,
+                    "error": "no_api_key", "credits_left_minute": None,
+                    "credits_left_daily": None}
+
+        params = {"symbol": "EUR/USD", "apikey": self._api_key}
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(f"{BASE_URL}/quote", params=params)
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as e:
+            err = f"network error: {type(e).__name__}: {e}"[:300]
+            self.stats.record_failure(err)
+            logger.warning("TwelveData test_connection: %s", err)
+            return {"ok": False, "status_code": None, "response": None,
+                    "error": err, "credits_left_minute": None,
+                    "credits_left_daily": None}
+
+        self._parse_credit_headers(r)
+        body_preview = _redact_api_key(r.text[:600], self._api_key)
+
+        try:
+            data = r.json()
+        except Exception:
+            data = None
+
+        # HTTP-level failure
+        if r.status_code >= 400:
+            err = (isinstance(data, dict) and (data.get("message") or data.get("status"))) \
+                    or f"HTTP {r.status_code}"
+            err = str(err)[:300]
+            self.stats.record_failure(err, is_rate_limit=(r.status_code == 429))
+            if r.status_code == 429:
+                self._trigger_backoff("test_connection HTTP 429")
+            logger.warning(
+                "TwelveData test_connection FAILED status=%d body=%s",
+                r.status_code, body_preview,
+            )
+            return {"ok": False, "status_code": r.status_code, "response": body_preview,
+                    "error": err,
+                    "credits_left_minute": self._credits_left_minute,
+                    "credits_left_daily":  self._credits_left_daily}
+
+        # 200 with an in-body error (401 wrong key, 429 rate limit, etc.)
+        if isinstance(data, dict) and data.get("status") == "error":
+            msg = str(data.get("message", "unknown error"))[:300]
+            self.stats.record_failure(msg, is_rate_limit=("limit" in msg.lower() or "credit" in msg.lower()))
+            if data.get("code") == 429 or "credit" in msg.lower() or "limit" in msg.lower():
+                self._trigger_backoff(f"test_connection JSON error: {msg[:60]}")
+            logger.warning("TwelveData test_connection JSON-error: %s (body=%s)", msg, body_preview)
+            return {"ok": False, "status_code": r.status_code, "response": body_preview,
+                    "error": msg,
+                    "credits_left_minute": self._credits_left_minute,
+                    "credits_left_daily":  self._credits_left_daily}
+
+        # 200 OK and a quote present → healthy
+        if isinstance(data, dict) and ("close" in data or "price" in data):
+            self.stats.record_success(latency_ms=r.elapsed.total_seconds() * 1000)
+            self._reset_backoff(reason="test_connection success")
+            logger.info("TwelveData test_connection OK")
+            return {"ok": True, "status_code": r.status_code, "response": body_preview,
+                    "error": None,
+                    "credits_left_minute": self._credits_left_minute,
+                    "credits_left_daily":  self._credits_left_daily}
+
+        # Unexpected body shape
+        self.stats.record_failure("unexpected response shape")
+        logger.warning("TwelveData test_connection UNEXPECTED body=%s", body_preview)
+        return {"ok": False, "status_code": r.status_code, "response": body_preview,
+                "error": "unexpected response shape",
+                "credits_left_minute": self._credits_left_minute,
+                "credits_left_daily":  self._credits_left_daily}
 
     # -------- backoff API -------- #
     def is_backed_off(self) -> bool:

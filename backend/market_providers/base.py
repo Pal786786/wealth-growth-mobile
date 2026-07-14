@@ -67,6 +67,21 @@ class ProviderStats:
             return 0.0
         return round(self.failed_requests / self.total_requests * 100, 2)
 
+    def reset(self):
+        """Zero out failure state after a fresh provider configuration change.
+
+        Preserves cumulative daily_credits_used because that is a real quota
+        counter tracked by the provider (not part of our health signal).
+        """
+        self.total_requests = 0
+        self.successful_requests = 0
+        self.failed_requests = 0
+        self.rate_limited_requests = 0
+        self.last_error = None
+        self.last_error_at = None
+        self._latency_ms = []
+        self.avg_response_ms = 0.0
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,

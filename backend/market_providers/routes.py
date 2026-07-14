@@ -89,10 +89,11 @@ def attach(app, manager: ProviderManager, get_current_admin):
     @r.put("/api-key")
     async def set_key(body: ApiKeyIn, admin=Depends(get_current_admin)):
         try:
-            await manager.set_api_key(body.provider, body.key)
+            result = await manager.set_api_key(body.provider, body.key)
         except ValueError as e:
             raise HTTPException(400, str(e))
-        return {"provider": body.provider, "configured": bool(body.key.strip())}
+        # `result` already contains {provider, configured, test_ok, test_result}
+        return result
 
     @r.delete("/cache")
     async def clear_cache(admin=Depends(get_current_admin)):
