@@ -9,6 +9,7 @@ from typing import Optional
 
 from .manager import ProviderManager
 from .routes import attach as _attach_routes
+from .debug_routes import attach as _attach_debug_routes
 
 logger = logging.getLogger("market_providers")
 
@@ -20,10 +21,11 @@ def get_manager() -> Optional[ProviderManager]:
     return _manager
 
 
-def attach(app, db, get_current_admin):
+def attach(app, db, get_current_admin, log_action=None):
     global _manager
     _manager = ProviderManager(db)
     router = _attach_routes(app, _manager, get_current_admin)
+    _attach_debug_routes(app, _manager, get_current_admin, log_action=log_action)
 
     async def _startup():
         try:

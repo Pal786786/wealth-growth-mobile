@@ -1,0 +1,31 @@
+{
+  "summary": "Sprint 14.1.2 LIVE Quote Ingestion Investigation fix — ALL BACKEND TESTS PASS. New pytest suites (11/11 green): test_live_ingestion_iter42.py (3 pipeline unit tests via in-memory Mongo + monkey-patched httpx proving XAU/USD → parser → Quote → ProviderManager → cache with provider=twelvedata and source=LIVE) and test_market_debug_ingestion_iter42.py (8 HTTP contract tests). Debug endpoint GET /api/market/debug/xauusd verified against live backend: 401 without JWT, 200 with super_admin JWT, returns exactly the 9 required stages in order (locate_provider, read_db_config, symbol_map, http_fetch, json_parse, provider_parse, cache_write, mongo_read, recent_writes), verdict=NOT_CONFIGURED (expected — DB has empty twelvedata_api_key locally), dry_run defaults true, cache_write.skipped=true, no api key leakage, symbol normalization lowercase→UPPER works (eurusd→EURUSD), and market_debug_trace row appears in admin_audit. Flaky test_refresh_interval_set_and_clamps now passes and correctly restores refresh_interval_sec=60 via try/finally teardown (verified via GET /api/market_providers/status → 60). Full regression (test_iter28_market_providers.py + test_market_cache_overwrite_guard.py + test_twelvedata_backoff_reset.py) = 65/65 pass, zero regressions. Trace-logging visible in /var/log/supervisor/backend.err.log with all 4 required signatures: TD._fetch_quotes, refresh_once:, _choose_provider:, and 'market debug trace symbol=...'. No React Native / frontend testing performed (backend-only as requested).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/iter41_sprint1412.xml",
+    "/app/test_reports/pytest/iter41_regression.xml",
+    "/app/backend/tests/test_live_ingestion_iter42.py",
+    "/app/backend/tests/test_market_debug_ingestion_iter42.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "test files use EXPO_PUBLIC_BACKEND_URL env var — must be exported by CI (verified locally by exporting it in the test shell). Consider adding a pytest fixture to auto-load /app/frontend/.env so tests can be invoked as plain 'pytest' without env setup.",
+    "test_iter28 module raises RuntimeError at import time if EXPO_PUBLIC_BACKEND_URL is unset — this stops pytest collection entirely. Minor DX improvement: convert to pytest.skip at module scope."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (76/76 tests)", "frontend": "N/A (not tested per request)"},
+  "seed_data_creation": "None. Tests use in-memory Mongo stub for pipeline unit tests; contract tests only make read-only debug calls (dry_run=true by default, no cache writes).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 14.1.2 delivered. New admin-only debug endpoint at GET /api/market/debug/xauusd (and generic /api/market/debug/quote?symbol=XYZ) is behind MARKET_DEBUG_ENABLED=true env flag, JWT+super_admin gated, audit-logs via admin_module._log_action wired through market_providers.attach(). Verdict codes documented in debug_routes.py include OK, OK_DRY_RUN, OK_WRITTEN, NOT_CONFIGURED, RATE_LIMITED, PARSER_DROPPED_SYMBOL, REJECTED_BY_GUARD, PARSED_NONE, ERROR_HTTP, ERROR_JSON, ERROR_PROVIDER_MISSING, EXCEPTION_*. In this container the DB has empty twelvedata_api_key so verdict is NOT_CONFIGURED — expected. In production with a real key, operator will get precise stage where drop occurs.",
+  "rca_of_issue": "Investigation, not a bug fix. LIVE ingestion pipeline itself works — the new unit tests (test_live_ingestion_iter42) with monkey-patched httpx PROVE that a valid TwelveData response lands in market_price_cache with provider=twelvedata, source=LIVE, and correct price (2349.75 for XAU/USD). Any prod-observed drop is now diagnosable via the new debug endpoint's 9-stage trace + verdict code, without needing to ssh into containers. Fixes shipped: (1) structured INFO logs in twelvedata._fetch_quotes / manager.refresh_once / manager._choose_provider — visible in backend.err.log. (2) NEW GET /api/market/debug/xauusd endpoint returning per-stage envelope with redacted secrets. (3) try/finally teardown in test_refresh_interval_set_and_clamps restores refresh_interval_sec=60."
+}

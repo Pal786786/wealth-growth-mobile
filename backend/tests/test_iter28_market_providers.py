@@ -331,30 +331,37 @@ class TestAdminControls:
         assert s["auto_fallback"] is True
 
     def test_refresh_interval_set_and_clamps(self, admin_headers):
-        # Normal
-        r = requests.put(f"{BASE_URL}/api/market_providers/refresh-interval",
-                         json={"seconds": 20}, headers=admin_headers, timeout=10)
-        assert r.status_code == 200
-        s = requests.get(f"{BASE_URL}/api/market_providers/status",
-                         headers=admin_headers, timeout=10).json()
-        assert s["refresh_interval_sec"] == 20
-        # Upper clamp 300
-        r = requests.put(f"{BASE_URL}/api/market_providers/refresh-interval",
-                         json={"seconds": 999}, headers=admin_headers, timeout=10)
-        assert r.status_code == 200
-        s = requests.get(f"{BASE_URL}/api/market_providers/status",
-                         headers=admin_headers, timeout=10).json()
-        assert s["refresh_interval_sec"] == 300
-        # Lower clamp 5
-        r = requests.put(f"{BASE_URL}/api/market_providers/refresh-interval",
-                         json={"seconds": 1}, headers=admin_headers, timeout=10)
-        assert r.status_code == 200
-        s = requests.get(f"{BASE_URL}/api/market_providers/status",
-                         headers=admin_headers, timeout=10).json()
-        assert s["refresh_interval_sec"] == 5
-        # Restore to 60
-        requests.put(f"{BASE_URL}/api/market_providers/refresh-interval",
-                     json={"seconds": 60}, headers=admin_headers, timeout=10)
+        try:
+            # Normal
+            r = requests.put(f"{BASE_URL}/api/market_providers/refresh-interval",
+                             json={"seconds": 20}, headers=admin_headers, timeout=10)
+            assert r.status_code == 200
+            s = requests.get(f"{BASE_URL}/api/market_providers/status",
+                             headers=admin_headers, timeout=10).json()
+            assert s["refresh_interval_sec"] == 20
+            # Upper clamp 300
+            r = requests.put(f"{BASE_URL}/api/market_providers/refresh-interval",
+                             json={"seconds": 999}, headers=admin_headers, timeout=10)
+            assert r.status_code == 200
+            s = requests.get(f"{BASE_URL}/api/market_providers/status",
+                             headers=admin_headers, timeout=10).json()
+            assert s["refresh_interval_sec"] == 300
+            # Lower clamp 5
+            r = requests.put(f"{BASE_URL}/api/market_providers/refresh-interval",
+                             json={"seconds": 1}, headers=admin_headers, timeout=10)
+            assert r.status_code == 200
+            s = requests.get(f"{BASE_URL}/api/market_providers/status",
+                             headers=admin_headers, timeout=10).json()
+            assert s["refresh_interval_sec"] == 5
+        finally:
+            # Sprint 14.1.2 — ALWAYS restore to 60 so subsequent test files
+            # (and the running loop) don't inherit a clamped 5s cadence and
+            # exhaust free-tier credits.
+            try:
+                requests.put(f"{BASE_URL}/api/market_providers/refresh-interval",
+                             json={"seconds": 60}, headers=admin_headers, timeout=10)
+            except Exception:
+                pass
 
     def test_api_key_set_and_invalid_provider(self, admin_headers):
         # Set fake TD key

@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 from .base import Provider, Quote, RateLimitError, ProviderNotConfigured
@@ -258,11 +258,16 @@ class TwelveDataProvider(Provider):
     # -------- fetch -------- #
     async def _fetch_quotes(self, symbols: List[str]) -> Dict[str, Quote]:
         if not self._api_key:
+            logger.info("TD._fetch_quotes: NOT CONFIGURED (empty api key) — raising ProviderNotConfigured")
             raise ProviderNotConfigured("TWELVEDATA_API_KEY not set")
 
         # Guard: don't hammer the API while in backoff
         if self.is_backed_off():
             remaining = self.backoff_remaining_sec()
+            logger.info(
+                "TD._fetch_quotes: BACKED OFF (step=%d, %ds remaining) — raising RateLimitError",
+                self._backoff_step, remaining,
+            )
             raise RateLimitError(
                 f"backoff active — {remaining}s remaining "
                 f"(step {self._backoff_step}, next attempt at "
@@ -275,16 +280,27 @@ class TwelveDataProvider(Provider):
         seen: Dict[str, None] = {}
         td_syms_unique = [s for s in td_syms if not (s in seen or seen.setdefault(s, None))]
         params = {"symbol": ",".join(td_syms_unique), "apikey": self._api_key}
+        logger.info(
+            "TD._fetch_quotes → GET /quote  canon=%s  td_syms_unique=%s  (n=%d, credits_left_min=%s, daily=%s)",
+            canon, td_syms_unique, len(td_syms_unique),
+            self._credits_left_minute, self._credits_left_daily,
+        )
 
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 r = await client.get(f"{BASE_URL}/quote", params=params)
         except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as e:
             # Network-level failure — let manager count toward circuit breaker
+            logger.warning("TD._fetch_quotes: network error %s: %s", type(e).__name__, e)
             raise Exception(f"twelvedata network error: {type(e).__name__}: {e}")
 
         # Update credit trackers from headers regardless of status
         self._parse_credit_headers(r)
+        logger.info(
+            "TD._fetch_quotes ← HTTP %d  bytes=%d  credits_left_min=%s  daily=%s",
+            r.status_code, len(r.content),
+            self._credits_left_minute, self._credits_left_daily,
+        )
 
         # HTTP-level 429
         if r.status_code == 429:
@@ -309,6 +325,11 @@ class TwelveDataProvider(Provider):
         # {"code": 401, "message": "You did not specify a valid api key.", "status": "error"}
         if isinstance(data, dict) and data.get("status") == "error" and "symbol" not in data:
             msg = str(data.get("message", ""))
+            logger.warning(
+                "TD._fetch_quotes: GLOBAL error status=error code=%s msg=%s (batch=%s) — "
+                "this fails the entire batch and will cause manager to fall back",
+                data.get("code"), msg[:150], td_syms_unique,
+            )
             if "credit" in msg.lower() or "limit" in msg.lower() or "429" in msg:
                 self._trigger_backoff(f"error message rate-limit: {msg[:60]}")
                 raise RateLimitError(msg)
@@ -316,6 +337,7 @@ class TwelveDataProvider(Provider):
 
         # Successful response — parse quotes
         out: Dict[str, Quote] = {}
+        drops: List[Dict[str, Any]] = []
 
         # Batch response is dict[td_symbol → payload] OR (single symbol) a flat payload
         if isinstance(data, dict) and "symbol" in data and "close" in data:
@@ -324,6 +346,7 @@ class TwelveDataProvider(Provider):
         for i, td_sym in enumerate(td_syms):
             payload = data.get(td_sym) if isinstance(data, dict) else None
             if not payload:
+                drops.append({"canon": canon[i], "td_sym": td_sym, "reason": "no payload in response"})
                 continue
             if payload.get("status") == "error":
                 msg = (payload.get("message") or "").lower()
@@ -331,10 +354,14 @@ class TwelveDataProvider(Provider):
                     # Per-symbol rate-limit → treat as global 429
                     self._trigger_backoff(f"per-symbol RL: {msg[:60]}")
                     raise RateLimitError(payload.get("message", "rate limit"))
+                drops.append({"canon": canon[i], "td_sym": td_sym,
+                              "reason": f"per-symbol error: {msg[:80]}"})
                 continue
             try:
                 price = float(payload["close"])
-            except (KeyError, ValueError, TypeError):
+            except (KeyError, ValueError, TypeError) as _e:
+                drops.append({"canon": canon[i], "td_sym": td_sym,
+                              "reason": f"unparseable close: {type(_e).__name__}"})
                 continue
             change_pct = None
             try:
@@ -346,6 +373,10 @@ class TwelveDataProvider(Provider):
                 change_pct=change_pct, provider=self.name, raw=payload,
             )
 
+        logger.info(
+            "TD._fetch_quotes done: parsed=%d/%d  drops=%s",
+            len(out), len(canon), drops[:8],
+        )
         # Successful call → clear any backoff
         if out:
             self._reset_backoff(reason="success")

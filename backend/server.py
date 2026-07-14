@@ -1143,7 +1143,11 @@ except Exception as _e:
 # ------ Sprint 7.5: Live Market Providers (TwelveData → Alpha Vantage → Mock with auto-fallback) ------
 try:
     import market_providers as _market_providers
-    _market_providers.attach(app, db=db, get_current_admin=admin_module.get_current_admin)
+    _market_providers.attach(
+        app, db=db,
+        get_current_admin=admin_module.get_current_admin,
+        log_action=admin_module._log_action,
+    )
     # Sprint 14.1.1 — bridge the shared price manager into the forex feed so
     # order execution + UI + mark-to-market + chart + watchlist all read the
     # SAME live quote object.

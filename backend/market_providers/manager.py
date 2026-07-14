@@ -199,9 +199,22 @@ class ProviderManager:
             self._last_refresh_error = "no providers available"
             return {"provider": None, "count": 0, "error": self._last_refresh_error}
         _visited.add(chosen.name)
+        logger.info(
+            "refresh_once: chose provider=%s (visited=%s, universe_size=%d)",
+            chosen.name, sorted(_visited), len(self.universe),
+        )
         try:
             quotes = await chosen.fetch_quotes(self.universe)
+            logger.info(
+                "refresh_once: provider=%s FETCHED %d/%d quotes  (missing=%s)",
+                chosen.name, len(quotes), len(self.universe),
+                sorted(set(self.universe) - set(quotes.keys()))[:8],
+            )
             write_result = await self.cache.put_many(quotes)
+            logger.info(
+                "refresh_once: provider=%s cache.put_many → accepted=%d rejected=%d",
+                chosen.name, write_result.get("accepted", 0), write_result.get("rejected", 0),
+            )
             # Sprint 7.5: also push to in-process memo so sync consumers
             # (ai_intelligence.feed / TA / signals) can read live prices
             # without an async round-trip.
@@ -276,13 +289,18 @@ class ProviderManager:
             if p.name in exclude:
                 continue
             if self._breakers[p.name].open:
+                logger.info("_choose_provider: SKIP %s — circuit breaker OPEN", p.name)
                 continue
             if p.is_backed_off():
+                logger.info("_choose_provider: SKIP %s — backed off %ds", p.name, p.backoff_remaining_sec())
                 continue
             try:
                 if await p.is_configured():
                     return p
-            except Exception:
+                else:
+                    logger.info("_choose_provider: SKIP %s — not configured (no api key)", p.name)
+            except Exception as _e:
+                logger.info("_choose_provider: SKIP %s — is_configured raised %s", p.name, _e)
                 continue
         # Ultimate fallback: mock always works (unless already visited)
         m = self._by_name.get("mock")

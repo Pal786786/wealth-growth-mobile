@@ -110,6 +110,18 @@ user_problem_statement: |
   key is missing, the integration auto-falls-back to demo data — no errors shown.
 
 backend:
+  - task: "Sprint 14.1.2 — LIVE quote ingestion trace + debug endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/market_providers/twelvedata.py, /app/backend/market_providers/manager.py, /app/backend/market_providers/debug_routes.py, /app/backend/market_providers/__init__.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Added structured INFO-level trace logging in TwelveData._fetch_quotes (canonical→provider symbol mapping, HTTP status, credits-left headers, per-symbol drop reasons, global-batch-error visibility) and in ProviderManager (which provider was chosen, why others were skipped, fetched count vs universe, cache accepted/rejected). New endpoint GET /api/market/debug/xauusd (also /api/market/debug/quote?symbol=X): super_admin only, gated by MARKET_DEBUG_ENABLED env flag, dry_run=true by default, returns 9-stage trace (locate_provider → read_db_config → symbol_map → http_fetch → json_parse → provider_parse → cache_write → mongo_read → recent_writes) with verdict codes (OK_WRITTEN / REJECTED_BY_GUARD / NOT_CONFIGURED / RATE_LIMITED / PARSER_DROPPED_SYMBOL / …). Response body is whitelist-redacted so provider keys can never leak. Every invocation logged to admin_audit as `market_debug_trace`. Also fixed flaky test_refresh_interval_set_and_clamps by wrapping in try/finally so cadence is always restored to 60s. New unit tests: test_live_ingestion_iter42.py (3) prove happy-path end-to-end via monkey-patched httpx (TwelveData → cache → Mongo doc with provider=twelvedata, guard rejects mock overwrite, partial-batch errors don't kill valid quotes). New contract tests: test_market_debug_ingestion_iter42.py (8) verify auth (401/403), feature-flag (404 off), 9-stage envelope, key-leak protection, dry_run safety, audit-trail write. All 76 market-related tests green locally."
+
   - task: "API Settings registry + CRUD endpoints (api_settings.py)"
     implemented: true
     working: true
@@ -165,10 +177,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "API Settings registry + CRUD endpoints (api_settings.py)"
-    - "Refactor Stripe & Alpha Vantage to use centralized api_settings"
-    - "Admin: API Management page + nav + global demo banner"
-    - "Mobile: Demo Mode banner on Home"
+    - "Sprint 14.1.2 — LIVE quote ingestion trace + debug endpoint"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
