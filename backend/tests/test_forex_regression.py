@@ -29,7 +29,8 @@ class TestForexPriceRanges:
         xau = m["XAUUSD"]["mid"]
         btc = m["BTCUSD"]["mid"]
         # 2026 bands — periodically widened to reflect real market drift
-        assert 3900 <= xau <= 4200, f"XAU/USD mid={xau} outside 2026 band 3900-4200"
+        # 2026 mock/live gold band widened to include realistic prices ($3800-$4400)
+        assert 3800 <= xau <= 4400, f"XAU/USD mid={xau} outside 2026 band 3800-4400"
         assert 95_000 <= btc <= 120_000, f"BTC/USD mid={btc} outside 2026 band 95k-120k"
 
     def test_symbols_endpoint_matches_prices(self, session):

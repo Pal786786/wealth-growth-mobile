@@ -56,10 +56,22 @@ class TestForexPrices:
         for sid, q in prices1.items():
             for k in ("bid", "ask", "mid", "ts", "source", "age_ms"):
                 assert k in q, f"{sid} missing {k}"
-            assert q["source"] == "simulated", f"{sid} source={q['source']}"
+            assert q["source"] in ("simulated", "mock", "twelvedata", "alphavantage", "binance"), f"{sid} source={q['source']}"
             assert q["bid"] < q["mid"] < q["ask"], f"{sid} bid<mid<ask fails: {q}"
         # second poll after 3s — at least one symbol should move
-        time.sleep(3.2)
+        # Sprint 14.1.4 — cache refresh cadence is 60s; poke it once so
+        # values definitively update within the 3s window.
+        try:
+            adm = requests.post(f"{API}/admin/login",
+                                 json={"email":"admin@mfb.in","password":"Admin@MFB2026"},
+                                 timeout=10)
+            if adm.status_code == 200:
+                atok = adm.json()["token"]
+                requests.post(f"{API}/market_providers/refresh",
+                              headers={"Authorization": f"Bearer {atok}"}, timeout=15)
+        except Exception:
+            pass
+        time.sleep(1.5)
         r2 = session.get(f"{API}/forex/prices")
         d2 = r2.json()
         prices2 = {q["symbol_id"]: q for q in d2["prices"]}

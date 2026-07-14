@@ -145,14 +145,24 @@ class TestRealtimeUpdates:
             snap1 = requests.get(f"{API}/forex/positions?status=open",
                                  headers=demo_headers).json()
             p1 = next(p for p in snap1 if p["position_id"] == pos_id)
-            time.sleep(3.5)
+            # Sprint 14.1.4 — the ONE refresher runs on 60s cadence, so poke it
+            # via the admin refresh endpoint to guarantee a fresh mock tick
+            # within the test window.
+            admin_login = requests.post(f"{API}/admin/login",
+                                         json={"email":"admin@mfb.in","password":"Admin@MFB2026"},
+                                         timeout=10)
+            if admin_login.status_code == 200:
+                atok = admin_login.json()["token"]
+                requests.post(f"{API}/market_providers/refresh",
+                              headers={"Authorization": f"Bearer {atok}"}, timeout=15)
+            time.sleep(2.0)
             snap2 = requests.get(f"{API}/forex/positions?status=open",
                                  headers=demo_headers).json()
             p2 = next(p for p in snap2 if p["position_id"] == pos_id)
             # current_price should change (random walk) OR pnl should update
             changed = (p1.get("current_price") != p2.get("current_price")) or \
                       (p1.get("pnl_inr") != p2.get("pnl_inr"))
-            assert changed, "current_price/pnl_inr unchanged over 3.5s"
+            assert changed, "current_price/pnl_inr unchanged after admin refresh"
         finally:
             requests.post(f"{API}/forex/positions/{pos_id}/close", headers=demo_headers)
 

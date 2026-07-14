@@ -126,9 +126,12 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
         feed = _feed
         if not feed:
             raise HTTPException(503, "feed not running")
+        # Sprint 14.1.4 — one call to the SHARED market_price_cache; no
+        # per-symbol simulation, no per-symbol polling.
+        all_q = await feed.get_all_quotes()
         out = []
         for spec in SYMBOLS:
-            q = feed.get_quote(spec["id"])
+            q = all_q.get(spec["id"])
             if not q:
                 continue
             out.append({**q.to_dict(), "display": spec["display"], "price_decimals": spec["price_decimals"]})
@@ -144,7 +147,7 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
         sym_id = symbol_id.upper()
         if sym_id not in SYMBOL_INDEX:
             raise HTTPException(404, "unknown symbol")
-        pts = feed.get_history(sym_id, limit=min(max(limit, 10), 300))
+        pts = await feed.get_history(sym_id, limit=min(max(limit, 10), 300))
         return {
             "symbol_id": sym_id,
             "points": pts,

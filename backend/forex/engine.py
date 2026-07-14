@@ -122,7 +122,7 @@ class TradingEngine:
         if lot_size < min_lot or lot_size > max_lot:
             raise ValueError(f"lot_size must be between {min_lot} and {max_lot}")
 
-        q = self.feed.get_quote(symbol_id)
+        q = await self.feed.get_quote(symbol_id)
         if not q:
             raise ValueError("No live price for symbol")
         entry = q.ask if side == "buy" else q.bid
@@ -185,7 +185,7 @@ class TradingEngine:
         if pos["status"] != "open":
             raise ValueError("Position is not open")
         spec = SYMBOL_INDEX.get(pos["symbol_id"])
-        q = self.feed.get_quote(pos["symbol_id"])
+        q = await self.feed.get_quote(pos["symbol_id"])
         if not q or not spec:
             raise ValueError("No live price for symbol")
         # Closing a buy uses bid; closing a sell uses ask
@@ -246,23 +246,28 @@ class TradingEngine:
         pos = await self.db.forex_positions.find_one({"position_id": position_id, "user_id": user_id})
         if not pos:
             raise ValueError("Position not found")
-        return self._enrich(pos)
+        return await self._enrich(pos)
 
     async def list_positions(self, user_id: str, status: str = "open", limit: int = 200) -> List[Dict[str, Any]]:
         cur = self.db.forex_positions.find(
             {"user_id": user_id, "status": status}
         ).sort("opened_at", -1).limit(limit)
-        return [self._enrich(d) async for d in cur]
+        out: List[Dict[str, Any]] = []
+        async for d in cur:
+            out.append(await self._enrich(d))
+        return out
 
     async def list_history(self, user_id: str, limit: int = 200) -> List[Dict[str, Any]]:
         cur = self.db.forex_history.find({"user_id": user_id}).sort("ts", -1).limit(limit)
         return [_serialize(d) async for d in cur]
 
-    def _enrich(self, pos: Dict[str, Any]) -> Dict[str, Any]:
-        """Add live price and current P&L for open positions."""
+    async def _enrich(self, pos: Dict[str, Any]) -> Dict[str, Any]:
+        """Add live price and current P&L for open positions.
+        Sprint 14.1.4 — now async; reads from unified ProviderManager cache
+        via the shared PriceFeed adapter."""
         out = _serialize(pos)
         if out["status"] == "open":
-            q = self.feed.get_quote(pos["symbol_id"])
+            q = await self.feed.get_quote(pos["symbol_id"])
             spec = SYMBOL_INDEX.get(pos["symbol_id"])
             if q and spec:
                 live_close = q.bid if pos["side"] == "buy" else q.ask
@@ -289,7 +294,7 @@ class TradingEngine:
         """Mark all open positions to market and trigger TP/SL."""
         cur = self.db.forex_positions.find({"status": "open"})
         async for pos in cur:
-            q = self.feed.get_quote(pos["symbol_id"])
+            q = await self.feed.get_quote(pos["symbol_id"])
             spec = SYMBOL_INDEX.get(pos["symbol_id"])
             if not q or not spec:
                 continue
