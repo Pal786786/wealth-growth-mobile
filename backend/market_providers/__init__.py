@@ -11,6 +11,7 @@ from .manager import ProviderManager
 from .routes import attach as _attach_routes
 from .debug_routes import attach as _attach_debug_routes
 from . import key_store  # noqa: F401  — re-exported for legacy shadow writers
+from . import write_tracer as _write_tracer
 
 logger = logging.getLogger("market_providers")
 
@@ -54,6 +55,16 @@ async def propagate_api_key(provider: str, key: str) -> bool:
 def attach(app, db, get_current_admin, log_action=None):
     global _manager
     _manager = ProviderManager(db)
+    # Sprint 14.1.2c — install write-audit tracer BEFORE the manager starts.
+    # This captures every write to the 5 sensitive collections so we can
+    # forensically prove which caller/endpoint mutated a key.
+    try:
+        _write_tracer.install(db)
+        _write_tracer.attach_endpoint_context_middleware(app)
+        app.include_router(_write_tracer.build_router(db, get_current_admin))
+    except Exception as _e:      # pragma: no cover
+        logger.warning("write_tracer installation failed: %s", _e)
+
     router = _attach_routes(app, _manager, get_current_admin)
     _attach_debug_routes(app, _manager, get_current_admin, log_action=log_action)
 
