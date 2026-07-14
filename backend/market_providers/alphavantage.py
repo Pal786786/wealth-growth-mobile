@@ -61,14 +61,28 @@ class AlphaVantageProvider(Provider):
                     q = await self._fetch_one(client, sym_u)
                     if q:
                         out[sym_u] = q
+                    else:
+                        logger.info("AV %s: parser returned no quote", sym_u)
                 except RateLimitError:
                     raise
                 except Exception as e:
-                    logger.debug("AV %s failed: %s", sym_u, e)
+                    logger.info("AV %s failed: %s", sym_u, e)
                     continue
+        logger.info("AV._fetch_quotes done: parsed=%d/%d", len(out), len(symbols))
         return out
 
     async def _fetch_one(self, client: httpx.AsyncClient, sym: str) -> Quote | None:
+        def _rl_check(data: dict) -> None:
+            """AV signals rate-limit in three different fields — check all."""
+            for k in ("Note", "Information"):
+                if isinstance(data, dict) and k in data:
+                    raise RateLimitError(str(data[k])[:200])
+
+        def _err_check(data: dict) -> None:
+            """AV signals unsupported symbol / bad request in Error Message."""
+            if isinstance(data, dict) and data.get("Error Message"):
+                raise Exception(f"AV rejected: {data['Error Message'][:120]}")
+
         if sym in FX_PAIRS:
             frm, to = FX_PAIRS[sym]
             r = await client.get(BASE_URL, params={
@@ -77,9 +91,9 @@ class AlphaVantageProvider(Provider):
             })
             r.raise_for_status()
             data = r.json()
+            _rl_check(data)
+            _err_check(data)
             block = data.get("Realtime Currency Exchange Rate") or {}
-            if "Note" in data:
-                raise RateLimitError(data["Note"])
             try:
                 price = float(block.get("5. Exchange Rate"))
             except (TypeError, ValueError):
@@ -95,9 +109,9 @@ class AlphaVantageProvider(Provider):
             })
             r.raise_for_status()
             data = r.json()
+            _rl_check(data)
+            _err_check(data)
             block = data.get("Realtime Currency Exchange Rate") or {}
-            if "Note" in data:
-                raise RateLimitError(data["Note"])
             try:
                 price = float(block.get("5. Exchange Rate"))
             except (TypeError, ValueError):
@@ -110,8 +124,8 @@ class AlphaVantageProvider(Provider):
             })
             r.raise_for_status()
             data = r.json()
-            if "Note" in data:
-                raise RateLimitError(data["Note"])
+            _rl_check(data)
+            _err_check(data)
             block = data.get("Global Quote") or {}
             try:
                 price = float(block.get("05. price"))

@@ -97,6 +97,96 @@ def attach(app, manager, get_current_admin, log_action=None):
             logger.warning("audit log failed: %s", _e)
 
     # -------------------------------------------------------------------- #
+    # /api/market/debug/config
+    # -------------------------------------------------------------------- #
+    @r.get("/config")
+    async def debug_config(admin=Depends(get_current_admin)):
+        """Diagnostic view of the runtime → Mongo → provider wiring.
+        NEVER exposes API keys. Answers "which DB / which collection / which
+        provider status is this backend actually using?".
+        """
+        _require_super(admin)
+        import os as _os
+        # DB identity
+        db = manager.db
+        db_name = getattr(db, "name", "?")
+        client = getattr(db, "client", None)
+        addr = "?"
+        try:
+            if client is not None:
+                addr = str(client.address) if getattr(client, "address", None) else str(client.nodes)
+        except Exception:
+            pass
+
+        # Fingerprint every place a market API key can live (values redacted).
+        from . import key_store as _ks
+        key_locations: list[dict] = []
+
+        async def _snapshot(coll: str, flt: dict, path: str, provider_hint: str) -> None:
+            try:
+                d = await db[coll].find_one(flt)
+            except Exception as _e:
+                key_locations.append({
+                    "collection": coll, "filter": flt, "path": path,
+                    "provider_hint": provider_hint,
+                    "error": f"{type(_e).__name__}: {_e}",
+                })
+                return
+            v = _ks._get_nested(d, path) if d else None
+            key_locations.append({
+                "collection":   coll,
+                "filter":       flt,
+                "path":         path,
+                "provider_hint": provider_hint,
+                "present":      bool(v),
+                "length":       len(v) if v else 0,
+                "fingerprint":  (v[:4] + "…" + v[-2:]) if v and len(v) > 6 else None,
+            })
+
+        # Canonical
+        await _snapshot(_ks.CANONICAL_COLL, {"_id": _ks.CANONICAL_ID},
+                        "twelvedata_api_key",  "twelvedata (CANONICAL)")
+        await _snapshot(_ks.CANONICAL_COLL, {"_id": _ks.CANONICAL_ID},
+                        "alphavantage_api_key", "alphavantage (CANONICAL)")
+        # Legacy chain
+        for prov, chain in _ks.LEGACY_LOCATIONS.items():
+            for coll, flt, path in chain:
+                await _snapshot(coll, flt, path, f"{prov} (legacy)")
+
+        # Provider runtime state
+        providers_state = []
+        for p in manager.providers:
+            entry = {
+                "name":          p.name,
+                "priority":      getattr(p, "priority", None),
+                "configured":    await p.is_configured(),
+                "circuit_open":  manager._breakers[p.name].open,
+                "backed_off":    p.is_backed_off(),
+                "backoff_state": p.backoff_state() if hasattr(p, "backoff_state") else None,
+            }
+            fp = getattr(p, "_api_key", "")
+            entry["api_key_fingerprint"] = (fp[:4] + "…" + fp[-2:]) if fp and len(fp) > 6 else None
+            providers_state.append(entry)
+
+        return {
+            "runtime": {
+                "mongo_url_env_present": bool(_os.environ.get("MONGO_URL")),
+                "mongo_host":            addr,
+                "db_name":               db_name,
+                "db_name_env":           _os.environ.get("DB_NAME"),
+                "market_debug_enabled":  _is_debug_enabled(),
+                "canonical_collection":  _ks.CANONICAL_COLL,
+                "canonical_id":          _ks.CANONICAL_ID,
+                "backend_pid":           _os.getpid(),
+                "hostname":              _os.uname().nodename,
+            },
+            "key_locations":   key_locations,
+            "providers_state": providers_state,
+            "universe":        manager.universe,
+            "refresh_interval_sec": manager.refresh_interval_sec,
+        }
+
+    # -------------------------------------------------------------------- #
     # /api/market/debug/xauusd     (shorthand)
     # -------------------------------------------------------------------- #
     @r.get("/xauusd")

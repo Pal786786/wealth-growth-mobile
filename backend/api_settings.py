@@ -68,6 +68,18 @@ API_CATALOG: List[Dict[str, Any]] = [
         "test_kind": "alpha_vantage",
     },
     {
+        # Sprint 14.1.2c — canonical registry entry for TwelveData, wired
+        # to the same ProviderManager as the "Live Market" admin page.
+        # Saving here shadow-writes into market_provider_config and
+        # live-propagates to the running provider.
+        "api_name": "twelvedata",
+        "display_name": "TwelveData (Live Forex + Metals)",
+        "category": "investments",
+        "description": "Real-time XAU/USD, EUR/USD and other FX / metals quotes.",
+        "fields": ["api_key"],
+        "test_kind": "twelvedata",
+    },
+    {
         "api_name": "mutual_fund",
         "display_name": "Mutual Fund Data API",
         "category": "investments",
@@ -299,6 +311,24 @@ async def update_api(api_name: str, req: ApiUpsertReq, admin=Depends(get_current
         base["force_demo"] = req.force_demo
     base["updated_at"] = _now()
     await _db.api_settings.update_one({"api_name": api_name}, {"$set": base}, upsert=True)
+    # Sprint 14.1.2c — When saving a market-provider key on the API
+    # Management page, propagate it to the canonical `market_provider_config`
+    # collection AND push it into the LIVE ProviderManager immediately.
+    # Otherwise the key would be persisted here but the running manager
+    # (which reads from market_provider_config) would never see it.
+    _provider_for_apiname = {
+        "twelvedata":   "twelvedata",
+        "stock_market": "alphavantage",   # legacy card label — same key
+        "alphavantage": "alphavantage",
+    }
+    _prov = _provider_for_apiname.get(api_name)
+    if _prov and base.get("api_key"):
+        try:
+            from market_providers import key_store as _ks, propagate_api_key as _prop
+            await _ks.canonical_write(_db, _prov, base["api_key"])
+            await _prop(_prov, base["api_key"])
+        except Exception:
+            pass
     await _log_action(admin["admin_id"], "api_settings.update", target=api_name, meta={
         "is_enabled": base.get("is_enabled"),
         "force_demo": base.get("force_demo"),
@@ -326,6 +356,23 @@ async def test_connection(api_name: str, admin=Depends(get_current_admin)):
 
     kind = doc.get("test_kind", "noop")
     try:
+        if kind == "twelvedata":
+            async with httpx.AsyncClient(timeout=8) as http:
+                r = await http.get("https://api.twelvedata.com/quote",
+                                   params={"symbol": "EUR/USD", "apikey": key})
+                data = r.json() or {}
+            if isinstance(data, dict) and data.get("close"):
+                return {"ok": True, "mode": "live",
+                        "message": f"TwelveData authenticated. EUR/USD close={data.get('close')}"}
+            if isinstance(data, dict) and data.get("status") == "error":
+                msg = data.get("message", "")
+                if "credit" in msg.lower() or "limit" in msg.lower():
+                    return {"ok": False, "mode": "demo",
+                            "message": f"TwelveData rate limited: {msg[:120]}"}
+                return {"ok": False, "mode": "demo",
+                        "message": f"TwelveData rejected key: {msg[:120]}"}
+            return {"ok": False, "mode": "demo",
+                    "message": "TwelveData returned no quote — check key."}
         if kind == "alpha_vantage":
             async with httpx.AsyncClient(timeout=8) as http:
                 r = await http.get(
