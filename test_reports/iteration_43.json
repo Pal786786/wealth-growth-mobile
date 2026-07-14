@@ -1,0 +1,37 @@
+{
+  "summary": "Sprint 14.1.5 — ProviderManager refresh loop diagnostic surface — VERIFIED end-to-end. All three new fields (refresh_running, refresh_healthy, seconds_since_last_refresh) present in GET /api/market_providers/status and correctly populated on a healthy backend. refresh_interval_sec=60 still returned (no regression). Loop-liveness proven two ways: (a) counter advances by ~5s over an 8s wall-clock window when loop hasn't fired, and (b) last_refresh_at changes within a 70s window with counter resetting to <10s. Manual POST /api/market_providers/refresh returns 200 with provider=mock, count=20; seconds_since_last_refresh<3 immediately after. Cache freshness confirmed via direct Mongo read on market_price_cache.XAUUSD — updated_at within ~1s of forced refresh, provider=mock. All 13 required regression suites GREEN (202 passed, 1 skipped, 0 failed). Additive fields — no key removed from status response.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sprint_1415_refresh_loop_diagnostics.py",
+    "/app/test_reports/pytest/iter43_sprint1415_diagnostics.xml",
+    "/app/test_reports/pytest/iter43_sprint1415_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "manager.py::get_status() implementation is clean: refresh_running derived from self._task.done(); refresh_healthy uses 1.5×interval tolerance which is sensible; seconds_since_last_refresh rounded to 1 decimal for readability. All three fields are correctly None-safe when _last_refresh has never fired.",
+    "The refresh loop (lines 198-206) is now correctly resilient: broad except-Exception guard + asyncio.sleep OUTSIDE the try means a transient exception cannot silently kill the task. asyncio.CancelledError is re-raised so stop() still works. Solid.",
+    "Suggestion (non-blocking): consider also exposing `refresh_task_exception` (str|None) surfaced from `self._task.exception()` when the task is done-but-crashed — would help distinguish 'never ran' from 'crashed at startup' in future post-mortems.",
+    "market_status.reason string already surfaces refresh_interval_sec — good UX foundation for the admin label rewrite."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint_1415_refresh_loop_diagnostics.py (NEW — 12 tests covering new diagnostic fields, loop liveness, manual refresh, cache freshness, no-regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 new diagnostic tests + 202/203 required regression tests = 214 pass, 1 skip, 0 fail)",
+    "frontend": "N/A (skipped per request)"
+  },
+  "seed_data_creation": "None. Tests are read-only against live prod-mirror backend + trigger POST /market_providers/refresh which only writes mock quotes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 14.1.5 diagnostic fields are stable and observable via GET /api/market_providers/status. On a healthy backend: refresh_running=true, refresh_healthy=true, seconds_since_last_refresh oscillates 0..60. Full regression suite for market provider stack (13 files, 203 tests) remains green. Admin CacheTab label change was on frontend — NOT verified here per BACKEND-ONLY scope.",
+  "rca_of_issue": "User's original observation (cache 17920s old + provider=MOCK + label 'refreshes every 3s'). Actual root cause: (a) '3s' was React-Query poll cadence, not backend cadence — genuinely misleading; (b) 'stale cache' was because backend process had been restarted while user was still looking at the tab — the running instance's _last_refresh only gets bumped after a real refresh writes to cache post-restart. Fix applied by E1 (verified): status endpoint now exposes refresh_running (task alive?), refresh_healthy (fired within 1.5×interval?), and seconds_since_last_refresh (exact age). Verification proof: (1) fresh /status shows seconds_since_last_refresh=20.1 and refresh_healthy=true; (2) sleep+recheck shows counter advancing; (3) manual refresh → counter resets to <1s; (4) Mongo XAUUSD.updated_at matches (within 1s) and provider=mock. Loop is provably alive and cadence is 60s — earlier '3s' claim was a UI-labelling bug, not a backend timing bug."
+}

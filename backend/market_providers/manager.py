@@ -401,6 +401,19 @@ class ProviderManager:
             fallback = await self._choose_provider()
             active = fallback.name if fallback else None
         market_status = await self._market_status()
+        # Sprint 14.1.5 — expose loop-liveness for admin diagnostics
+        now = datetime.now(timezone.utc)
+        seconds_since_last_refresh = (
+            (now - self._last_refresh).total_seconds() if self._last_refresh else None
+        )
+        refresh_running = bool(self._task and not self._task.done())
+        # Loop is considered "healthy" if a refresh happened within
+        # 1.5 × refresh_interval_sec.
+        refresh_healthy = bool(
+            refresh_running
+            and seconds_since_last_refresh is not None
+            and seconds_since_last_refresh < self.refresh_interval_sec * 1.5
+        )
         return {
             "active_provider": active,
             "last_active_provider": self._last_active_provider,
@@ -410,6 +423,9 @@ class ProviderManager:
             "last_refresh_at": self._last_refresh.isoformat() if self._last_refresh else None,
             "last_refresh_error": self._last_refresh_error,
             "refresh_interval_sec": self.refresh_interval_sec,
+            "refresh_running":              refresh_running,
+            "refresh_healthy":              refresh_healthy,
+            "seconds_since_last_refresh":   round(seconds_since_last_refresh, 1) if seconds_since_last_refresh is not None else None,
             "auto_fallback": self._auto_fallback,
             "manual_provider": self._manual_provider,
             "universe": self.universe,

@@ -299,15 +299,37 @@ function CacheTab() {
     queryFn: async () => (await api.get("/market_providers/quotes")).data as { quotes: any[] },
     refetchInterval: 3000,
   });
+  // Sprint 14.1.5 — read engine cadence from status so the label is honest
+  const { data: status } = useQuery({
+    queryKey: ["market-status-cache-tab"],
+    queryFn: async () => (await api.get("/market_providers/status")).data as {
+      refresh_interval_sec?: number;
+      refresh_running?: boolean;
+      refresh_healthy?: boolean;
+      seconds_since_last_refresh?: number | null;
+    },
+    refetchInterval: 5000,
+  });
   const clear = useMutation({
     mutationFn: () => api.delete("/market_providers/cache"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["market-quotes"] }),
   });
 
+  const engineCadence = status?.refresh_interval_sec ?? "?";
+  const lastRefreshAgo = status?.seconds_since_last_refresh;
+  const engineHealthy = status?.refresh_healthy ?? true;
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs font-bold text-slate-500">{data?.quotes?.length ?? 0} SYMBOLS · refreshes every 3s</div>
+        <div className="text-xs font-bold text-slate-500">
+          {data?.quotes?.length ?? 0} SYMBOLS · admin UI polls every 3s · engine refreshes every {engineCadence}s
+          {lastRefreshAgo !== null && lastRefreshAgo !== undefined && (
+            <span className={engineHealthy ? "ml-2 text-green-600" : "ml-2 text-red-600"}>
+              · last {Math.round(lastRefreshAgo)}s ago {engineHealthy ? "✓" : "⚠ loop stalled"}
+            </span>
+          )}
+        </div>
         <button onClick={() => clear.mutate()}
           className="flex items-center gap-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg">
           <Trash2 className="w-3 h-3" /> Clear Cache
