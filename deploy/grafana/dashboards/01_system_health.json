@@ -1,0 +1,21 @@
+{
+  "title": "MFB — System Health",
+  "uid": "mfb-system-health",
+  "schemaVersion": 39,
+  "refresh": "15s",
+  "time": {"from": "now-3h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "stat", "title": "Backend Up", "gridPos": {"x":0,"y":0,"w":6,"h":4},
+      "targets": [{"expr": "up{service=\"backend\"}", "legendFormat": "backend"}]},
+    {"id": 2, "type": "stat", "title": "Uptime (s)", "gridPos": {"x":6,"y":0,"w":6,"h":4},
+      "targets": [{"expr": "time() - process_start_time_seconds{service=\"backend\"}"}]},
+    {"id": 3, "type": "gauge", "title": "CPU %", "gridPos": {"x":12,"y":0,"w":6,"h":4},
+      "targets": [{"expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)"}]},
+    {"id": 4, "type": "gauge", "title": "Memory %", "gridPos": {"x":18,"y":0,"w":6,"h":4},
+      "targets": [{"expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100"}]},
+    {"id": 5, "type": "timeseries", "title": "Requests/sec", "gridPos": {"x":0,"y":4,"w":12,"h":8},
+      "targets": [{"expr": "sum by (path) (rate(mfb_http_requests_total[1m]))", "legendFormat": "{{path}}"}]},
+    {"id": 6, "type": "timeseries", "title": "Disk usage %", "gridPos": {"x":12,"y":4,"w":12,"h":8},
+      "targets": [{"expr": "100 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"} * 100)"}]}
+  ]
+}

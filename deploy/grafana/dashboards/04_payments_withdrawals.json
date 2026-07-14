@@ -1,0 +1,19 @@
+{
+  "title": "MFB — Payments & Withdrawals",
+  "uid": "mfb-payments",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "Payments/sec by provider", "gridPos": {"x":0,"y":0,"w":12,"h":8},
+      "targets": [{"expr": "sum by (provider) (rate(mfb_payments_total[1m]))", "legendFormat": "{{provider}}"}]},
+    {"id": 2, "type": "timeseries", "title": "Withdrawals/sec by provider", "gridPos": {"x":12,"y":0,"w":12,"h":8},
+      "targets": [{"expr": "sum by (provider) (rate(mfb_withdrawals_total[1m]))", "legendFormat": "{{provider}}"}]},
+    {"id": 3, "type": "stat", "title": "Payment success %", "gridPos": {"x":0,"y":8,"w":8,"h":5},
+      "targets": [{"expr": "100 * sum(rate(mfb_payments_total{status=\"success\"}[5m])) / clamp_min(sum(rate(mfb_payments_total[5m])),0.001)"}]},
+    {"id": 4, "type": "stat", "title": "Withdrawal success %", "gridPos": {"x":8,"y":8,"w":8,"h":5},
+      "targets": [{"expr": "100 * sum(rate(mfb_withdrawals_total{status=\"success\"}[5m])) / clamp_min(sum(rate(mfb_withdrawals_total[5m])),0.001)"}]},
+    {"id": 5, "type": "stat", "title": "Failures (last 1h)", "gridPos": {"x":16,"y":8,"w":8,"h":5},
+      "targets": [{"expr": "sum(increase(mfb_payments_total{status=\"failed\"}[1h])) + sum(increase(mfb_withdrawals_total{status=\"failed\"}[1h]))"}]}
+  ]
+}

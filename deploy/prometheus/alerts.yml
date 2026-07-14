@@ -1,0 +1,102 @@
+# ==============================================================================
+# My Funding Bank — Prometheus Alerting Rules
+# ==============================================================================
+groups:
+  - name: mfb.api
+    rules:
+      - alert: BackendDown
+        expr: up{service="backend"} == 0
+        for: 1m
+        labels: {severity: critical, team: platform}
+        annotations:
+          summary: "Backend service is DOWN ({{ $labels.instance }})"
+          description: "Prometheus cannot scrape backend for >1 minute."
+
+      - alert: HighAPILatencyP95
+        expr: histogram_quantile(0.95, sum(rate(mfb_http_request_duration_seconds_bucket[5m])) by (le, path)) > 1
+        for: 5m
+        labels: {severity: warning, team: backend}
+        annotations:
+          summary: "High p95 latency on {{ $labels.path }}"
+          description: "p95 > 1s for 5m on {{ $labels.path }}"
+
+      - alert: HighAPIErrorRate
+        expr: sum(rate(mfb_http_requests_total{status=~"5.."}[5m])) / sum(rate(mfb_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels: {severity: critical, team: backend}
+        annotations:
+          summary: "5xx error rate above 5%"
+
+  - name: mfb.business
+    rules:
+      - alert: ProviderOffline
+        expr: mfb_provider_up == 0
+        for: 3m
+        labels: {severity: warning, team: integrations}
+        annotations:
+          summary: "Provider {{ $labels.provider }} appears offline"
+
+      - alert: PaymentFailuresSurge
+        expr: sum(rate(mfb_payments_total{status="failed"}[5m])) > 0.5
+        for: 5m
+        labels: {severity: warning, team: payments}
+        annotations:
+          summary: "Payment failures spiking ({{ $value | printf \"%.2f\" }}/s)"
+
+      - alert: WithdrawalFailuresSurge
+        expr: sum(rate(mfb_withdrawals_total{status="failed"}[5m])) > 0.2
+        for: 5m
+        labels: {severity: warning, team: withdrawals}
+        annotations:
+          summary: "Withdrawal failure rate elevated"
+
+      - alert: FinanceCriticalAlerts
+        expr: sum(mfb_finance_alerts{severity="critical", status="active"}) > 0
+        for: 2m
+        labels: {severity: critical, team: finance}
+        annotations:
+          summary: "Active critical finance alerts: {{ $value }}"
+
+  - name: mfb.infra
+    rules:
+      - alert: MongoUnreachable
+        expr: mfb_mongo_ping_seconds == 0 or absent(mfb_mongo_ping_seconds)
+        for: 2m
+        labels: {severity: critical, team: platform}
+        annotations:
+          summary: "MongoDB ping unavailable"
+
+      - alert: MongoSlow
+        expr: mfb_mongo_ping_seconds > 0.5
+        for: 5m
+        labels: {severity: warning, team: db}
+        annotations:
+          summary: "Mongo ping > 500ms"
+
+      - alert: DiskSpaceHigh
+        expr: 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) > 80
+        for: 10m
+        labels: {severity: warning, team: platform}
+        annotations:
+          summary: "Disk usage > 80% ({{ $value | printf \"%.0f\" }}%)"
+
+      - alert: DiskSpaceCritical
+        expr: 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) > 90
+        for: 5m
+        labels: {severity: critical, team: platform}
+        annotations:
+          summary: "Disk usage CRITICAL > 90%"
+
+      - alert: MemoryHigh
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 10m
+        labels: {severity: warning, team: platform}
+        annotations:
+          summary: "Memory > 85%"
+
+      - alert: CPUHigh
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        for: 10m
+        labels: {severity: warning, team: platform}
+        annotations:
+          summary: "CPU > 90%"

@@ -1,0 +1,13 @@
+{
+  "title": "MFB — Providers & Market Data",
+  "uid": "mfb-providers",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "stat", "title": "Providers UP", "gridPos": {"x":0,"y":0,"w":24,"h":5},
+      "targets": [{"expr": "mfb_provider_up", "legendFormat": "{{provider}}"}]},
+    {"id": 2, "type": "table", "title": "Provider health matrix", "gridPos": {"x":0,"y":5,"w":24,"h":10},
+      "targets": [{"expr": "mfb_provider_up", "format": "table", "instant": true}]}
+  ]
+}

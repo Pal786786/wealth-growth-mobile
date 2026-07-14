@@ -1,0 +1,53 @@
+# ==============================================================================
+# My Funding Bank — Prometheus scrape config
+# ==============================================================================
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  external_labels:
+    cluster: mfb-prod
+    env: production
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []      # Add alertmanager:9093 if enabled
+
+scrape_configs:
+  # Backend API metrics (through internal network)
+  - job_name: mfb_backend
+    metrics_path: /api/metrics
+    scheme: http
+    static_configs:
+      - targets: ["backend:8001"]
+        labels:
+          service: backend
+
+  # Host resources
+  - job_name: node_exporter
+    static_configs:
+      - targets: ["node_exporter:9100"]
+        labels:
+          service: host
+
+  # MongoDB
+  - job_name: mongo_exporter
+    static_configs:
+      - targets: ["mongo_exporter:9216"]
+        labels:
+          service: mongo
+
+  # Containers (cAdvisor)
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+        labels:
+          service: docker
+
+  # Prometheus self-scrape
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

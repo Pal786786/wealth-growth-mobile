@@ -1,0 +1,23 @@
+{
+  "title": "MFB — API Performance",
+  "uid": "mfb-api-perf",
+  "schemaVersion": 39,
+  "refresh": "15s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "Latency p50/p95/p99", "gridPos": {"x":0,"y":0,"w":24,"h":9},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(mfb_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum(rate(mfb_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum(rate(mfb_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99"}
+      ]},
+    {"id": 2, "type": "timeseries", "title": "HTTP Status codes", "gridPos": {"x":0,"y":9,"w":12,"h":8},
+      "targets": [{"expr": "sum by (status) (rate(mfb_http_requests_total[1m]))", "legendFormat": "{{status}}"}]},
+    {"id": 3, "type": "timeseries", "title": "In-flight requests", "gridPos": {"x":12,"y":9,"w":12,"h":8},
+      "targets": [{"expr": "mfb_http_in_flight_requests"}]},
+    {"id": 4, "type": "stat", "title": "Error rate %", "gridPos": {"x":0,"y":17,"w":8,"h":5},
+      "targets": [{"expr": "100 * sum(rate(mfb_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(mfb_http_requests_total[5m]))"}]},
+    {"id": 5, "type": "stat", "title": "Active sessions", "gridPos": {"x":8,"y":17,"w":8,"h":5},
+      "targets": [{"expr": "mfb_active_sessions"}]}
+  ]
+}

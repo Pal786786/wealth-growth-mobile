@@ -1,0 +1,191 @@
+# ==============================================================================
+# My Funding Bank — Production Docker Compose
+# ==============================================================================
+# Usage:
+#   docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Optional monitoring stack:
+#   docker compose -f deploy/docker-compose.prod.yml \
+#                  -f deploy/docker-compose.monitoring.yml \
+#                  --profile monitoring up -d
+# ==============================================================================
+
+version: "3.9"
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "7"
+    labels: "service,env"
+
+networks:
+  mfb_net:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  mongo_config:
+  mongo_backups:
+  nginx_certs:
+  nginx_challenges:
+  nginx_logs:
+  backend_logs:
+  prometheus_data:
+  grafana_data:
+
+services:
+  # ---------------- MongoDB (Replica-Set-ready single node) ----------------
+  mongo:
+    image: mongo:7.0
+    container_name: mfb_mongo
+    restart: unless-stopped
+    command:
+      - --config
+      - /etc/mongo/mongod.conf
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-mfbadmin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD required}
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME:-mfb_prod}
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+      - mongo_backups:/backups
+      - ./mongo/mongod.conf:/etc/mongo/mongod.conf:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks: [mfb_net]
+    logging: *default-logging
+    labels:
+      service: mongo
+      env: prod
+
+  # ---------------- FastAPI Backend ----------------
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/docker/backend.Dockerfile
+    image: mfb/backend:${IMAGE_TAG:-latest}
+    container_name: mfb_backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file: ../.env.prod
+    environment:
+      MONGO_URL: mongodb://${MONGO_ROOT_USER:-mfbadmin}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DB_NAME:-mfb_prod}?authSource=admin
+      DB_NAME: ${MONGO_DB_NAME:-mfb_prod}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: production
+    volumes:
+      - backend_logs:/var/log/mfb
+      - mongo_backups:/backups:ro
+    networks: [mfb_net]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/api/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    logging: *default-logging
+    labels:
+      service: backend
+      env: prod
+
+  # ---------------- Admin Panel (static, served by internal nginx) ----------------
+  admin:
+    build:
+      context: ..
+      dockerfile: deploy/docker/admin.Dockerfile
+    image: mfb/admin:${IMAGE_TAG:-latest}
+    container_name: mfb_admin
+    restart: unless-stopped
+    networks: [mfb_net]
+    logging: *default-logging
+    labels:
+      service: admin
+      env: prod
+
+  # ---------------- Nginx Reverse Proxy + TLS ----------------
+  nginx:
+    build:
+      context: ..
+      dockerfile: deploy/docker/nginx.Dockerfile
+    image: mfb/nginx:${IMAGE_TAG:-latest}
+    container_name: mfb_nginx
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - admin
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN_NAME: ${DOMAIN_NAME:-app.myfundingbank.in}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.myfundingbank.in}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-ops@myfundingbank.in}
+    volumes:
+      - nginx_certs:/etc/letsencrypt
+      - nginx_challenges:/var/www/certbot
+      - nginx_logs:/var/log/nginx
+    networks: [mfb_net]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost/nginx-health"]
+      interval: 20s
+      timeout: 5s
+      retries: 4
+    logging: *default-logging
+    labels:
+      service: nginx
+      env: prod
+
+  # ---------------- Certbot (renewal loop) ----------------
+  certbot:
+    image: certbot/certbot:latest
+    container_name: mfb_certbot
+    restart: unless-stopped
+    volumes:
+      - nginx_certs:/etc/letsencrypt
+      - nginx_challenges:/var/www/certbot
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --quiet --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done;'
+    networks: [mfb_net]
+    profiles: ["tls"]
+    logging: *default-logging
+
+  # ---------------- Automated MongoDB Backup ----------------
+  backup:
+    image: mongo:7.0
+    container_name: mfb_backup
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file: ../.env.prod
+    environment:
+      MONGO_URL: mongodb://${MONGO_ROOT_USER:-mfbadmin}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      MONGO_DB_NAME: ${MONGO_DB_NAME:-mfb_prod}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_STORAGE: ${BACKUP_STORAGE:-local}
+      BACKUP_ENCRYPT: ${BACKUP_ENCRYPT:-false}
+      BACKUP_ENCRYPT_PASSPHRASE: ${BACKUP_ENCRYPT_PASSPHRASE:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PREFIX: ${S3_PREFIX:-mfb-backups}
+    volumes:
+      - mongo_backups:/backups
+      - ./scripts/mongo_backup.sh:/usr/local/bin/mongo_backup.sh:ro
+      - ./scripts/mongo_restore.sh:/usr/local/bin/mongo_restore.sh:ro
+    entrypoint: /bin/bash -c 'apt-get update -qq && apt-get install -y -qq cron gnupg awscli >/dev/null && echo "$${BACKUP_CRON:-0 2 * * *} root /usr/local/bin/mongo_backup.sh >> /var/log/mfb_backup.log 2>&1" > /etc/cron.d/mfb_backup && chmod 0644 /etc/cron.d/mfb_backup && touch /var/log/mfb_backup.log && cron && tail -f /var/log/mfb_backup.log'
+    networks: [mfb_net]
+    logging: *default-logging
+    labels:
+      service: backup
+      env: prod

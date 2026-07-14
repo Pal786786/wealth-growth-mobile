@@ -1,0 +1,173 @@
+# ==============================================================================
+# My Funding Bank — Continuous Integration
+# ==============================================================================
+# Runs on every push and PR. Modular jobs, portable so a GitLab CI mirror
+# can be added later without redesign.
+# ==============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "release/**"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+  MONGO_VERSION: "7.0"
+
+jobs:
+  # ---------------- 1. LINT ----------------
+  lint:
+    name: Lint (Python + JS/TS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}", cache: "pip"}
+      - name: Install linters
+        run: pip install ruff==0.6.9 mypy==1.11.2
+      - name: Ruff
+        run: ruff check backend/ scripts/deploy/ --select E,F,W,I --ignore E501
+      - uses: actions/setup-node@v4
+        with: {node-version: "${{ env.NODE_VERSION }}", cache: "npm", cache-dependency-path: admin/package-lock.json}
+      - name: Admin lint
+        working-directory: admin
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint --if-present
+
+  # ---------------- 2. UNIT TESTS ----------------
+  unit_tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    needs: [lint]
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      MONGO_URL: mongodb://localhost:27017
+      DB_NAME: mfb_ci
+      ENVIRONMENT: development
+      JWT_SECRET: ci-jwt-secret-32chars-minimum-length-abc
+      JWT_ALGORITHM: HS256
+      WEB_CONCURRENCY: "2"
+      LOG_LEVEL: warning
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}", cache: "pip"}
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-asyncio pytest-cov httpx
+      - name: Validate env
+        run: python scripts/deploy/validate_env.py --warn-only
+      - name: Ensure indexes
+        run: python scripts/deploy/ensure_indexes.py --dry-run
+      - name: Run unit tests
+        working-directory: backend
+        run: pytest tests/ -m "not integration and not slow" -q --maxfail=5 --junitxml=../test_reports/pytest/unit.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: pytest-unit, path: test_reports/pytest/unit.xml}
+
+  # ---------------- 3. INTEGRATION TESTS ----------------
+  integration_tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    needs: [unit_tests]
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 10s
+    env:
+      MONGO_URL: mongodb://localhost:27017
+      DB_NAME: mfb_ci
+      ENVIRONMENT: development
+      JWT_SECRET: ci-jwt-secret-32chars-minimum-length-abc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}", cache: "pip"}
+      - name: Install
+        run: pip install -r backend/requirements.txt pytest pytest-asyncio httpx
+      - name: Integration
+        working-directory: backend
+        run: pytest tests/ -m "integration" -q --maxfail=3 --junitxml=../test_reports/pytest/integration.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: pytest-integration, path: test_reports/pytest/integration.xml}
+
+  # ---------------- 4. FULL REGRESSION (Release Certification Gate) ----------------
+  full_regression:
+    name: Full regression (799+)
+    runs-on: ubuntu-latest
+    needs: [integration_tests]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || github.event_name == 'workflow_dispatch'
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 10s
+    env:
+      MONGO_URL: mongodb://localhost:27017
+      DB_NAME: mfb_ci
+      ENVIRONMENT: development
+      JWT_SECRET: ci-jwt-secret-32chars-minimum-length-abc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}", cache: "pip"}
+      - run: pip install -r backend/requirements.txt pytest pytest-asyncio httpx pytest-html
+      - name: Run full suite
+        working-directory: backend
+        run: pytest tests/ -q --maxfail=0 --junitxml=../test_reports/pytest/full.xml --html=../test_reports/pytest/full.html --self-contained-html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: pytest-full, path: test_reports/pytest/}
+
+  # ---------------- 5. SECURITY SCAN ----------------
+  security_scan:
+    name: Security scans
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}"}
+      - name: Bandit (Python SAST)
+        run: |
+          pip install bandit==1.7.9
+          bandit -q -r backend -x backend/tests -ll || true
+      - name: pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt --ignore-vuln GHSA-XXXX --strict || true
+      - name: Gitleaks (secrets)
+        uses: gitleaks/gitleaks-action@v2
+        env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          exit-code: "0"      # non-blocking initially
+          scan-ref: .

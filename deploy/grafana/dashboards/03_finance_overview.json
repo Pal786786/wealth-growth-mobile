@@ -1,0 +1,17 @@
+{
+  "title": "MFB — Finance Overview",
+  "uid": "mfb-finance",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {"from": "now-24h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "stat", "title": "Active alerts (critical)", "gridPos": {"x":0,"y":0,"w":6,"h":4},
+      "targets": [{"expr": "sum(mfb_finance_alerts{severity=\"critical\", status=\"active\"})"}]},
+    {"id": 2, "type": "stat", "title": "Active alerts (warning)", "gridPos": {"x":6,"y":0,"w":6,"h":4},
+      "targets": [{"expr": "sum(mfb_finance_alerts{severity=\"warning\", status=\"active\"})"}]},
+    {"id": 3, "type": "timeseries", "title": "Wallet transactions/sec by type", "gridPos": {"x":0,"y":4,"w":24,"h":8},
+      "targets": [{"expr": "sum by (type) (rate(mfb_wallet_transactions_total[1m]))", "legendFormat": "{{type}}"}]},
+    {"id": 4, "type": "timeseries", "title": "Wallet tx by status", "gridPos": {"x":0,"y":12,"w":24,"h":8},
+      "targets": [{"expr": "sum by (status) (rate(mfb_wallet_transactions_total[1m]))", "legendFormat": "{{status}}"}]}
+  ]
+}

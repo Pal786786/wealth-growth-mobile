@@ -1071,6 +1071,14 @@ market_module.attach(
     api, db=db, get_current_user=get_current_user,
     get_current_admin=admin_module.get_current_admin, logger=logger,
 )
+
+# ------ Sprint 13: Production health checks + Prometheus metrics ------
+try:
+    import health_monitoring as _health_mon
+    _health_mon.attach(app, api, db=db, logger=logger)
+except Exception as _e:
+    logger.warning("health_monitoring not attached: %s", _e)
+
 app.include_router(api)
 
 # ------ Sprint 7 Slice 1: Market Data (multi-asset browser + provider layer) ------

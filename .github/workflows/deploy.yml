@@ -1,0 +1,189 @@
+# ==============================================================================
+# My Funding Bank — Build + Deploy (Staging → Production)
+# ==============================================================================
+# Triggered by:
+#   - push of tag v*      → build + publish images + deploy to staging
+#   - manual workflow     → pick environment (staging | production)
+#
+# Manual approval is required to promote to production.
+# ==============================================================================
+name: Build & Deploy
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Deployment target"
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+      image_tag:
+        description: "Image tag to deploy (defaults to git sha)"
+        required: false
+
+concurrency:
+  group: deploy-${{ github.event.inputs.target_env || 'staging' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_BACKEND: ${{ github.repository }}/backend
+  IMAGE_NAME_ADMIN: ${{ github.repository }}/admin
+
+jobs:
+  # ---------------- 1. Regression Gate ----------------
+  regression_gate:
+    name: Release certification (regression 799+)
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  # ---------------- 2. Build & Push Docker Images ----------------
+  build:
+    name: Build & push images
+    needs: [regression_gate]
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: echo "value=${{ github.event.inputs.image_tag || github.sha }}" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/backend.Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ steps.tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:latest
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build admin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/admin.Dockerfile
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_ADMIN }}:${{ steps.tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_ADMIN }}:latest
+          push: true
+
+  # ---------------- 3. Build Mobile Artifacts ----------------
+  build_mobile:
+    name: Build mobile (APK preview)
+    needs: [regression_gate]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.target_env == 'production'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "20", cache: "yarn", cache-dependency-path: frontend/yarn.lock}
+      - name: Install & prebuild
+        working-directory: frontend
+        run: |
+          yarn install --frozen-lockfile
+          npx expo prebuild --non-interactive --no-install --clean
+      - name: Upload prebuild artifact
+        uses: actions/upload-artifact@v4
+        with: {name: expo-prebuild, path: frontend/}
+
+  # ---------------- 4. Deploy to Staging ----------------
+  deploy_staging:
+    name: Deploy → Staging
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.myfundingbank.in
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trigger remote deploy
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          DEPLOY_HOST: ${{ secrets.STAGING_HOST }}
+          DEPLOY_KEY:  ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          echo "$DEPLOY_KEY" > /tmp/id && chmod 600 /tmp/id
+          ssh -o StrictHostKeyChecking=no -i /tmp/id deploy@$DEPLOY_HOST \
+            "cd /opt/mfb && IMAGE_TAG=$IMAGE_TAG docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod pull && \
+             IMAGE_TAG=$IMAGE_TAG docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod up -d"
+      - name: Post-deploy smoke test
+        run: BASE_URL=https://staging.myfundingbank.in bash scripts/deploy/smoke_test.sh
+
+  # ---------------- 5. Manual approval + Production deploy ----------------
+  deploy_production:
+    name: Deploy → Production (manual approval)
+    needs: [deploy_staging]
+    if: github.event_name == 'push' || github.event.inputs.target_env == 'production'
+    runs-on: ubuntu-latest
+    environment:
+      name: production        # requires manual approval reviewers in repo settings
+      url: https://app.myfundingbank.in
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trigger remote deploy
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_KEY:  ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          echo "$DEPLOY_KEY" > /tmp/id && chmod 600 /tmp/id
+          ssh -o StrictHostKeyChecking=no -i /tmp/id deploy@$DEPLOY_HOST \
+            "cd /opt/mfb && ./scripts/deploy/mongo_backup.sh || true && \
+             IMAGE_TAG=$IMAGE_TAG docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod pull && \
+             IMAGE_TAG=$IMAGE_TAG docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod up -d"
+      - name: Post-deploy smoke test
+        id: smoke
+        run: BASE_URL=https://app.myfundingbank.in bash scripts/deploy/smoke_test.sh
+      - name: Rollback on failure
+        if: failure()
+        env:
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_KEY:  ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          echo "$DEPLOY_KEY" > /tmp/id && chmod 600 /tmp/id
+          ssh -o StrictHostKeyChecking=no -i /tmp/id deploy@$DEPLOY_HOST \
+            "cd /opt/mfb && IMAGE_TAG=$(cat .last_good_tag 2>/dev/null || echo latest) \
+             docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod up -d"
+      - name: Save last-good tag
+        if: success()
+        env:
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_KEY:  ${{ secrets.PROD_SSH_KEY }}
+          IMAGE_TAG:   ${{ needs.build.outputs.image_tag }}
+        run: |
+          echo "$DEPLOY_KEY" > /tmp/id && chmod 600 /tmp/id
+          ssh -o StrictHostKeyChecking=no -i /tmp/id deploy@$DEPLOY_HOST "echo $IMAGE_TAG > /opt/mfb/.last_good_tag"
+
+  # ---------------- 6. Release notes / changelog ----------------
+  release_notes:
+    name: Publish release notes
+    needs: [deploy_production]
+    if: github.event_name == 'push'   # only on tag pushes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Generate changelog
+        uses: mikepenz/release-changelog-builder-action@v5
+        env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          make_latest: true

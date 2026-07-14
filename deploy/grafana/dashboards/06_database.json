@@ -1,0 +1,15 @@
+{
+  "title": "MFB — Database (MongoDB)",
+  "uid": "mfb-mongo",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {"from": "now-3h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "Mongo ping latency (s)", "gridPos": {"x":0,"y":0,"w":12,"h":8},
+      "targets": [{"expr": "mfb_mongo_ping_seconds"}]},
+    {"id": 2, "type": "timeseries", "title": "Connections", "gridPos": {"x":12,"y":0,"w":12,"h":8},
+      "targets": [{"expr": "mongodb_connections{state=\"current\"}", "legendFormat": "current"}]},
+    {"id": 3, "type": "timeseries", "title": "Ops/sec", "gridPos": {"x":0,"y":8,"w":24,"h":8},
+      "targets": [{"expr": "rate(mongodb_op_counters_total[1m])", "legendFormat": "{{type}}"}]}
+  ]
+}

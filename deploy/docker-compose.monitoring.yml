@@ -1,0 +1,94 @@
+# ==============================================================================
+# My Funding Bank — Monitoring Stack (Prometheus + Grafana + Node Exporter)
+# ==============================================================================
+# Enable with:
+#   docker compose -f deploy/docker-compose.prod.yml \
+#                  -f deploy/docker-compose.monitoring.yml \
+#                  --profile monitoring up -d
+# ==============================================================================
+
+version: "3.9"
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: mfb_prometheus
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    networks: [mfb_net]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: mfb_grafana
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://monitoring.myfundingbank.in}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/dashboards-provisioning:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3001:3000"
+    networks: [mfb_net]
+
+  node_exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: mfb_node_exporter
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    networks: [mfb_net]
+
+  mongo_exporter:
+    image: percona/mongodb_exporter:0.42
+    container_name: mfb_mongo_exporter
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    depends_on: [mongo]
+    command:
+      - --mongodb.uri=mongodb://${MONGO_ROOT_USER:-mfbadmin}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      - --collect-all
+      - --compatible-mode
+    networks: [mfb_net]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: mfb_cadvisor
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks: [mfb_net]

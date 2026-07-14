@@ -1,0 +1,57 @@
+# ==============================================================================
+# My Funding Bank — Logrotate Configuration
+# ==============================================================================
+# Copy to /etc/logrotate.d/mfb on the host, or bind-mount into a syslog sidecar.
+# ==============================================================================
+
+/var/log/mfb/*.log {
+    daily
+    rotate 30
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    dateext
+    dateformat -%Y%m%d
+    maxsize 100M
+    su mfb mfb
+    postrotate
+        supervisorctl signal HUP mfb-backend >/dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/nginx/*.log {
+    daily
+    rotate 30
+    missingok
+    notifempty
+    compress
+    delaycompress
+    sharedscripts
+    maxsize 100M
+    postrotate
+        [ -f /var/run/nginx.pid ] && kill -USR1 $(cat /var/run/nginx.pid) || true
+    endscript
+}
+
+/var/log/mongodb/*.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    maxsize 200M
+    su mongodb mongodb
+}
+
+/var/log/mfb_backup.log {
+    weekly
+    rotate 12
+    missingok
+    notifempty
+    compress
+    copytruncate
+}
