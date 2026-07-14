@@ -1144,6 +1144,14 @@ except Exception as _e:
 try:
     import market_providers as _market_providers
     _market_providers.attach(app, db=db, get_current_admin=admin_module.get_current_admin)
+    # Sprint 14.1.1 — bridge the shared price manager into the forex feed so
+    # order execution + UI + mark-to-market + chart + watchlist all read the
+    # SAME live quote object.
+    try:
+        from forex.feed import attach_shared_manager as _forex_bridge
+        _forex_bridge(_market_providers.get_manager())
+    except Exception as _b:
+        logger.warning(f"forex ↔ market_providers bridge failed: {_b}")
     logger.info("market_providers subsystem attached (Sprint 7.5)")
 except Exception as _e:
     logger.warning(f"market_providers attach failed: {_e}")

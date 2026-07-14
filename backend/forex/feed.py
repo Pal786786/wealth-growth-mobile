@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from collections import deque
 
@@ -19,6 +19,19 @@ logger = logging.getLogger("forex.feed")
 # Ring-buffer size for chart history (kept per symbol).
 # 2s tick × 300 points ≈ last 10 minutes of price history.
 HISTORY_MAXLEN = 300
+
+# Sprint 14.1.1 — reference to the shared ProviderManager so PriceFeed can
+# read from the SAME market_price_cache that AI Signals / Watchlist / Alerts /
+# Copy Trading / Gold all use. Set by `attach_shared_manager()` from server.py.
+_shared_manager: Any = None
+
+
+def attach_shared_manager(mgr: Any) -> None:
+    """Wire the shared market-data ProviderManager into the forex feed so that
+    all consumers (execution, UI, mark-to-market, chart, watchlist) read from
+    a single source of truth for live prices."""
+    global _shared_manager
+    _shared_manager = mgr
 
 
 class PriceFeed:
@@ -90,19 +103,58 @@ class PriceFeed:
             await self._td.aclose()
 
     async def _poll_forever(self):
-        """Tick every 2s for simulated; refresh from Twelve Data every 120s if live mode on."""
+        """Tick every 2s for simulated; refresh from Twelve Data every 120s if live mode on.
+
+        Sprint 14.1.1 hardening — once a symbol has a LIVE quote (twelvedata /
+        binance / shared market_price_cache) that is younger than 10 minutes,
+        the simulated provider **must not** overwrite it. Previously the
+        freshness guard was only 150 s, so once TwelveData throttled we
+        silently reverted to sim prices, breaking order-vs-UI consistency.
+        """
         td_interval = 120.0
         last_td_poll = 0.0
+        LIVE_MAX_AGE_SEC = 600     # 10-minute grace — sim never wins during this window
         while not self._stop.is_set():
             now = time.time()
-            # Always tick simulated to provide a fluid UI experience
+            # Pull a snapshot of the SHARED market cache so we can honour its
+            # priority guard. Any symbol with a fresh entry there is preferred.
+            shared_map: Dict[str, Any] = {}
+            try:
+                if _shared_manager is not None:
+                    shared_all = await _shared_manager.cache.all_quotes()
+                    for row in shared_all:
+                        shared_map[row["symbol"].upper()] = row
+            except Exception:
+                shared_map = {}
+
             for sym in SYMBOLS:
-                # If we have a recent Twelve Data quote (<150s old), don't overwrite with sim
-                existing = self._cache.get(sym["id"])
-                if existing and existing.source == "twelvedata" and (now - existing.ts) < 150:
+                sid = sym["id"]
+                existing = self._cache.get(sid)
+
+                # 1. Honour the shared cache first — if it has a fresh, real-provider
+                #    entry, mirror it into the forex feed so execution + UI + shared
+                #    readers all use the SAME price.
+                shared_row = shared_map.get(sid)
+                if shared_row and shared_row.get("provider") not in (None, "mock", "sim"):
+                    age = float(shared_row.get("age_sec") or 0)
+                    if age <= LIVE_MAX_AGE_SEC:
+                        px = float(shared_row.get("price"))
+                        bid = float(shared_row.get("bid") or (px - (sym["spread_pips"] * sym["pip_size"]) / 2))
+                        ask = float(shared_row.get("ask") or (px + (sym["spread_pips"] * sym["pip_size"]) / 2))
+                        self._cache[sid] = Quote(
+                            symbol_id=sid, bid=bid, ask=ask, mid=px, ts=now,
+                            source=str(shared_row.get("provider") or "shared"),
+                        )
+                        self._history[sid].append((now, px))
+                        continue
+
+                # 2. Never let sim overwrite an in-process LIVE quote within the grace window
+                if existing and existing.source in ("twelvedata", "binance") \
+                        and (now - existing.ts) < LIVE_MAX_AGE_SEC:
                     continue
-                # BTC: prefer Binance live price if available
-                if sym["id"] == "BTCUSD":
+
+                # 3. BTC: prefer Binance
+                if sid == "BTCUSD":
                     binance_px = self._binance.latest_price("BTCUSD")
                     if binance_px:
                         spread = sym["spread_pips"] * sym["pip_size"]
@@ -110,15 +162,15 @@ class PriceFeed:
                             symbol_id="BTCUSD",
                             bid=round(binance_px - spread/2, sym["price_decimals"]),
                             ask=round(binance_px + spread/2, sym["price_decimals"]),
-                            mid=binance_px,
-                            ts=now,
-                            source="binance",
+                            mid=binance_px, ts=now, source="binance",
                         )
                         self._history["BTCUSD"].append((now, binance_px))
                         continue
-                q = self._sim.tick(sym["id"])
-                self._cache[sym["id"]] = q
-                self._history[sym["id"]].append((q.ts, q.mid))
+
+                # 4. Fallback to simulated tick (only if no live quote at all)
+                q = self._sim.tick(sid)
+                self._cache[sid] = q
+                self._history[sid].append((q.ts, q.mid))
 
             # Twelve Data refresh (only in live mode)
             if self.live_mode and self._td and (now - last_td_poll) >= td_interval:
