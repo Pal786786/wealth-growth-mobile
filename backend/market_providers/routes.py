@@ -63,6 +63,19 @@ def attach(app, manager: ProviderManager, get_current_admin):
     async def history(limit: int = 100, admin=Depends(get_current_admin)):
         return {"history": await manager.recent_history(limit=limit)}
 
+    @r.get("/cache/writes")
+    async def cache_write_trace(symbol: Optional[str] = None, limit: int = 100,
+                                  admin=Depends(get_current_admin)):
+        """Sprint 14.1 diagnostic: full audit trail of every cache write attempt.
+        Shows exactly which provider wrote (or was rejected trying to write)
+        each symbol. Filter by ?symbol=XAUUSD to trace the overwrite culprit.
+        """
+        return {"writes": await manager.cache.recent_writes(symbol=symbol, limit=limit)}
+
+    @r.get("/cache/stats")
+    async def cache_stats(admin=Depends(get_current_admin)):
+        return await manager.cache.stats()
+
     @r.put("/manual-provider")
     async def set_manual(body: ManualProviderIn, admin=Depends(get_current_admin)):
         try:

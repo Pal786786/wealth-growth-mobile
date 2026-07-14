@@ -313,15 +313,15 @@ def test_cache_invalidate_by_source_removes_stale_provider_prices():
         db = _DB()
         cache = QuoteCache(db, ttl_seconds=60)
 
-        await db[CACHE_COLL].insert_one({"symbol": "EURUSD", "source": "twelvedata", "price": 1.1})
-        await db[CACHE_COLL].insert_one({"symbol": "XAUUSD", "source": "twelvedata", "price": 3450.0})
-        await db[CACHE_COLL].insert_one({"symbol": "BTCUSD", "source": "mock", "price": 65000.0})
+        await db[CACHE_COLL].insert_one({"symbol": "EURUSD", "provider": "twelvedata", "price": 1.1})
+        await db[CACHE_COLL].insert_one({"symbol": "XAUUSD", "provider": "twelvedata", "price": 3450.0})
+        await db[CACHE_COLL].insert_one({"symbol": "BTCUSD", "provider": "mock", "price": 65000.0})
         assert len(db[CACHE_COLL].docs) == 3
 
         deleted = await cache.invalidate_by_source("twelvedata")
         assert deleted == 2
         assert len(db[CACHE_COLL].docs) == 1
-        assert db[CACHE_COLL].docs[0]["source"] == "mock"
+        assert db[CACHE_COLL].docs[0]["provider"] == "mock"
 
         # No-op for unknown source
         deleted = await cache.invalidate_by_source("nonexistent")

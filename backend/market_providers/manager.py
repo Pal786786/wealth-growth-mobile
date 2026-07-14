@@ -128,6 +128,10 @@ class ProviderManager:
     # ================ lifecycle ================
     async def start(self):
         await self._load_config()
+        try:
+            await self.cache.ensure_indexes()   # Sprint 14.1: audit + TTL index
+        except Exception as e:
+            logger.warning("cache ensure_indexes failed (non-fatal): %s", e)
         if self._task and not self._task.done():
             return
         self._stop.clear()
@@ -197,7 +201,7 @@ class ProviderManager:
         _visited.add(chosen.name)
         try:
             quotes = await chosen.fetch_quotes(self.universe)
-            await self.cache.put_many(quotes)
+            write_result = await self.cache.put_many(quotes)
             # Sprint 7.5: also push to in-process memo so sync consumers
             # (ai_intelligence.feed / TA / signals) can read live prices
             # without an async round-trip.
@@ -216,7 +220,16 @@ class ProviderManager:
                 self._last_real_provider = chosen.name
             elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
             await self._log_history(chosen.name, ok=True, count=len(quotes), latency_ms=elapsed_ms)
+            # Sprint 14.1: expose write accept/reject counts so admins see
+            # when mock/stale writes are being blocked.
+            if write_result.get("rejected", 0) > 0:
+                logger.info(
+                    "provider %s refresh: %d accepted, %d rejected by cache guard",
+                    chosen.name, write_result["accepted"], write_result["rejected"],
+                )
             return {"provider": chosen.name, "count": len(quotes),
+                    "accepted": write_result.get("accepted", 0),
+                    "rejected": write_result.get("rejected", 0),
                     "latency_ms": elapsed_ms, "auto_fallback": self._auto_fallback}
         except RateLimitError as e:
             # 429 → provider is now in backoff; do NOT trip circuit breaker.
