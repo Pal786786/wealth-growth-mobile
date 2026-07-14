@@ -338,6 +338,18 @@ async def signup(req: SignupReq):
     }
     await db.users.insert_one(user)
     await _ensure_wallet(user_id)
+    # ---- Sprint 14: reward hooks (guarded, non-blocking) ----
+    try:
+        from mfb_rewards import engine as _rw
+        await _rw.notify_event("signup", user_id, reference_id=user_id)
+        if req.referral_code:
+            from mfb_rewards import referrals as _rr
+            referrer = await _rr.resolve_referrer(db, req.referral_code)
+            if referrer and referrer.get("user_id") != user_id:
+                await _rr.track_event(db, referrer["user_id"], user_id, req.referral_code, "registered")
+                await _rr.award_referral_rewards(db, referrer["user_id"], user_id, "install")
+    except Exception:
+        pass
     token = create_token(user_id)
     return {"token": token, "user": _user_public(user)}
 
@@ -382,7 +394,19 @@ async def verify_otp(req: OtpVerifyReq):
         }
         await db.users.insert_one(user)
         await _ensure_wallet(user_id)
+        # ---- Sprint 14: reward signup bonus (guarded) ----
+        try:
+            from mfb_rewards import engine as _rw
+            await _rw.notify_event("signup", user_id, reference_id=user_id)
+        except Exception:
+            pass
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"last_login_at": now_utc(), "failed_logins": 0}})
+    # ---- Sprint 14: daily-login streak (guarded, idempotent per UTC day) ----
+    try:
+        from mfb_rewards import engine as _rw
+        await _rw.record_daily_login(user["user_id"])
+    except Exception:
+        pass
     token = create_token(user["user_id"])
     return {"token": token, "user": _user_public(user)}
 
@@ -1078,6 +1102,16 @@ try:
     _health_mon.attach(app, api, db=db, logger=logger)
 except Exception as _e:
     logger.warning("health_monitoring not attached: %s", _e)
+
+# ------ Sprint 14: MFB Rewards & Ecosystem (Internal Token Platform) ------
+try:
+    import mfb_rewards as _mfb_rewards
+    _mfb_rewards.attach(api, app, db=db,
+                          get_current_user=get_current_user,
+                          get_current_admin=admin_module.get_current_admin,
+                          logger=logger)
+except Exception as _e:
+    logger.warning("mfb_rewards not attached: %s", _e)
 
 app.include_router(api)
 

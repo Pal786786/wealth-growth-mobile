@@ -144,6 +144,16 @@ async def _credit_wallet(user_id: str, amount: float, category: str, description
     }
     await _db.transactions.insert_one(tx)
     tx.pop("_id", None)
+    # ---- Sprint 14: reward hook for wallet top-ups (guarded, idempotent) ----
+    if category in ("topup", "recharge_credit", "cashback_topup"):
+        try:
+            from mfb_rewards import engine as _rw
+            await _rw.notify_event("wallet_topup", user_id,
+                                    reference_id=tx_id,
+                                    amount_inr=float(amount),
+                                    meta={"category": category, "provider": provider})
+        except Exception:
+            pass
     return tx
 
 

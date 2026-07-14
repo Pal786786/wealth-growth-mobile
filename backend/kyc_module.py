@@ -594,6 +594,19 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin,
         await _log_action(adm["admin_id"], "kyc.approve", target=user_id)
         await _notify(user_id, "KYC Approved 🎉",
                       "Congratulations! Your KYC is approved. You can now invest, withdraw and trade.")
+        # ---- Sprint 14: reward hook (KYC completion + referrer bonus) ----
+        try:
+            from mfb_rewards import engine as _rw
+            from mfb_rewards import referrals as _rr
+            await _rw.notify_event("kyc_approved", user_id, reference_id=f"kyc:{user_id}")
+            u = await _db.users.find_one({"user_id": user_id}, {"_id": 0, "referred_by": 1})
+            if u and u.get("referred_by"):
+                ref = await _rr.resolve_referrer(_db, u["referred_by"])
+                if ref and ref.get("user_id") != user_id:
+                    await _rr.track_event(_db, ref["user_id"], user_id, u["referred_by"], "kyc_completed")
+                    await _rr.award_referral_rewards(_db, ref["user_id"], user_id, "kyc")
+        except Exception:
+            pass
         return {"ok": True, "status": "approved", "expires_at": expiry}
 
     @admin.post("/{user_id}/reject")

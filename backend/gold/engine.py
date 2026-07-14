@@ -181,6 +181,15 @@ class GoldEngine:
         }
         await self.db[TX_COLL].insert_one(tx)
         tx.pop("_id", None)
+        # ---- Sprint 14: reward hook (gold buy) ----
+        try:
+            from mfb_rewards import engine as _rw
+            await _rw.notify_event("gold_buy", user_id,
+                                    reference_id=tx["tx_id"],
+                                    amount_inr=float(amount_inr),
+                                    meta={"grams": grams})
+        except Exception:
+            pass
         # Update holdings (weighted-average cost)
         h = await self.db[HOLDINGS_COLL].find_one({"user_id": user_id}) or {
             "user_id": user_id, "grams": 0.0, "total_invested": 0.0}

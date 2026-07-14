@@ -366,6 +366,15 @@ class MutualFundEngine:
                                                 "deeplink": f"/mutual-funds/{fund_id}"})
         await self._audit(user_id, "user", "mf.invest.lumpsum", order_id,
                           after={"amount": amount, "units": units, "nav": nav})
+        # ---- Sprint 14: reward hook (MF invest) ----
+        try:
+            from mfb_rewards import engine as _rw
+            await _rw.notify_event("mf_invest", user_id,
+                                    reference_id=order_id,
+                                    amount_inr=float(amount),
+                                    meta={"fund_id": fund_id, "units": units})
+        except Exception:
+            pass
         return _iso(final or order)
 
     async def _patch_order(self, order_id: str, status: Optional[str] = None,
@@ -579,6 +588,14 @@ class MutualFundEngine:
                             f"{fund['name']} · ₹{amount:,.0f} · {units} units @ NAV ₹{nav}",
                             "sip",
                             {"sip_id": sip["sip_id"], "exec_id": exec_id, "deeplink": "/mutual-funds/sips"})
+        # ---- Sprint 14: reward hook (SIP success) ----
+        try:
+            from mfb_rewards import engine as _rw
+            await _rw.notify_event("sip_success", user_id,
+                                    reference_id=exec_id,
+                                    meta={"sip_id": sip["sip_id"], "amount": amount})
+        except Exception:
+            pass
         return {"ok": True, "exec_id": exec_id, "units": units}
 
     # ---------------- Redemption ---------------- #
