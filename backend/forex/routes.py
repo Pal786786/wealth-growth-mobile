@@ -252,6 +252,16 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
         if "live_mode" in patch or "twelve_data_api_key" in patch:
             key = cfg.get("twelve_data_api_key") or ""
             _feed.set_live_mode(bool(cfg.get("live_mode")), td_api_key=key)
+            # Sprint 14.1.2b — shadow-write to canonical market_provider_config
+            # so the same key is picked up by the shared ProviderManager.
+            if key:
+                try:
+                    from market_providers import key_store as _ks
+                    import market_providers as _mp
+                    await _ks.canonical_write(db, "twelvedata", key)
+                    await _mp.propagate_api_key("twelvedata", key)
+                except Exception:
+                    pass
         try:
             await _log_action(admin_user["admin_id"], "forex_settings_update", target="forex_settings", meta={"keys": list(patch.keys())})
         except Exception:  # pragma: no cover

@@ -241,8 +241,19 @@ def attach(app, manager, get_current_admin, log_action=None):
             _stage("provider_parse", False, error=f"ProviderNotConfigured: {_e}")
             parser_error = "NOT_CONFIGURED"
         except Exception as _e:
-            _stage("provider_parse", False, error=f"{type(_e).__name__}: {_e}")
-            parser_error = f"EXCEPTION_{type(_e).__name__}"
+            msg = str(_e)
+            _stage("provider_parse", False, error=f"{type(_e).__name__}: {msg}")
+            # Map common HTTP-status errors to explicit verdicts so the
+            # operator can tell at a glance whether the key is invalid,
+            # over quota, or a transient network problem.
+            if raw_status == 401 or "401" in msg or "apikey" in msg.lower():
+                parser_error = "INVALID_API_KEY"
+            elif raw_status == 429 or "429" in msg or "rate limit" in msg.lower():
+                parser_error = "RATE_LIMITED"
+            elif raw_status and raw_status >= 500:
+                parser_error = "PROVIDER_5XX"
+            else:
+                parser_error = f"EXCEPTION_{type(_e).__name__}"
 
         # ---- Stage 7: Cache write attempt --------------------------------
         cache_result: Dict[str, Any] = {"attempted": False}

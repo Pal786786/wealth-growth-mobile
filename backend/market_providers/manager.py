@@ -146,6 +146,21 @@ class ProviderManager:
             self._task = None
 
     async def _load_config(self):
+        # Sprint 14.1.2b — auto-migrate any TwelveData / AlphaVantage keys
+        # that were saved via legacy admin pages into the canonical
+        # market_provider_config collection BEFORE we read it back.
+        try:
+            from . import key_store as _ks
+            migration = await _ks.migrate_legacy_keys(self.db)
+            for prov, info in migration.items():
+                if info.get("migrated_from"):
+                    logger.info(
+                        "market_providers.startup: migrated %s api_key from %s (len=%d)",
+                        prov, info["migrated_from"], info.get("migrated_len", 0),
+                    )
+        except Exception as _e:  # pragma: no cover
+            logger.warning("key_store migration skipped: %s", _e)
+
         doc = await self.db[self._CONF_COLL].find_one({"_id": "active"})
         if not doc:
             return
@@ -162,13 +177,18 @@ class ProviderManager:
             await self._save_config({"refresh_interval_sec": DEFAULT_REFRESH_INTERVAL_SEC})
         else:
             self.refresh_interval_sec = stored_interval
-        # Load API keys if stored
+        # Load API keys if stored — after legacy migration above, canonical
+        # is guaranteed to be authoritative.
         td_key = doc.get("twelvedata_api_key")
         av_key = doc.get("alphavantage_api_key")
         if td_key:
             self._by_name["twelvedata"].set_api_key(td_key)  # type: ignore[attr-defined]
+            logger.info("market_providers.startup: loaded twelvedata api_key (len=%d, fp=%s)",
+                        len(td_key), td_key[:4] + "…" + td_key[-2:])
         if av_key:
             self._by_name["alphavantage"].set_api_key(av_key)  # type: ignore[attr-defined]
+            logger.info("market_providers.startup: loaded alphavantage api_key (len=%d, fp=%s)",
+                        len(av_key), av_key[:4] + "…" + av_key[-2:])
 
     async def _save_config(self, patch: Dict[str, Any]):
         await self.db[self._CONF_COLL].update_one(

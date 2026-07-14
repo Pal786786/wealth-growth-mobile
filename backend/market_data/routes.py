@@ -325,6 +325,23 @@ def attach(app, db, get_current_user, get_current_admin, logger=None) -> APIRout
             {"$set": {**patch, "updated_at": datetime.now(timezone.utc)}},
             upsert=True,
         )
+        # Sprint 14.1.2b — canonical shadow-write so keys saved here also
+        # reach the market_provider_config collection that ProviderManager
+        # actually reads. Without this, saving on this admin page would
+        # silently NOT enable live ingestion.
+        try:
+            from market_providers import key_store as _ks
+            import market_providers as _mp
+            for _fld, _prov in (("twelvedata", "twelvedata"),
+                                 ("alphavantage", "alphavantage"),
+                                 ("twelve_data", "twelvedata"),
+                                 ("alpha_vantage", "alphavantage")):
+                _v = ((patch.get("api_keys") or {}).get(_fld) or "").strip()
+                if _v:
+                    await _ks.canonical_write(_db, _prov, _v)
+                    await _mp.propagate_api_key(_prov, _v)
+        except Exception as _e:  # pragma: no cover
+            pass
         await _reload_pipeline()
         s = await _get_settings(force=True)
         return {"ok": True, "settings": s}

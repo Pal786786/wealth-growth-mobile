@@ -90,7 +90,7 @@ class TestDebugEndpointContract:
             "OK", "OK_DRY_RUN", "OK_WRITTEN", "REJECTED_BY_GUARD",
             "PARSED_NONE", "NOT_CONFIGURED", "RATE_LIMITED",
             "PARSER_DROPPED_SYMBOL", "ERROR_HTTP", "ERROR_JSON",
-            "ERROR_PROVIDER_MISSING",
+            "ERROR_PROVIDER_MISSING", "INVALID_API_KEY", "PROVIDER_5XX",
         } or body["result"].startswith("EXCEPTION_"), body["result"]
 
     def test_quote_endpoint_accepts_symbol_param(self, admin_headers):

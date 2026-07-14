@@ -439,6 +439,23 @@ async def admin_put_settings(body: AdminSettingsPatch, admin: Dict[str, Any] = D
         if bad:
             raise HTTPException(status_code=400, detail=f"Unknown instruments: {bad}")
     await _db.market_settings.update_one({"_id": "default"}, {"$set": patch}, upsert=True)
+    # Sprint 14.1.2b — shadow-write into the canonical market_provider_config
+    # collection so keys saved from this legacy admin page also reach the
+    # running ProviderManager (which never reads market_settings).
+    try:
+        from market_providers import key_store as _ks
+        import market_providers as _mp
+        _keys = (patch.get("api_keys") or {}) if isinstance(patch.get("api_keys"), dict) else {}
+        for _fld, _prov in (("twelve_data", "twelvedata"),
+                             ("twelvedata", "twelvedata"),
+                             ("alpha_vantage", "alphavantage"),
+                             ("alphavantage", "alphavantage")):
+            _v = (_keys.get(_fld) or "").strip()
+            if _v:
+                await _ks.canonical_write(_db, _prov, _v)
+                await _mp.propagate_api_key(_prov, _v)
+    except Exception:
+        pass
     # bust cache
     _quote_cache.clear()
     return {"ok": True, "settings": await get_settings(force=True)}

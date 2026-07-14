@@ -1,0 +1,39 @@
+{
+  "summary": "Sprint 14.1.2b — TwelveData key persistence fix (fragmented storage bug) verified end-to-end. All required pytest suites pass. E2E integration tests confirm all three legacy admin save endpoints (market_data/settings, market/settings, forex/settings) shadow-write to canonical `market_provider_config._id=active.twelvedata_api_key` AND live-propagate into the running ProviderManager (fingerprint visible in /api/market/debug/xauusd without restart). Startup migration confirmed: seeded ONLY `market_data_settings.api_keys.twelvedata` with SEED_LEGACY_MIGRATION_TEST_1234, restarted backend — canonical collection auto-populated, backend.err.log shows `market_providers.startup: migrated twelvedata api_key from market_data_settings.api_keys.twelvedata (len=31)` followed by `loaded twelvedata api_key (len=31, fp=SEED…34)`; debug endpoint reports `read_db_config.matches_in_memory=true` and `db_key_present=true`. Debug verdict for fake key = `INVALID_API_KEY` (HTTP 401 from TwelveData) — the previous `NOT_CONFIGURED`/`EXCEPTION_Exception` regression is fixed. Previously-flaky `test_refresh_interval_set_and_clamps` now passes 3/3 consecutive runs. No regressions in market_providers/status or PUT /market_providers/api-key (still returns provider/configured/test_ok/test_result). DB left WIPED at end of run (canonical twelvedata_api_key = '').",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/iter42_key_store_full.xml",
+    "/app/test_reports/pytest/iter42_iter28_related.xml",
+    "/app/test_reports/pytest/iter42_regression.xml",
+    "/app/test_reports/pytest/iter42_e2e_persistence.xml",
+    "/app/test_reports/pytest/iter42_final_all.xml",
+    "/app/backend/tests/test_sprint_1412b_e2e_persistence.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "key_store.py is clean, well-documented, idempotent; canonical-first with legacy fallback chain is a solid self-healing design.",
+    "propagate_api_key resets circuit-breaker state so the next tick immediately uses the new key — correct.",
+    "Test isolation note: my E2E persistence tests leave the DB clean (autouse wipe fixture), but running them together with test_iter28's `test_status_providers_list` in the same session can transiently overlap because the assertion `provs['twelvedata']['configured'] is False` reads live manager state. Not a bug in the fix — just test ordering. Ran cleanly in isolation. Consider guarding that specific assertion in test_iter28 with a pre-test wipe helper for future-proofing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint_1412b_e2e_persistence.py (NEW — HTTP-level verification of all three legacy save endpoints + debug verdict)"
+  ],
+  "success_rate": {
+    "backend": "100% (187/187 required tests pass; 1 transient network timeout on preview edge auto-resolves on localhost)",
+    "frontend": "N/A (skipped per request)"
+  },
+  "seed_data_creation": "Test 3 seed: `market_data_settings._id=default.api_keys.twelvedata=SEED_LEGACY_MIGRATION_TEST_1234` (wiped at end of run). All persistence tests use `TEST_KEY_*` prefixed keys and wipe before/after via autouse fixture.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 14.1.2b is fully verified. All 187 pytest cases green across key_store, live_ingestion, market_debug, iter28_market_providers, cache_overwrite_guard, twelvedata_backoff_reset, forex/forex_iter16/forex_regression, market_data, sprint75_p0_market, and the new sprint_1412b_e2e_persistence integration suite. DB is left WIPED (no TD/AV keys in any of the 4 collections). The debug endpoint returns INVALID_API_KEY (401) for fake keys as expected — the only way to get OK_WRITTEN in this env would be a REAL TwelveData key, which per E1 must NOT be requested from user.",
+  "rca_of_issue": "Original bug: 4 admin UI pages wrote the same key to 4 different Mongo collections, only market_provider_config was read by ProviderManager. Fix (verified working): (a) new key_store.canonical_write/read/migrate_legacy_keys, (b) ProviderManager._load_config calls migrate on startup, (c) new propagate_api_key pushes key into live manager, (d) three legacy PUT endpoints now shadow-write + live-propagate, (e) debug verdict mapper distinguishes INVALID_API_KEY vs NOT_CONFIGURED vs PROVIDER_5XX. Repro proof: seeded key ONLY in legacy market_data_settings → after backend restart the log shows migration line and set_api_key called, canonical Mongo doc updated, debug endpoint reports matches_in_memory=true."
+}
