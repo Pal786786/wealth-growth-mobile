@@ -81,6 +81,20 @@ async def ensure_indexes(db) -> None:
             [("symbol", 1), ("tf", 1), ("t", 1)], unique=True, name="sym_tf_t")
     except Exception as e:  # pragma: no cover
         logger.warning("candle index init failed: %s", e)
+        # Sprint 16.3b — long-lived DBs contain legacy tick rows without
+        # tf/t, so the UNIQUE build hits E11000 on (sym, null, null) dups and
+        # the collection ends up with NO usable index: every _store_bars
+        # upsert filter then COLLECTION-SCANS millions of rows, which is what
+        # actually caused the Atlas NetworkTimeout in production. Fall back
+        # to a NON-unique index — upserts become index scans; logical
+        # uniqueness is already enforced by the upsert filters themselves
+        # plus the read-side dedupe in get_candles.
+        try:
+            await db[HIST_COLL].create_index(
+                [("symbol", 1), ("tf", 1), ("t", 1)], name="sym_tf_t_nu")
+            logger.info("candle fallback index sym_tf_t_nu ready (non-unique)")
+        except Exception as e2:
+            logger.error("candle fallback index failed: %s", e2)
 
 
 # ================================================================== ingest

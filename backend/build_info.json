@@ -1,9 +1,9 @@
 {
- "stamp_id": "59e0b0cab3264e929ef69d1c26a046c8",
- "generated_at": "2026-07-15T14:48:44.780126+00:00",
- "sprint": "16.3b",
+ "stamp_id": "82b2bd8961944c8abb763e0db4fb0c8b",
+ "generated_at": "2026-07-15T15:05:47.077247+00:00",
+ "sprint": "16.3b-r2",
  "files": {
-  "market_candles.py": "0cf03595b16beecc848642cd7c63ff4b7aa90589b85c4ef6860688bb4f0762b6",
+  "market_candles.py": "4eb066574aa2c72b99ec0f2661877b8914a57df0ddd01d82a0c03fba84eb54ec",
   "forex/feed.py": "d271f74ff582c9fc157dcf7ce9d0498183ee266bc36a940b280fe3e3c301ad14",
   "server.py": "524a27f4f7aeaa50f9e0d73adc610b659952aa8dbe2b8f1416f40d196ff5019f"
  }
