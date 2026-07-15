@@ -397,3 +397,29 @@ production; then verify stamp_id cbbce4b5b1d34594a12625edb63b5113 in
 /api/market/debug/config and re-probe XAUUSD/GBPUSD/EURUSD (expect 200; the
 first sync will also finally persist meta, enabling the 60s throttle and
 REDUCING Finnhub usage).
+
+---
+## Sprint 16.3a/16.3b (2026-07-15) — Production verified + pipeline stabilized
+
+**16.3a verification**: after user published (deployment 314dc0a), production ran
+byte-identical 16.3 code. All 6 symbols returned HTTP 200 (500s GONE). The real
+production exception finally surfaced via sync.reason: **NetworkTimeout** from
+Atlas during _store_bars bulk write (~10s socket limit). Charts rendered for all
+5 symbols in real browser vs published chart engine + data; dup live rows in
+prod DB (upsert races) caused lightweight-charts "Value is null" asserts.
+
+**16.3b fixes (market_candles.py only)**:
+1. _store_bars → bounded batches (STORE_CHUNK_OPS=400/bulk), returns
+   {stored, last_ok_t, complete}; ensure_history persists meta up to last
+   successful batch (resume, not refetch); backfill_older extends oldest_t
+   only when complete (no gaps).
+2. get_candles → unique ascending timestamps guaranteed (finnhub bar preferred
+   over live duplicate). API shape unchanged.
+
+**Tests**: 52/52 (test_sprint_163b_stabilize.py 10 + 163_candle_fix 19 +
+163_e2e_public 23). Build stamp 59e0b0cab3264e929ef69d1c26a046c8,
+market_candles.py sha 0cf03595b16beecc….
+
+**PENDING USER ACTION**: republish → verify prod: first call per symbol syncs
+(seconds), subsequent <1s (throttled via persisted meta), no dup timestamps,
+no chart asserts.

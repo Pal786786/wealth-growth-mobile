@@ -115,7 +115,7 @@ class TestStoreBars:
         stored, n, doc = self._run(scenario())
         assert n == 2, f"expected 2 unique docs, found {n}"
         assert doc["c"] == 1.6, "last duplicate must win"
-        assert stored == 2
+        assert stored["stored"] == 2 and stored["complete"] is True
 
     def test_bulkwriteerror_salvaged_not_raised(self):
         """A BulkWriteError from the driver must be logged + salvaged, never
@@ -142,7 +142,8 @@ class TestStoreBars:
             bars = [{"t": 1784000000 + i * 60, "o": 1, "h": 1, "l": 1, "c": 1, "v": 0}
                     for i in range(10)]
             stored = self._run(mc._store_bars("TESTSYM", "1m", bars))
-            assert stored == 7, "must return salvaged nUpserted+nModified"
+            assert stored["stored"] == 7, "must return salvaged nUpserted+nModified"
+            assert stored["complete"] is True
         finally:
             mc._db = old_db
 

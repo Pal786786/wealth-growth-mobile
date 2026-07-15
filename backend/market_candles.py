@@ -187,6 +187,17 @@ async def get_candles(symbol: str, tf: str, limit: int = 300,
             elif c["t"] == candles[-1]["t"] and candles[-1].get("source") != "finnhub":
                 candles[-1] = c
 
+    # Sprint 16.3b — guarantee unique, ascending timestamps. Production data
+    # can contain duplicate rows (historical upsert races before the unique
+    # index existed); lightweight-charts asserts on repeated times.
+    # Prefer the finnhub (official) bar when a live duplicate exists.
+    uniq: Dict[int, Dict[str, Any]] = {}
+    for c in candles:
+        prev = uniq.get(c["t"])
+        if prev is None or prev.get("source") != "finnhub":
+            uniq[c["t"]] = c
+    candles = [uniq[k] for k in sorted(uniq)]
+
     now_bucket = _bucket(time.time(), tf_sec)
     for c in candles:
         c["complete"] = c["t"] < now_bucket
@@ -256,37 +267,63 @@ async def _fetch_finnhub_bars(symbol: str, res: str, t_from: int,
         return None
 
 
-async def _store_bars(symbol: str, base_tf: str, bars: List[Dict[str, Any]]) -> int:
+# Sprint 16.3b — bounded bulk batches. Atlas (managed cluster) kills sockets
+# on long-running bulk writes (~10s) → NetworkTimeout. 400 ops per bulk_write
+# keeps every round-trip well under the limit.
+STORE_CHUNK_OPS = 400
+
+
+async def _store_bars(symbol: str, base_tf: str,
+                      bars: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Persist bars in bounded batches (ascending time order).
+
+    Returns {stored, last_ok_t, complete}:
+      * stored    — number of docs upserted/updated across successful batches
+      * last_ok_t — newest bar timestamp covered by a fully-attempted batch
+                    (None if no batch succeeded)
+      * complete  — True when every batch was attempted without a hard failure
+    """
     if not bars:
-        return 0
-    # Sprint 16.3 — de-duplicate by bucket timestamp. Finnhub can return
-    # repeated stamps in one payload; two upserts targeting the same
-    # (symbol, tf, t) inside a single unordered bulk race to INSERT and the
-    # loser raises E11000 under the unique sym_tf_t index. One op per t.
+        return {"stored": 0, "last_ok_t": None, "complete": True}
+    # De-duplicate by bucket timestamp. Finnhub can return repeated stamps;
+    # one op per (symbol, tf, t) per bulk is required under unique sym_tf_t.
     dedup: Dict[int, Dict[str, Any]] = {}
     for b in bars:
         dedup[b["t"]] = b
     now_dt = _now_dt()
-    ops = [UpdateOne(
-        {"symbol": symbol, "tf": base_tf, "t": t},
-        {"$set": {**b, "symbol": symbol, "tf": base_tf,
-                  "source": "finnhub", "updated_at": now_dt}},
-        upsert=True,
-    ) for t, b in sorted(dedup.items())]
-    try:
-        res = await _db[HIST_COLL].bulk_write(ops, ordered=False)
-        return (res.upserted_count or 0) + (res.modified_count or 0)
-    except BulkWriteError as e:
-        # Salvage partial success (unordered bulk applies every op it can).
-        # Log the exact per-op errors verbatim so production issues are named.
-        d = e.details or {}
-        applied = int(d.get("nUpserted") or 0) + int(d.get("nModified") or 0)
-        logger.error(
-            "candle store %s %s: BulkWriteError — %d/%d ops applied; writeErrors: %s",
-            symbol, base_tf, applied, len(ops),
-            [str(w.get("errmsg", ""))[:160] for w in (d.get("writeErrors") or [])[:3]],
-        )
-        return applied
+    ordered_ts = sorted(dedup)
+    stored = 0
+    last_ok_t: Optional[int] = None
+    for i in range(0, len(ordered_ts), STORE_CHUNK_OPS):
+        chunk_ts = ordered_ts[i:i + STORE_CHUNK_OPS]
+        ops = [UpdateOne(
+            {"symbol": symbol, "tf": base_tf, "t": t},
+            {"$set": {**dedup[t], "symbol": symbol, "tf": base_tf,
+                      "source": "finnhub", "updated_at": now_dt}},
+            upsert=True,
+        ) for t in chunk_ts]
+        try:
+            res = await _db[HIST_COLL].bulk_write(ops, ordered=False)
+            stored += (res.upserted_count or 0) + (res.modified_count or 0)
+            last_ok_t = chunk_ts[-1]
+        except BulkWriteError as e:
+            # Per-op errors (e.g. duplicate key) — salvage counts, keep going.
+            d = e.details or {}
+            stored += int(d.get("nUpserted") or 0) + int(d.get("nModified") or 0)
+            last_ok_t = chunk_ts[-1]
+            logger.error(
+                "candle store %s %s: BulkWriteError in batch %d — writeErrors: %s",
+                symbol, base_tf, i // STORE_CHUNK_OPS,
+                [str(w.get("errmsg", ""))[:160] for w in (d.get("writeErrors") or [])[:3]],
+            )
+        except Exception as e:
+            # Hard failure (NetworkTimeout etc.) — stop; caller persists meta
+            # up to last_ok_t so the next sync resumes instead of refetching.
+            logger.error("candle store %s %s: batch %d failed: %s: %s",
+                         symbol, base_tf, i // STORE_CHUNK_OPS,
+                         type(e).__name__, str(e)[:160])
+            return {"stored": stored, "last_ok_t": last_ok_t, "complete": False}
+    return {"stored": stored, "last_ok_t": last_ok_t, "complete": True}
 
 
 async def _update_meta(symbol: str, base_tf: str, t_from: int, t_to: int) -> None:
@@ -335,10 +372,16 @@ async def ensure_history(symbol: str, tf: str) -> Dict[str, Any]:
     bars = await _fetch_finnhub_bars(symbol, res, t_from, now)
     if bars is None:
         return {"synced": False, "reason": "provider_unavailable"}
-    stored = await _store_bars(symbol, base_tf, bars)
-    await _update_meta(symbol, base_tf, t_from, bars[-1]["t"] if bars else t_from)
-    logger.info("candle sync %s %s: fetched=%d stored=%d from=%d", symbol, base_tf, len(bars), stored, t_from)
-    return {"synced": True, "fetched": len(bars), "stored": stored}
+    st = await _store_bars(symbol, base_tf, bars)
+    # Sprint 16.3b — persist meta up to the last SUCCESSFULLY stored batch so
+    # the next sync resumes incrementally instead of refetching the window.
+    if bars and st["last_ok_t"] is None:
+        return {"synced": False, "reason": "store_failed", "fetched": len(bars)}
+    newest = st["last_ok_t"] if bars else t_from
+    await _update_meta(symbol, base_tf, t_from, newest)
+    logger.info("candle sync %s %s: fetched=%d stored=%d complete=%s from=%d",
+                symbol, base_tf, len(bars), st["stored"], st["complete"], t_from)
+    return {"synced": True, "fetched": len(bars), "stored": st["stored"]}
 
 
 async def backfill_older(symbol: str, tf: str, before: int) -> Dict[str, Any]:
@@ -356,9 +399,12 @@ async def backfill_older(symbol: str, tf: str, before: int) -> Dict[str, Any]:
     bars = await _fetch_finnhub_bars(symbol, FINNHUB_RES[base_tf], t_from, t_to)
     if bars is None:
         return {"synced": False, "reason": "provider_unavailable"}
-    stored = await _store_bars(symbol, base_tf, bars)
+    st = await _store_bars(symbol, base_tf, bars)
+    # Only extend oldest_t when the whole chunk landed — avoids gaps.
+    if not st["complete"]:
+        return {"synced": False, "reason": "store_failed", "fetched": len(bars)}
     await _update_meta(symbol, base_tf, t_from, t_to)
-    return {"synced": True, "fetched": len(bars), "stored": stored}
+    return {"synced": True, "fetched": len(bars), "stored": st["stored"]}
 
 
 # ================================================================ routes
