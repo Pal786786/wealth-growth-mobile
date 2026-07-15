@@ -8,7 +8,12 @@
 <style>
   html, body { margin:0; padding:0; background:#0e1117; height:100%; overflow:hidden;
                -webkit-user-select:none; user-select:none; font-family:-apple-system,Roboto,Helvetica,Arial,sans-serif; }
-  #chart { position:absolute; inset:0; }
+  #wrap { position:absolute; inset:0; display:flex; flex-direction:column; }
+  #chart { flex:1; position:relative; min-height:120px; }
+  #osc { height:0; position:relative; border-top:1px solid #1c2230; transition:none; }
+  #osc.visible { height:110px; }
+  #osc-legend { position:absolute; top:2px; left:8px; z-index:10; pointer-events:none;
+                font-size:10px; color:#9aa0aa; text-shadow:0 1px 2px #000; }
   #legend { position:absolute; top:6px; left:8px; z-index:10; pointer-events:none;
             font-size:11px; line-height:1.5; color:#d1d4dc; text-shadow:0 1px 2px #000; }
   #legend .sym { font-weight:700; font-size:12px; }
@@ -21,7 +26,10 @@
 </head>
 <body>
 <div id="watermark"></div>
-<div id="chart"></div>
+<div id="wrap">
+  <div id="chart"></div>
+  <div id="osc"><div id="osc-legend"></div></div>
+</div>
 <div id="legend"></div>
 <div id="vol-na">volume unavailable</div>
 <script>
@@ -277,12 +285,28 @@
 
   // Resize
   function resize() {
-    chart.applyOptions({ width: window.innerWidth, height: window.innerHeight });
+    var wrapEl = document.getElementById("chart");
+    chart.applyOptions({ width: wrapEl.clientWidth, height: wrapEl.clientHeight });
+    if (window.__chart && window.__chart.onResize) window.__chart.onResize();
   }
   window.addEventListener("resize", resize);
+
+  // ---- Sprint 16.1: expose internals for indicator/tool extension scripts ----
+  window.__chart = {
+    chart: chart, candleSeries: candleSeries, lineSeries: lineSeries,
+    volumeSeries: volumeSeries, state: state, post: post,
+    setAllHook: null, tailHook: null, extraHandlers: {}, onResize: null,
+    resize: resize,
+  };
+  var _setAll = setAll, _updateTail = updateTail;
+  setAll = function (c, k) { _setAll(c, k); if (window.__chart.setAllHook) window.__chart.setAllHook(); };
+  updateTail = function (c) { _updateTail(c); if (window.__chart.tailHook) window.__chart.tailHook(); };
+
   resize();
   post({ type: "ready" });
 })();
 </script>
+<script src="./chart-indicators.js"></script>
+<script src="./chart-tools.js"></script>
 </body>
 </html>

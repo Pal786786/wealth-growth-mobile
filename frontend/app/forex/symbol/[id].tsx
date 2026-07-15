@@ -6,11 +6,12 @@ import { useTheme } from "@/src/theme/ThemeProvider";
 import { Screen } from "@/src/components/Screen";
 import { Card } from "@/src/components/Card";
 import { useToast } from "@/src/components/Toast";
-import { forexApi, ForexSymbol, Side, Position } from "@/src/api/forex";
+import { forexApi, ForexSymbol, Side, Position, PendingOrder } from "@/src/api/forex";
 import { useForexPrices } from "@/src/hooks/useForexPrices";
 import { formatINR } from "@/src/utils/format";
 import { ForexDemoBanner } from "@/src/components/ForexDemoBanner";
 import { TradingChart } from "@/src/components/TradingChart";
+import { PositionSheet } from "@/src/components/PositionSheet";
 
 const LOT_PRESETS = [0.01, 0.1, 1, 5, 10];
 
@@ -32,6 +33,11 @@ export default function SymbolDetail() {
   const [placing, setPlacing] = useState(false);
   const [openPositions, setOpenPositions] = useState<Position[]>([]);
   const [closedPositions, setClosedPositions] = useState<Position[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
+  const [orderType, setOrderType] = useState<"market" | "limit" | "stop">("market");
+  const [pendingPrice, setPendingPrice] = useState("");
+  const [costs, setCosts] = useState<{ commission_per_lot: number; commission_type: string; commission_currency: string; usd_inr: number } | null>(null);
+  const [sheetPos, setSheetPos] = useState<Position | null>(null);
 
   // Load symbol (public) — must always succeed; balance is loaded separately so an
   // auth/network failure never leaves the screen stuck on a spinner.
@@ -60,16 +66,20 @@ export default function SymbolDetail() {
 
   const loadPositions = useCallback(async () => {
     try {
-      const [op, cl] = await Promise.all([
+      const [op, cl, po] = await Promise.all([
         forexApi.listPositions("open"),
         forexApi.listPositions("closed"),
+        forexApi.listOrders("pending"),
       ]);
       setOpenPositions(op);
       setClosedPositions(cl);
+      setPendingOrders(po);
     } catch {
       // not logged in — chart simply shows no position overlays
     }
   }, []);
+
+  useEffect(() => { forexApi.tradingCosts().then(setCosts).catch(() => {}); }, []);
 
   useEffect(() => { loadSymbol(); loadBalance(); loadPositions(); }, [loadSymbol, loadBalance, loadPositions]);
   // Poll positions so entry-line floating PnL stays live on the chart
@@ -111,11 +121,44 @@ export default function SymbolDetail() {
   const canTrade = q && lot > 0 && balance >= margin;
   const sideColor = side === "buy" ? palette.success : palette.danger;
 
+  // Sprint 16.1 — estimated costs (from admin trading-costs config)
+  const commissionEst = (() => {
+    if (!costs) return 0;
+    let c = costs.commission_per_lot * lot;
+    if (costs.commission_type === "per_side") c *= 2;
+    if (costs.commission_currency === "USD") c *= costs.usd_inr;
+    return c;
+  })();
+  const spreadCostEst = q ? (q.ask - q.bid) * symbol.contract_size * lot * (costs?.usd_inr || 83) : 0;
+  const entryEst = orderType === "market"
+    ? (q ? (side === "buy" ? q.ask : q.bid) : 0)
+    : parseFloat(pendingPrice) || 0;
+  const tpNumEst = parseFloat(tp) || 0;
+  const slNumEst = parseFloat(sl) || 0;
+  const riskReward = (() => {
+    if (!entryEst || !tpNumEst || !slNumEst) return null;
+    const reward = Math.abs(tpNumEst - entryEst);
+    const risk = Math.abs(entryEst - slNumEst);
+    return risk > 0 ? reward / risk : null;
+  })();
+
   const placeOrder = async () => {
     setPlacing(true);
     try {
       const tpNum = tp ? parseFloat(tp) : undefined;
       const slNum = sl ? parseFloat(sl) : undefined;
+      if (orderType !== "market") {
+        const px = parseFloat(pendingPrice);
+        if (!px || px <= 0) throw new Error("Enter a valid pending price");
+        const order = await forexApi.placePendingOrder({
+          symbol_id: symbol.id, side, order_type: orderType, price: px,
+          lot_size: lot, tp: tpNum, sl: slNum,
+        });
+        show("success", `${side.toUpperCase()} ${orderType.toUpperCase()} placed @ ${order.price}`);
+        setPendingPrice(""); setTp(""); setSl("");
+        await loadPositions();
+        return;
+      }
       const pos = await forexApi.openPosition({
         symbol_id: symbol.id, side, lot_size: lot, tp: tpNum, sl: slNum,
       });
@@ -164,6 +207,8 @@ export default function SymbolDetail() {
           quote={q}
           openPositions={openPositions}
           closedPositions={closedPositions}
+          pendingOrders={pendingOrders}
+          onBackendUpdate={loadPositions}
           height={380}
         />
 
@@ -190,9 +235,21 @@ export default function SymbolDetail() {
           </View>
         )}
 
-        {/* Trade ticket */}
+        {/* Trade ticket — Sprint 16.1 MT5-style */}
         <Card style={{ gap: 12 }}>
-          <Text style={{ color: palette.textPrimary, fontWeight: "800", fontSize: 14 }}>Place Order (Market)</Text>
+          <Text style={{ color: palette.textPrimary, fontWeight: "800", fontSize: 14 }}>Place Order</Text>
+
+          {/* Order type */}
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            {(["market", "limit", "stop"] as const).map((ot) => (
+              <Pressable key={ot} onPress={() => setOrderType(ot)} testID={`order-type-${ot}`}
+                style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: orderType === ot ? palette.primary : palette.border, backgroundColor: orderType === ot ? palette.primary + "15" : palette.surface }}>
+                <Text style={{ color: orderType === ot ? palette.primary : palette.textSecondary, fontWeight: "800", fontSize: 12 }}>
+                  {ot.toUpperCase()}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
 
           {/* Buy/Sell */}
           <View style={{ flexDirection: "row", gap: 8 }}>
@@ -243,10 +300,17 @@ export default function SymbolDetail() {
             </View>
           </View>
 
-          {/* Order summary */}
+          {/* Order summary — Sprint 16.1 estimated cost breakdown */}
           <View style={{ backgroundColor: palette.surface, padding: 10, borderRadius: 10, gap: 6 }}>
             <Row label="Margin required" value={formatINR(margin)} />
-            <Row label="Balance after" value={formatINR(balance - margin)} />
+            <Row label="Est. commission" value={formatINR(commissionEst)} />
+            <Row label="Est. spread cost" value={formatINR(spreadCostEst)} />
+            <Row label="Swap" value={formatINR(0)} />
+            <Row label="Total est. cost" value={formatINR(commissionEst + spreadCostEst)} />
+            {riskReward != null ? (
+              <Row label="Risk / Reward" value={`1 : ${riskReward.toFixed(2)}`} />
+            ) : null}
+            <Row label="Balance after margin" value={formatINR(balance - margin)} />
             <Row label="Contract size" value={`${symbol.contract_size.toLocaleString()} units`} />
           </View>
 
@@ -254,7 +318,7 @@ export default function SymbolDetail() {
           <Pressable onPress={placeOrder} disabled={!canTrade || placing} testID="place-order"
             style={{ backgroundColor: sideColor, paddingVertical: 14, borderRadius: 12, alignItems: "center", opacity: !canTrade || placing ? 0.5 : 1 }}>
             {placing ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "800", fontSize: 14 }}>
-              {side === "buy" ? `BUY ${lot} ${symbol.display}` : `SELL ${lot} ${symbol.display}`}
+              {`${side === "buy" ? "BUY" : "SELL"}${orderType !== "market" ? ` ${orderType.toUpperCase()}` : ""} ${lot} ${symbol.display}`}
             </Text>}
           </Pressable>
           {!canTrade && q && balance < margin ? (
@@ -265,10 +329,63 @@ export default function SymbolDetail() {
           ) : null}
         </Card>
 
+        {/* Sprint 16.1 — open positions on this symbol (tap → manage) */}
+        {openPositions.filter((p) => p.symbol_id === symbol.id).length > 0 ? (
+          <Card style={{ gap: 8 }}>
+            <Text style={{ color: palette.textPrimary, fontWeight: "800", fontSize: 13 }}>Open Positions</Text>
+            {openPositions.filter((p) => p.symbol_id === symbol.id).map((p) => (
+              <Pressable key={p.position_id} onPress={() => setSheetPos(p)} testID={`pos-${p.position_id}`}
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: palette.border }}>
+                <View>
+                  <Text style={{ color: p.side === "buy" ? palette.success : palette.danger, fontWeight: "800", fontSize: 12 }}>
+                    {p.side.toUpperCase()} {p.lot_size} @ {p.entry_price}
+                  </Text>
+                  <Text style={{ color: palette.textMuted, fontSize: 10 }}>
+                    TP {p.tp ?? "—"} · SL {p.sl ?? "—"} · tap to manage
+                  </Text>
+                </View>
+                <Text style={{ color: p.pnl_inr >= 0 ? palette.success : palette.danger, fontWeight: "800", fontVariant: ["tabular-nums"] }}>
+                  {p.pnl_inr >= 0 ? "+" : ""}{formatINR(p.pnl_inr)}
+                </Text>
+              </Pressable>
+            ))}
+          </Card>
+        ) : null}
+
+        {/* Sprint 16.1 — pending orders on this symbol */}
+        {pendingOrders.filter((o) => o.symbol_id === symbol.id).length > 0 ? (
+          <Card style={{ gap: 8 }}>
+            <Text style={{ color: palette.textPrimary, fontWeight: "800", fontSize: 13 }}>Pending Orders</Text>
+            {pendingOrders.filter((o) => o.symbol_id === symbol.id).map((o) => (
+              <View key={o.order_id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: palette.border }}>
+                <View>
+                  <Text style={{ color: "#29b6f6", fontWeight: "800", fontSize: 12 }}>
+                    {o.side.toUpperCase()} {o.type.toUpperCase()} {o.lot_size} @ {o.price}
+                  </Text>
+                  <Text style={{ color: palette.textMuted, fontSize: 10 }}>drag the blue line on the chart to move</Text>
+                </View>
+                <Pressable testID={`cancel-order-${o.order_id}`}
+                  onPress={async () => { try { await forexApi.cancelOrder(o.order_id); await loadPositions(); show("success", "Order cancelled"); } catch (e: any) { show("error", e?.response?.data?.detail || "Cancel failed"); } }}
+                  style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: palette.danger }}>
+                  <Text style={{ color: palette.danger, fontSize: 11, fontWeight: "700" }}>Cancel</Text>
+                </Pressable>
+              </View>
+            ))}
+          </Card>
+        ) : null}
+
         <Text style={{ color: palette.textMuted, fontSize: 10, textAlign: "center" }}>
           Paper trading only. Quotes from {q?.source || "…"} feed. No real money involved.
         </Text>
       </ScrollView>
+
+      {/* Sprint 16.1 — position management sheet */}
+      <PositionSheet
+        position={sheetPos}
+        priceDecimals={symbol.price_decimals}
+        onClose={() => setSheetPos(null)}
+        onChanged={async () => { await loadPositions(); await loadBalance(); }}
+      />
     </Screen>
   );
 }

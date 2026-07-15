@@ -1718,3 +1718,49 @@ trading, INR) resets to admin-configurable default (forex_settings.default_demo_
   all 7 TFs, live candle generation via unified scheduler, 4h-from-cached-1h,
   graceful no-key sync).
 - Regressions: finnhub 22 + forex/demo-reset suites 60 — all PASS.
+
+---
+
+## Sprint 16.1 — Professional Trading Panel (MT5 style) + 16.2/16.3 core
+
+### Backend (all covered by tests/test_sprint_161_trading_panel.py — 19/19 PASS)
+- `forex/costs.py` — unified commission engine (fixed_per_lot | per_side | round_turn,
+  INR/USD). Snapshot stored on EVERY trade at open (demo + copy trading);
+  settle() writes immutable gross_pnl/commission_amount/swap_amount/net_pnl at close.
+  Balance credited with NET pnl. ₹0 default == legacy behavior.
+- Pending orders: POST/GET/PUT/DELETE /api/forex/orders (limit/stop, MT5 placement
+  validation, triggered inside the EXISTING _mark_once loop, fills at live quote).
+- Position ops: /positions/{id}/partial-close {fraction}, /reverse, /double.
+- GET /api/forex/trading-costs (public estimates), GET/PUT /api/forex/chart-objects
+  (drawings per user+symbol+chart_key), GET/PUT /api/forex/chart-prefs (indicators,
+  workspace persistence).
+- Admin: trading_costs in forex settings + GET /api/admin/forex/commission-report
+  ?group_by=day|week|month|symbol|user.
+
+### Chart engine (static/chart/)
+- chart-indicators.js — EMA/SMA/BB/VWAP overlays + RSI/MACD/ATR in a synchronized
+  oscillator sub-pane (2-way zoom/pan/crosshair sync). All computed locally from
+  the unified candle engine.
+- chart-tools.js — draggable TP/SL/pending price lines (drag end → app PUTs
+  backend), drawing tools (trend/hline/vline/rect/fib/text/erase) on an overlay
+  canvas, persisted via objectsChanged messages.
+
+### Mobile
+- TradingChart: indicator modal (testID ind-ema etc.), tools row (tool-trend etc.),
+  swipe toolbar to cycle TFs, chartKey prop for multi-chart persistence.
+- Symbol screen: MARKET/LIMIT/STOP order types (testID order-type-limit,
+  pending-price-input), estimates (margin/commission/spread/total/R:R),
+  Open Positions list (tap → PositionSheet: sheet-tp/sheet-sl/sheet-save-tpsl,
+  partial-25/50/75/partial-custom, sheet-reverse/sheet-double/sheet-close),
+  Pending Orders list with cancel-order-{id}.
+- Multi-Chart workspace /forex/multi-chart (testID layout-single/dual_v/dual_h/quad,
+  pane-symbol-{i}, pick-{SYMBOL}) — independent symbol/TF/indicators/drawings per
+  pane, workspace persisted in chart-prefs. Entry: multi-chart-btn on Forex tab.
+- Admin SPA: Trading Costs card + Commission Collected report in Forex Settings
+  (REBUILT and deployed to /app/backend/static/admin-ui/).
+
+### Deferred (documented for next sprints)
+- 16.2 extras: Stochastic/CCI/ADX/Williams %R, SuperTrend/Ichimoku, pane
+  reorder/collapse, per-indicator source/color settings UI, indicator templates.
+- 16.3 extras: fullscreen double-tap, long-press context menu, symbol linking,
+  crosshair sync ACROSS panes, tablet 6-chart.

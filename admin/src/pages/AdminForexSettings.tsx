@@ -12,6 +12,7 @@ type Config = {
   max_lot: number;
   usd_inr: number;
   twelve_data_api_key_masked?: string;
+  trading_costs?: { commission_per_lot: number; commission_type: string; commission_currency: string };
   symbols: Record<string, SymCfg>;
   diagnostics: any;
 };
@@ -22,6 +23,8 @@ export default function AdminForexSettings() {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [tdKey, setTdKey] = useState("");
   const [stats, setStats] = useState<any>(null);
+  const [commReport, setCommReport] = useState<any>(null);
+  const [commGroup, setCommGroup] = useState("day");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,6 +41,14 @@ export default function AdminForexSettings() {
       setError(e?.response?.data?.detail || e?.message || "Failed to load");
     }
   };
+
+  const loadCommReport = async (g: string) => {
+    try {
+      const r = await api.get("/admin/forex/commission-report", { params: { group_by: g } });
+      setCommReport(r.data);
+    } catch { /* section stays empty */ }
+  };
+  useEffect(() => { loadCommReport(commGroup); }, [commGroup]);
 
   useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, []);
 
@@ -61,6 +72,7 @@ export default function AdminForexSettings() {
         min_lot: cfg.min_lot,
         max_lot: cfg.max_lot,
         symbols: cfg.symbols,
+        trading_costs: cfg.trading_costs || { commission_per_lot: 0, commission_type: "fixed_per_lot", commission_currency: "INR" },
       };
       if (tdKey.trim()) payload.twelve_data_api_key = tdKey.trim();
       await api.put("/admin/forex/settings", payload);
@@ -118,6 +130,79 @@ export default function AdminForexSettings() {
           <Field label="Max Lot Size" type="number" step={1} value={cfg.max_lot}
             onChange={(v) => update({ max_lot: Number(v) })} />
         </div>
+      </Section>
+
+      {/* Sprint 16.1 — Trading Costs (commission engine) */}
+      <Section title="Trading Costs (Commission Engine)">
+        <div className="text-xs text-slate-400">
+          Snapshotted onto every trade at open — changing these values only affects NEW trades.
+          Applies identically to demo, copy, AI and (future) real trading.
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Commission per Lot" type="number" step={1}
+            value={cfg.trading_costs?.commission_per_lot ?? 0}
+            onChange={(v) => update({ trading_costs: { ...(cfg.trading_costs || { commission_type: "fixed_per_lot", commission_currency: "INR" }), commission_per_lot: Number(v) } as any })} />
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-400">Commission Type</span>
+            <select value={cfg.trading_costs?.commission_type ?? "fixed_per_lot"}
+              onChange={(e) => update({ trading_costs: { ...(cfg.trading_costs || { commission_per_lot: 0, commission_currency: "INR" }), commission_type: e.target.value } as any })}
+              className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100">
+              <option value="fixed_per_lot">Fixed per lot</option>
+              <option value="per_side">Per side (open + close)</option>
+              <option value="round_turn">Round turn</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-400">Currency</span>
+            <select value={cfg.trading_costs?.commission_currency ?? "INR"}
+              onChange={(e) => update({ trading_costs: { ...(cfg.trading_costs || { commission_per_lot: 0, commission_type: "fixed_per_lot" }), commission_currency: e.target.value } as any })}
+              className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100">
+              <option value="INR">INR (₹)</option>
+              <option value="USD">USD ($)</option>
+            </select>
+          </label>
+        </div>
+      </Section>
+
+      {/* Sprint 16.1 — Commission reporting */}
+      <Section title="Commission Collected">
+        <div className="flex items-center gap-2">
+          {["day", "week", "month", "symbol", "user"].map((g) => (
+            <button key={g} onClick={() => setCommGroup(g)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${commGroup === g ? "bg-sky-500 text-white border-sky-500" : "bg-slate-900 text-slate-300 border-slate-700"}`}>
+              {g}
+            </button>
+          ))}
+          <div className="ml-auto text-sm text-emerald-400 font-bold">
+            Total: ₹{(commReport?.total_commission_collected || 0).toLocaleString("en-IN")}
+            <span className="text-slate-500 font-normal"> · {commReport?.total_commissioned_trades || 0} trades</span>
+          </div>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-slate-400 border-b border-slate-700">
+              <th className="text-left py-2">{commGroup}</th>
+              <th className="text-right py-2">Trades</th>
+              <th className="text-right py-2">Commission</th>
+              <th className="text-right py-2">Gross PnL</th>
+              <th className="text-right py-2">Net PnL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(commReport?.rows || []).slice(0, 15).map((r: any) => (
+              <tr key={r.key} className="border-b border-slate-800 text-slate-200">
+                <td className="py-1.5 font-mono">{String(r.key).slice(0, 18)}</td>
+                <td className="text-right py-1.5">{r.trades}</td>
+                <td className="text-right py-1.5 text-emerald-400">₹{r.commission.toLocaleString("en-IN")}</td>
+                <td className="text-right py-1.5">₹{r.gross_pnl.toLocaleString("en-IN")}</td>
+                <td className="text-right py-1.5">₹{r.net_pnl.toLocaleString("en-IN")}</td>
+              </tr>
+            ))}
+            {!(commReport?.rows || []).length && (
+              <tr><td colSpan={5} className="py-3 text-center text-slate-500 text-xs">No commissioned trades yet (₹0 demo default)</td></tr>
+            )}
+          </tbody>
+        </table>
       </Section>
 
       {/* Symbol manager */}

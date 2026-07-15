@@ -8,10 +8,10 @@
  * scroll → automatic historical backfill).
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, Platform, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, Platform, StyleSheet, ActivityIndicator, Modal, ScrollView, PanResponder } from "react-native";
 import { WebView } from "react-native-webview";
-import { CandlestickChart, LineChart as LineChartIcon } from "lucide-react-native";
-import { forexApi, Position, ForexQuote } from "@/src/api/forex";
+import { CandlestickChart, LineChart as LineChartIcon, FunctionSquare, Pencil, X } from "lucide-react-native";
+import { forexApi, Position, ForexQuote, PendingOrder } from "@/src/api/forex";
 import { BACKEND_URL } from "@/src/api/client";
 import { formatINR } from "@/src/utils/format";
 
@@ -23,13 +23,34 @@ const TIMEFRAMES: { id: string; label: string }[] = [
 ];
 const POLL_MS = 4000;
 
+// Sprint 16.1/16.2 — indicator catalogue (window.Indicators registry in the chart)
+const INDICATORS: { id: string; label: string; overlay: boolean; period?: number }[] = [
+  { id: "ema", label: "EMA", overlay: true, period: 20 },
+  { id: "sma", label: "SMA", overlay: true, period: 50 },
+  { id: "bb", label: "Bollinger", overlay: true, period: 20 },
+  { id: "vwap", label: "VWAP", overlay: true },
+  { id: "rsi", label: "RSI", overlay: false, period: 14 },
+  { id: "macd", label: "MACD", overlay: false },
+  { id: "atr", label: "ATR", overlay: false, period: 14 },
+];
+const TOOLS: { id: string; label: string }[] = [
+  { id: "trend", label: "Trend" }, { id: "hline", label: "H-Line" },
+  { id: "vline", label: "V-Line" }, { id: "rect", label: "Rect" },
+  { id: "fib", label: "Fib" }, { id: "text", label: "Text" },
+  { id: "erase", label: "Erase" },
+];
+
 type Props = {
   symbolId: string;
   priceDecimals: number;
   quote?: ForexQuote | null;
   openPositions?: Position[];
   closedPositions?: Position[];
+  pendingOrders?: PendingOrder[];
+  chartKey?: string;
+  compact?: boolean;
   height?: number;
+  onBackendUpdate?: () => void;
 };
 
 function epoch(iso?: string | null): number | null {
@@ -38,7 +59,7 @@ function epoch(iso?: string | null): number | null {
   return Number.isFinite(t) ? Math.floor(t / 1000) : null;
 }
 
-export function TradingChart({ symbolId, priceDecimals, quote, openPositions = [], closedPositions = [], height = 380 }: Props) {
+export function TradingChart({ symbolId, priceDecimals, quote, openPositions = [], closedPositions = [], pendingOrders = [], chartKey = "main", compact = false, height = 380, onBackendUpdate }: Props) {
   const webRef = useRef<WebView>(null);
   const iframeRef = useRef<any>(null);
   const readyRef = useRef(false);
@@ -47,8 +68,26 @@ export function TradingChart({ symbolId, priceDecimals, quote, openPositions = [
   const [tf, setTf] = useState("1m");
   const [chartType, setChartType] = useState<"candles" | "line">("candles");
   const [loading, setLoading] = useState(true);
+  const [indModal, setIndModal] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [activeInds, setActiveInds] = useState<Record<string, boolean>>({});
   const tfRef = useRef(tf);
   tfRef.current = tf;
+  const saveObjTimer = useRef<any>(null);
+
+  // Swipe on the toolbar cycles timeframes (mobile UX)
+  const pan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 30 && Math.abs(g.dy) < 20,
+    onPanResponderRelease: (_, g) => {
+      if (Math.abs(g.dx) < 40) return;
+      setTf((cur) => {
+        const i = TIMEFRAMES.findIndex((t) => t.id === cur);
+        const next = g.dx < 0 ? Math.min(i + 1, TIMEFRAMES.length - 1) : Math.max(i - 1, 0);
+        return TIMEFRAMES[next].id;
+      });
+    },
+  })).current;
 
   const send = useCallback((msg: any) => {
     if (Platform.OS === "web") {
@@ -78,6 +117,23 @@ export function TradingChart({ symbolId, priceDecimals, quote, openPositions = [
       send({ type: "init", symbol: symbolId, decimals: priceDecimals });
       send({ type: "setChartType", value: chartType });
       loadCandles(true);
+      // restore persisted drawings + indicator prefs
+      try {
+        const { objects } = await forexApi.getChartObjects(symbolId, chartKey);
+        send({ type: "setObjects", objects });
+      } catch {}
+      try {
+        const { prefs } = await forexApi.getChartPrefs();
+        const saved = prefs?.indicators?.[chartKey] || {};
+        const next: Record<string, boolean> = {};
+        for (const ind of INDICATORS) {
+          if (saved[ind.id]) {
+            next[ind.id] = true;
+            send({ type: "setIndicator", id: ind.id, enabled: true, params: { period: ind.period } });
+          }
+        }
+        setActiveInds(next);
+      } catch {}
     } else if (msg.type === "loadMore" && msg.oldestT && !loadingMoreRef.current) {
       loadingMoreRef.current = true;
       try {
@@ -89,8 +145,31 @@ export function TradingChart({ symbolId, priceDecimals, quote, openPositions = [
       } finally {
         loadingMoreRef.current = false;
       }
+    } else if (msg.type === "lineDragged" && msg.id && msg.price) {
+      // Sprint 16.1 — dragging a TP/SL/pending line updates the backend instantly
+      try {
+        if (msg.kind === "tp" || msg.kind === "sl") {
+          await forexApi.updateTPSL(msg.id, msg.kind === "tp" ? msg.price : undefined,
+            msg.kind === "sl" ? msg.price : undefined);
+        } else if (msg.kind === "pending") {
+          await forexApi.modifyOrder(msg.id, { price: msg.price });
+        }
+        onBackendUpdate?.();
+      } catch (e: any) {
+        console.warn("[chart] drag update failed:", e?.response?.data?.detail || e?.message);
+        onBackendUpdate?.(); // re-sync lines back to server truth
+      }
+    } else if (msg.type === "objectsChanged") {
+      // debounce persistence of drawings
+      if (saveObjTimer.current) clearTimeout(saveObjTimer.current);
+      saveObjTimer.current = setTimeout(() => {
+        forexApi.saveChartObjects(symbolId, msg.objects || [], chartKey).catch(() => {});
+      }, 800);
+    } else if (msg.type === "toolUsed") {
+      setActiveTool(null);
+      send({ type: "setTool", tool: null });
     }
-  }, [symbolId, priceDecimals, chartType, loadCandles, send]);
+  }, [symbolId, priceDecimals, chartType, chartKey, loadCandles, send, onBackendUpdate]);
 
   // web iframe inbound messages
   useEffect(() => {
@@ -131,20 +210,34 @@ export function TradingChart({ symbolId, priceDecimals, quote, openPositions = [
     if (readyRef.current && quote) send({ type: "setQuote", quote: { bid: quote.bid, ask: quote.ask } });
   }, [quote?.bid, quote?.ask, send]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // position entry/TP/SL lines + buy/sell execution markers
+  // position entry lines + draggable TP/SL/pending + execution markers
   useEffect(() => {
     if (!readyRef.current) return;
     const open = openPositions.filter((p) => p.symbol_id === symbolId);
+    const pending = pendingOrders.filter((o) => o.symbol_id === symbolId);
+    // entry lines (static) with floating PnL
     send({
       type: "setPositions",
       positions: open.map((p) => ({
         side: p.side,
         entry: p.entry_price,
-        tp: p.tp,
-        sl: p.sl,
         title: `${p.side.toUpperCase()} ${p.lot_size} • ${p.pnl_inr >= 0 ? "+" : ""}${formatINR(p.pnl_inr)}`,
       })),
     });
+    // draggable lines: TP/SL per position + pending order prices
+    const items: any[] = [];
+    open.forEach((p) => {
+      if (p.tp) items.push({ id: p.position_id, kind: "tp", price: p.tp, title: `TP ${p.tp}` });
+      if (p.sl) items.push({ id: p.position_id, kind: "sl", price: p.sl, title: `SL ${p.sl}` });
+    });
+    pending.forEach((o) => {
+      items.push({
+        id: o.order_id, kind: "pending", price: o.price,
+        title: `${o.side.toUpperCase()} ${o.type.toUpperCase()} ${o.lot_size}`,
+        color: "#29b6f6",
+      });
+    });
+    send({ type: "setDraggable", items });
     const markers: any[] = [];
     const pushEntry = (p: Position) => {
       const t = epoch(p.opened_at);
@@ -168,12 +261,42 @@ export function TradingChart({ symbolId, priceDecimals, quote, openPositions = [
     });
     markers.sort((a, b) => a.time - b.time);
     send({ type: "setMarkers", markers });
-  }, [openPositions, closedPositions, symbolId, send]);
+  }, [openPositions, closedPositions, pendingOrders, symbolId, send]);
+
+  // reload persisted drawings when symbol changes
+  useEffect(() => {
+    if (!readyRef.current) return;
+    send({ type: "init", symbol: symbolId, decimals: priceDecimals });
+    forexApi.getChartObjects(symbolId, chartKey)
+      .then(({ objects }) => send({ type: "setObjects", objects }))
+      .catch(() => send({ type: "setObjects", objects: [] }));
+    loadCandles(true);
+  }, [symbolId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleIndicator = (id: string) => {
+    const ind = INDICATORS.find((i) => i.id === id)!;
+    const enabled = !activeInds[id];
+    const next = { ...activeInds, [id]: enabled };
+    setActiveInds(next);
+    send({ type: "setIndicator", id, enabled, params: { period: ind.period } });
+    // persist per chart
+    forexApi.getChartPrefs().then(({ prefs }) => {
+      const p = prefs || {};
+      p.indicators = { ...(p.indicators || {}), [chartKey]: next };
+      return forexApi.saveChartPrefs(p);
+    }).catch(() => {});
+  };
+
+  const selectTool = (id: string) => {
+    const next = activeTool === id ? null : id;
+    setActiveTool(next);
+    send({ type: "setTool", tool: next, text: next === "text" ? "note" : undefined });
+  };
 
   return (
-    <View style={[s.wrap, { height: height + 44 }]}>
-      {/* Toolbar: timeframes + chart type */}
-      <View style={s.toolbar}>
+    <View style={[s.wrap, { height: height + (compact ? 40 : 44) + (toolsOpen ? 34 : 0) }]}>
+      {/* Toolbar: timeframes (swipe to cycle) + indicators + tools + chart type */}
+      <View style={s.toolbar} {...pan.panHandlers}>
         <View style={{ flexDirection: "row", flex: 1, gap: 2 }}>
           {TIMEFRAMES.map((t) => (
             <Pressable key={t.id} onPress={() => setTf(t.id)} testID={`tf-${t.id}`}
@@ -182,6 +305,12 @@ export function TradingChart({ symbolId, priceDecimals, quote, openPositions = [
             </Pressable>
           ))}
         </View>
+        <Pressable onPress={() => setIndModal(true)} testID="chart-indicators-btn" style={s.typeBtn}>
+          <FunctionSquare size={15} color={Object.values(activeInds).some(Boolean) ? "#f0b90b" : "#7a828e"} />
+        </Pressable>
+        <Pressable onPress={() => setToolsOpen((v) => !v)} testID="chart-tools-btn" style={s.typeBtn}>
+          <Pencil size={15} color={toolsOpen || activeTool ? "#f0b90b" : "#7a828e"} />
+        </Pressable>
         <Pressable onPress={() => setChartType("candles")} testID="chart-type-candles"
           style={[s.typeBtn, chartType === "candles" && s.tfBtnActive]}>
           <CandlestickChart size={15} color={chartType === "candles" ? "#2962ff" : "#7a828e"} />
@@ -191,6 +320,46 @@ export function TradingChart({ symbolId, priceDecimals, quote, openPositions = [
           <LineChartIcon size={15} color={chartType === "line" ? "#2962ff" : "#7a828e"} />
         </Pressable>
       </View>
+
+      {/* Drawing tools row */}
+      {toolsOpen ? (
+        <View style={s.toolsRow}>
+          {TOOLS.map((t) => (
+            <Pressable key={t.id} onPress={() => selectTool(t.id)} testID={`tool-${t.id}`}
+              style={[s.toolBtn, activeTool === t.id && s.tfBtnActive]}>
+              <Text style={[s.tfTxt, activeTool === t.id && s.tfTxtActive]}>{t.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      {/* Indicators modal */}
+      <Modal visible={indModal} transparent animationType="fade" onRequestClose={() => setIndModal(false)}>
+        <Pressable style={s.modalBg} onPress={() => setIndModal(false)}>
+          <Pressable style={s.modalCard} onPress={() => {}}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={s.modalTitle}>Indicators</Text>
+              <Pressable onPress={() => setIndModal(false)} hitSlop={10}><X size={18} color="#7a828e" /></Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 340 }}>
+              {INDICATORS.map((ind) => (
+                <Pressable key={ind.id} onPress={() => toggleIndicator(ind.id)} testID={`ind-${ind.id}`}
+                  style={s.indRow}>
+                  <View>
+                    <Text style={{ color: "#d1d4dc", fontSize: 14, fontWeight: "600" }}>
+                      {ind.label}{ind.period ? ` (${ind.period})` : ""}
+                    </Text>
+                    <Text style={{ color: "#5d6570", fontSize: 10 }}>
+                      {ind.overlay ? "Overlay on price" : "Sub-pane oscillator"}
+                    </Text>
+                  </View>
+                  <View style={[s.dot, { backgroundColor: activeInds[ind.id] ? "#26a69a" : "#2b3648" }]} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Chart surface */}
       <View style={{ flex: 1, backgroundColor: "#0e1117" }}>
@@ -236,5 +405,12 @@ const s = StyleSheet.create({
   tfTxt: { color: "#7a828e", fontSize: 11, fontWeight: "700" },
   tfTxtActive: { color: "#2962ff" },
   typeBtn: { paddingHorizontal: 8, paddingVertical: 6, borderRadius: 7 },
+  toolsRow: { flexDirection: "row", gap: 4, paddingHorizontal: 6, paddingBottom: 6, backgroundColor: "#12161f", flexWrap: "wrap" },
+  toolBtn: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 7, backgroundColor: "#1a2030" },
+  modalBg: { flex: 1, backgroundColor: "#000a", justifyContent: "center", padding: 24 },
+  modalCard: { backgroundColor: "#151a24", borderRadius: 14, padding: 16, gap: 8, borderWidth: 1, borderColor: "#232b3b" },
+  modalTitle: { color: "#d1d4dc", fontSize: 16, fontWeight: "800", marginBottom: 6 },
+  indRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#1c2230" },
+  dot: { width: 14, height: 14, borderRadius: 7 },
   loader: { position: "absolute", inset: 0 as any, alignItems: "center", justifyContent: "center", backgroundColor: "#0e111788" },
 });

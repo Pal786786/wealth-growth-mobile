@@ -66,6 +66,10 @@ class PaperBroker(BrokerAdapter):
     async def open_position(self, user_id, symbol, side, lot, entry_price,
                             sl=None, tp=None, source_trade_id=None,
                             trader_id=None, copy_id=None) -> Dict[str, Any]:
+        # Sprint 16.1 — identical commission engine as demo trading:
+        # snapshot settings at open so later admin changes never affect this trade.
+        from forex.costs import snapshot_for_trade
+        cfg = await self.db.forex_settings.find_one({"_id": "active"}) or {}
         trade = {
             "follower_trade_id": f"ct_{uuid.uuid4().hex[:12]}",
             "user_id": user_id,
@@ -85,6 +89,7 @@ class PaperBroker(BrokerAdapter):
             "pnl_pct": 0.0,
             "status": "open",
             "broker": self.name,
+            **snapshot_for_trade(cfg),
         }
         await self.db[self._COLLECTION].insert_one(trade)
         trade.pop("_id", None)
@@ -103,6 +108,12 @@ class PaperBroker(BrokerAdapter):
         # Simplified $ P&L per lot at 100k contract for FX-ish. For non-FX we
         # approximate at $1 per pip-equivalent * lot. Good enough for paper.
         pnl_usd = round(pnl_pct * lot * 10, 2)  # 0.1% * 1 lot = $1  (paper scale)
+        # Sprint 16.1 — settle with the SAME commission engine (USD conversion)
+        from forex.costs import commission_inr
+        from forex.symbols import USD_INR
+        commission_amount_inr = commission_inr(doc, lot)
+        commission_usd = round(commission_amount_inr / USD_INR, 2)
+        net_pnl_usd = round(pnl_usd - commission_usd, 2)
         await self.db[self._COLLECTION].update_one(
             {"follower_trade_id": follower_trade_id},
             {"$set": {
@@ -111,6 +122,11 @@ class PaperBroker(BrokerAdapter):
                 "exit_price": float(exit_price),
                 "pnl_pct": round(pnl_pct, 3),
                 "pnl_usd": pnl_usd,
+                "gross_pnl": pnl_usd,
+                "commission_amount": commission_usd,
+                "commission_amount_inr": commission_amount_inr,
+                "swap_amount": 0.0,
+                "net_pnl": net_pnl_usd,
                 "close_reason": reason,
             }},
         )

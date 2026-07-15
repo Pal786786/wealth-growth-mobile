@@ -44,6 +44,38 @@ class SettingsUpdate(BaseModel):
     min_lot: Optional[float] = Field(None, gt=0)
     max_lot: Optional[float] = Field(None, gt=0)
     symbols: Optional[Dict[str, Dict[str, Any]]] = None
+    # Sprint 16.1 — Trading Costs {commission_per_lot, commission_type, commission_currency}
+    trading_costs: Optional[Dict[str, Any]] = None
+
+
+class PendingOrderRequest(BaseModel):
+    symbol_id: str
+    side: str = Field(..., pattern="^(buy|sell)$")
+    order_type: str = Field(..., pattern="^(limit|stop)$")
+    price: float = Field(..., gt=0)
+    lot_size: float = Field(..., gt=0)
+    tp: Optional[float] = Field(None, gt=0)
+    sl: Optional[float] = Field(None, gt=0)
+
+
+class PendingModifyRequest(BaseModel):
+    price: Optional[float] = Field(None, gt=0)
+    tp: Optional[float] = Field(None, ge=0)
+    sl: Optional[float] = Field(None, ge=0)
+
+
+class PartialCloseRequest(BaseModel):
+    fraction: float = Field(..., gt=0, lt=1)
+
+
+class ChartObjectsSave(BaseModel):
+    symbol_id: str
+    chart_key: str = "main"
+    objects: list
+
+
+class ChartPrefsSave(BaseModel):
+    prefs: Dict[str, Any]
 
 
 def _settings_doc_default() -> Dict[str, Any]:
@@ -234,6 +266,101 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
     async def history(limit: int = 100, user=Depends(_get_current_user)):
         return await _engine.list_history(user["user_id"], limit=min(max(limit, 1), 500))
 
+    # ---------- Sprint 16.1: position ops ----------
+    @public.post("/positions/{position_id}/partial-close")
+    async def partial_close(position_id: str, req: PartialCloseRequest, user=Depends(_get_current_user)):
+        try:
+            return await _engine.partial_close(user["user_id"], position_id, req.fraction)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @public.post("/positions/{position_id}/reverse")
+    async def reverse_position(position_id: str, user=Depends(_get_current_user)):
+        try:
+            return await _engine.reverse_position(user["user_id"], position_id)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @public.post("/positions/{position_id}/double")
+    async def double_position(position_id: str, user=Depends(_get_current_user)):
+        try:
+            return await _engine.double_position(user["user_id"], position_id)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    # ---------- Sprint 16.1: pending orders (limit / stop) ----------
+    @public.post("/orders")
+    async def place_pending_order(req: PendingOrderRequest, user=Depends(_get_current_user)):
+        try:
+            return await _engine.place_pending(
+                user["user_id"], req.symbol_id, req.side, req.order_type,
+                req.price, req.lot_size, req.tp, req.sl)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @public.get("/orders")
+    async def list_orders(status: str = "pending", limit: int = 100, user=Depends(_get_current_user)):
+        if status not in ("pending", "filled", "cancelled", "rejected"):
+            raise HTTPException(400, "invalid status")
+        return await _engine.list_orders(user["user_id"], status=status, limit=min(max(limit, 1), 200))
+
+    @public.put("/orders/{order_id}")
+    async def modify_order(order_id: str, req: PendingModifyRequest, user=Depends(_get_current_user)):
+        try:
+            return await _engine.modify_pending(user["user_id"], order_id,
+                                                price=req.price, tp=req.tp, sl=req.sl)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @public.delete("/orders/{order_id}")
+    async def cancel_order(order_id: str, user=Depends(_get_current_user)):
+        try:
+            return await _engine.cancel_pending(user["user_id"], order_id)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    # ---------- Sprint 16.1: trading costs config (public, for panel estimates) ----------
+    @public.get("/trading-costs")
+    async def trading_costs():
+        from .costs import costs_from_settings
+        cfg = await db.forex_settings.find_one({"_id": "active"}) or {}
+        return {
+            **costs_from_settings(cfg),
+            "margin_per_lot": float(cfg.get("margin_per_lot", DEFAULT_MARGIN_PER_LOT)),
+            "usd_inr": USD_INR,
+        }
+
+    # ---------- Sprint 16.1: chart drawings + prefs persistence ----------
+    @public.get("/chart-objects")
+    async def get_chart_objects(symbol_id: str, chart_key: str = "main", user=Depends(_get_current_user)):
+        doc = await db.chart_objects.find_one(
+            {"user_id": user["user_id"], "symbol_id": symbol_id.upper(), "chart_key": chart_key},
+            {"_id": 0})
+        return {"objects": (doc or {}).get("objects", [])}
+
+    @public.put("/chart-objects")
+    async def save_chart_objects(req: ChartObjectsSave, user=Depends(_get_current_user)):
+        if len(req.objects) > 200:
+            raise HTTPException(400, "too many objects")
+        await db.chart_objects.update_one(
+            {"user_id": user["user_id"], "symbol_id": req.symbol_id.upper(), "chart_key": req.chart_key},
+            {"$set": {"objects": req.objects, "updated_at": _now_iso()}},
+            upsert=True)
+        return {"ok": True, "count": len(req.objects)}
+
+    @public.get("/chart-prefs")
+    async def get_chart_prefs(user=Depends(_get_current_user)):
+        doc = await db.chart_prefs.find_one({"user_id": user["user_id"]}, {"_id": 0, "user_id": 0})
+        return {"prefs": (doc or {}).get("prefs", {})}
+
+    @public.put("/chart-prefs")
+    async def save_chart_prefs(req: ChartPrefsSave, user=Depends(_get_current_user)):
+        await db.chart_prefs.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"prefs": req.prefs, "updated_at": _now_iso()}},
+            upsert=True)
+        return {"ok": True}
+
     # ---------- admin ----------
     @admin.get("/settings")
     async def get_settings(admin_user=Depends(_get_current_admin)):
@@ -255,6 +382,18 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
         patch = req.dict(exclude_unset=True)
         if "min_lot" in patch and "max_lot" in patch and patch["min_lot"] >= patch["max_lot"]:
             raise HTTPException(400, "min_lot must be less than max_lot")
+        # Sprint 16.1 — validate trading costs
+        if "trading_costs" in patch:
+            from .costs import VALID_TYPES, VALID_CURRENCIES, costs_from_settings
+            tc = costs_from_settings({"trading_costs": patch["trading_costs"] or {}})
+            raw = patch["trading_costs"] or {}
+            if raw.get("commission_type") and raw["commission_type"] not in VALID_TYPES:
+                raise HTTPException(400, f"commission_type must be one of {VALID_TYPES}")
+            if raw.get("commission_currency") and raw["commission_currency"] not in VALID_CURRENCIES:
+                raise HTTPException(400, f"commission_currency must be one of {VALID_CURRENCIES}")
+            if tc["commission_per_lot"] < 0:
+                raise HTTPException(400, "commission_per_lot must be >= 0")
+            patch["trading_costs"] = tc
         if not patch:
             raise HTTPException(400, "Nothing to update")
         await db.forex_settings.update_one({"_id": "active"}, {"$set": patch}, upsert=True)
@@ -310,6 +449,50 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
             "closed_positions": closed_pos,
             "total_realized_pnl_inr": (agg[0]["total_pnl"] if agg else 0.0),
             "feed_diagnostics": _feed.diagnostics() if _feed else {},
+        }
+
+    @admin.get("/commission-report")
+    async def commission_report(group_by: str = "day", days: int = 30,
+                                admin_user=Depends(_get_current_admin)):
+        """Sprint 16.1 — Total commission collected + breakdowns.
+        group_by: day | week | month | symbol | user"""
+        from datetime import datetime, timedelta, timezone
+        if group_by not in ("day", "week", "month", "symbol", "user"):
+            raise HTTPException(400, "group_by must be day|week|month|symbol|user")
+        since = datetime.now(timezone.utc) - timedelta(days=min(max(days, 1), 365))
+        match = {"status": "closed", "closed_at": {"$gte": since},
+                 "commission_amount": {"$gt": 0}}
+        if group_by == "symbol":
+            gid: Any = "$symbol_id"
+        elif group_by == "user":
+            gid = "$user_id"
+        else:
+            fmt = {"day": "%Y-%m-%d", "week": "%G-W%V", "month": "%Y-%m"}[group_by]
+            gid = {"$dateToString": {"format": fmt, "date": "$closed_at"}}
+        pipeline = [
+            {"$match": match},
+            {"$group": {"_id": gid,
+                        "commission": {"$sum": "$commission_amount"},
+                        "gross_pnl": {"$sum": "$gross_pnl"},
+                        "net_pnl": {"$sum": "$net_pnl"},
+                        "trades": {"$sum": 1}}},
+            {"$sort": {"_id": -1}},
+            {"$limit": 100},
+        ]
+        rows = [r async for r in db.forex_positions.aggregate(pipeline)]
+        total_cur = db.forex_positions.aggregate([
+            {"$match": {"status": "closed", "commission_amount": {"$gt": 0}}},
+            {"$group": {"_id": None, "total": {"$sum": "$commission_amount"}, "trades": {"$sum": 1}}},
+        ])
+        total = await total_cur.to_list(length=1)
+        return {
+            "group_by": group_by,
+            "rows": [{"key": r["_id"], "commission": round(r["commission"], 2),
+                      "gross_pnl": round(r.get("gross_pnl") or 0, 2),
+                      "net_pnl": round(r.get("net_pnl") or 0, 2),
+                      "trades": r["trades"]} for r in rows],
+            "total_commission_collected": round(total[0]["total"], 2) if total else 0.0,
+            "total_commissioned_trades": total[0]["trades"] if total else 0,
         }
 
     api.include_router(public)

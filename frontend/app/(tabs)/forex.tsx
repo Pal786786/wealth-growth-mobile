@@ -132,6 +132,12 @@ export default function ForexTab() {
           ))}
         </View>
 
+        {/* Sprint 16.3 — Multi-Chart workspace entry */}
+        <Pressable onPress={() => router.push("/forex/multi-chart")} testID="multi-chart-btn"
+          style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: palette.primary, backgroundColor: palette.primary + "10" }}>
+          <Text style={{ color: palette.primary, fontWeight: "800", fontSize: 12 }}>📊  Multi-Chart Workspace</Text>
+        </Pressable>
+
         {tab === "watch" && (
           <>
             {/* Search */}
