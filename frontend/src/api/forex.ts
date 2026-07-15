@@ -71,8 +71,14 @@ export const forexApi = {
     (await api.get("/forex/balance")).data,
   equity: async (): Promise<{ balance: number; unrealized_pnl: number; equity: number; margin_used: number; free_margin: number; open_position_count: number; currency: string }> =>
     (await api.get("/forex/equity")).data,
-  resetBalance: async (): Promise<{ balance: number; currency: string }> =>
+  resetBalance: async (): Promise<{ balance: number; currency: string; reset_id?: string }> =>
     (await api.post("/forex/balance/reset")).data,
+  demoReset: async (): Promise<{
+    reset_id: string; previous_balance: number; new_balance: number; currency: string;
+    positions_closed: number; orders_cancelled: number; copy_trades_closed: number;
+  }> => (await api.post("/demo/reset")).data,
+  demoResetHistory: async (): Promise<{ items: any[] }> =>
+    (await api.get("/demo/reset/history")).data,
   openPosition: async (p: {
     symbol_id: string; side: Side; lot_size: number; tp?: number | null; sl?: number | null;
   }): Promise<Position> => (await api.post("/forex/positions", p)).data,

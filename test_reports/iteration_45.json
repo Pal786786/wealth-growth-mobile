@@ -1,0 +1,51 @@
+{
+  "summary": "Sprint 15.1 — Demo Account Reset frontend testing. ADMIN SPA path is 100% GREEN: admin login → Users page → amber 'Reset Demo' button on Demo User row → window.confirm shows exact expected message → POST /api/admin/demo/reset/{user_id} returns 200 with previous_balance=999265.85, new_balance=1000000.0, positions_closed=1 → window.alert success dialog renders all fields ('Real wallet was NOT affected.'). Live Market (S15.0 Finnhub UI) regression-clean after SPA rebuild — MARKET DATA HEALTH=FALLBACK, ACTIVE PROVIDER=MOCK, AUTO/FINNHUB/MOCK toggle intact, 20 symbols, no TwelveData/AlphaVantage. MOBILE UI is 90% GREEN: login works, Profile tab shows new DEMO WALLET section with 'Demo Trading Balance' + INR amount (testID demo-wallet-balance) + amber 'Reset Demo Account' button (testID reset-demo-btn), Forex tab shows TRADING BALANCE (DEMO) hero with same amount. HOWEVER — the confirmation Alert triggered by tapping 'Reset Demo Account' on the Expo WEB PREVIEW is a silent no-op: no browser dialog event fires, no window.confirm or window.alert appears, no /api/demo/reset network call is made, DOM does not change. The React Native `Alert.alert(title, msg, [{text:'Cancel',style:'cancel'},{text:'Reset',onPress:doReset}])` polyfill on the currently bundled react-native-web version does not surface a UI on web (it likely resolves via Platform-gated APIs that are stubbed on web). On native builds (Expo Go / iOS / Android) this Alert would work; but the review request explicitly asked us to verify the web preview flow. Backend end-to-end is proven fine via the admin path (balance flipped 999265.85 → 1000000.0 and positions_closed=1 was returned).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "profile.tsx confirmReset()",
+        "issue": "Tapping 'Reset Demo Account' on Expo web preview does NOTHING — Alert.alert with a 2-button [{style:'cancel'},{style:'destructive',onPress:doReset}] array is a silent no-op on react-native-web. No window.confirm, no window.alert, no dialog event, no /api/demo/reset call, no DOM change. Confirmed with Playwright dialog handler (empty) and evaluating window.__lastConfirm/__lastAlert after monkey-patching (both null). On native this would show a proper OS alert; on web the user is stuck. Reference: /app/frontend/app/(tabs)/profile.tsx:58-67.",
+        "testID": "reset-demo-btn",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Mobile Profile → Reset Demo Account (web preview)",
+        "issue": "Because Alert.alert never surfaces on web, doReset() is never invoked, so the whole client-triggered demo reset flow is untestable/unusable on the Expo web preview. Admin-initiated reset works fine and does update the mobile user's balance (verified: 999265.85 → 1000000.0).",
+        "affected_testIDs": ["reset-demo-btn", "demo-wallet-balance"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Alert.alert (react-native-web polyfill)",
+        "issue": "Alert.alert(title, message, buttons[]) is a no-op on the current react-native-web bundle when called with a buttons array. Recommend gating with Platform.OS === 'web' and using window.confirm() directly on web. Reference: /app/frontend/app/(tabs)/profile.tsx:58-67 (and any other Alert.alert-with-buttons calls in the codebase should be audited too)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_45.json"
+  ],
+  "action_items": [
+    "FIX (HIGH): In /app/frontend/app/(tabs)/profile.tsx confirmReset(), add a Platform.OS === 'web' branch that uses window.confirm() and calls doReset() when true. Example: `if (Platform.OS === 'web') { if (window.confirm('Reset Demo Account?...')) await doReset(); return; } Alert.alert(...)`. Similarly the success/failure feedback should use window.alert on web, since Alert.alert single-button MAY also be silently swallowed on this bundle (safer to gate both).",
+    "AUDIT: Grep the codebase for other Alert.alert(...) with buttons and apply the same web-gated fallback if these flows need to work on the web preview.",
+    "OPTIONAL: Add a testID to the row-level Reset Demo button in Admin Users (currently found only by text). e.g. `data-testid={`admin-user-reset-demo-${u.user_id}`}` to make future E2E tests less fragile. Reference: /app/admin/src/pages/Users.tsx:107."
+  ],
+  "critical_code_review_comments": [
+    "profile.tsx correctly wires testID='reset-demo-btn' and testID='demo-wallet-balance' — good.",
+    "forex.ts demoReset() typing includes previous_balance/new_balance/positions_closed/copy_trades_closed — matches backend response verified during admin call (via /api/admin/demo/reset).",
+    "Users.tsx admin flow correctly uses window.confirm then window.alert — this path is fully working. The mutation payload is empty (POST body just triggers server-side default) which matches backend contract."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (backend not re-tested — already 9/9 pytest per hand-off)",
+    "frontend": "Admin SPA: 100% (all 4 flows). Mobile UI: 90% — UI renders correctly but Reset Demo Account tap on web preview is a no-op due to react-native-web Alert.alert limitation."
+  },
+  "seed_data_creation": "None. During admin-path testing, demo user's virtual wallet was reset from ₹9,99,265.85 → ₹10,00,000 and 1 open forex position was closed. This is intentional demo-only data, no real funds affected.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After main agent adds the Platform.OS === 'web' branch to confirmReset() in profile.tsx, re-run this test on mobile viewport: login as demo@mfb.in / demo1234 → open Profile tab → tap [data-testid='reset-demo-btn'] → the Playwright dialog handler will now receive a `confirm` event (accept it) → assert /api/demo/reset returns 200 → then a second `alert` event with 'Demo Account Reset ✓' → assert [data-testid='demo-wallet-balance'] shows ₹10,00,000 → navigate to Forex tab and confirm OPEN=0. Admin SPA does not need re-testing — all 4 admin flows are already green.",
+  "rca_of_issue": "ROOT CAUSE — Reset button no-op on web: React Native's Alert.alert() is a native-only API. react-native-web provides only a partial polyfill; when the third argument is a buttons array with styles ('cancel'/'destructive'), the current bundled version does not surface any UI element (no window.confirm invocation, no DOM modal). The onPress callbacks in the buttons array are therefore never called, so doReset() never fires. This is a well-known react-native-web gap that requires an explicit Platform.OS === 'web' guard using window.confirm/window.alert. REPRO STEPS: (1) open web preview /, sign in as demo@mfb.in / demo1234, (2) go to Profile tab, (3) tap Reset Demo Account button — observe zero DOM change, zero network activity, zero console log. MITIGATION: Add a `Platform.OS === 'web'` branch to confirmReset() (and to the success/error Alert.alert calls inside doReset()) that uses window.confirm/window.alert on web only. Native platforms retain the existing Alert.alert code path."
+}

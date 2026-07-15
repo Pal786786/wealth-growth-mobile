@@ -1037,6 +1037,9 @@ forex_feed = _ForexFeed()
 forex_engine = _ForexEngine(db, forex_feed)
 _forex_attach(api, db, forex_feed, forex_engine, get_current_user,
               admin_module.get_current_admin, admin_module._log_action)
+# Sprint 15.1 — Demo Account Reset & Virtual Wallet Recharge
+import demo_reset  # type: ignore  # noqa: E402
+demo_reset.attach(api, db, get_current_user, admin_module.get_current_admin, admin_module._log_action)
 import firebase_auth  # type: ignore
 firebase_auth.attach(api, db, lambda payload: create_token(payload["user_id"]), now_fn=now_utc)
 # Wallet v2 — double-entry ledger, payments, analytics, admin

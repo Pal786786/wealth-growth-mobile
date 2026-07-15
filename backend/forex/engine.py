@@ -249,8 +249,9 @@ class TradingEngine:
         return await self._enrich(pos)
 
     async def list_positions(self, user_id: str, status: str = "open", limit: int = 200) -> List[Dict[str, Any]]:
+        # Sprint 15.1 — archived positions (pre demo-reset) are hidden but retained.
         cur = self.db.forex_positions.find(
-            {"user_id": user_id, "status": status}
+            {"user_id": user_id, "status": status, "archived": {"$ne": True}}
         ).sort("opened_at", -1).limit(limit)
         out: List[Dict[str, Any]] = []
         async for d in cur:
@@ -258,7 +259,9 @@ class TradingEngine:
         return out
 
     async def list_history(self, user_id: str, limit: int = 200) -> List[Dict[str, Any]]:
-        cur = self.db.forex_history.find({"user_id": user_id}).sort("ts", -1).limit(limit)
+        # Sprint 15.1 — archived history (pre demo-reset) is hidden but retained.
+        cur = self.db.forex_history.find(
+            {"user_id": user_id, "archived": {"$ne": True}}).sort("ts", -1).limit(limit)
         return [_serialize(d) async for d in cur]
 
     async def _enrich(self, pos: Dict[str, Any]) -> Dict[str, Any]:

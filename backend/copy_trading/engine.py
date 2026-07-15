@@ -391,7 +391,8 @@ class CopyEngine:
     async def _lifetime_pnl(self, user_id: str, trader_id: str) -> float:
         pipeline = [
             {"$match": {"user_id": user_id, "trader_id": trader_id,
-                        "status": {"$in": ["closed", "open"]}}},
+                        "status": {"$in": ["closed", "open"]},
+                        "archived": {"$ne": True}}},
             {"$group": {"_id": None, "total": {"$sum": "$pnl_usd"}}},
         ]
         cur = self.db.copy_follower_trades.aggregate(pipeline)
@@ -419,11 +420,13 @@ class CopyEngine:
         for rel in rels:
             # Live stats
             open_pos = await self.db.copy_follower_trades.count_documents(
-                {"user_id": user_id, "trader_id": rel["trader_id"], "status": "open"})
+                {"user_id": user_id, "trader_id": rel["trader_id"], "status": "open",
+                 "archived": {"$ne": True}})
             lifetime_pnl = await self._lifetime_pnl(user_id, rel["trader_id"])
             today = _now().strftime("%Y-%m-%d")
             stat = await self.db.copy_daily_stats.find_one(
-                {"user_id": user_id, "trader_id": rel["trader_id"], "day": today}) or {}
+                {"user_id": user_id, "trader_id": rel["trader_id"], "day": today,
+                 "archived": {"$ne": True}}) or {}
             rel["live"] = {
                 "open_positions": open_pos,
                 "lifetime_pnl_usd": round(lifetime_pnl, 2),
@@ -438,7 +441,8 @@ class CopyEngine:
     async def my_summary(self, user_id: str) -> Dict[str, Any]:
         # Aggregate lifetime + today P&L across all copies
         pipe_all = [
-            {"$match": {"user_id": user_id, "status": {"$in": ["closed", "open"]}}},
+            {"$match": {"user_id": user_id, "status": {"$in": ["closed", "open"]},
+                        "archived": {"$ne": True}}},
             {"$group": {"_id": None,
                         "lifetime": {"$sum": "$pnl_usd"},
                         "trades":   {"$sum": 1},
@@ -449,7 +453,7 @@ class CopyEngine:
         agg = docs[0] if docs else {"lifetime": 0, "trades": 0, "wins": 0}
         today = _now().strftime("%Y-%m-%d")
         pipe_today = [
-            {"$match": {"user_id": user_id, "day": today}},
+            {"$match": {"user_id": user_id, "day": today, "archived": {"$ne": True}}},
             {"$group": {"_id": None, "today": {"$sum": "$pnl_usd"},
                         "today_trades": {"$sum": "$trade_count"}}}
         ]
@@ -457,7 +461,7 @@ class CopyEngine:
         docs2 = await cur2.to_list(1)
         today_agg = docs2[0] if docs2 else {"today": 0, "today_trades": 0}
         open_pos = await self.db.copy_follower_trades.count_documents(
-            {"user_id": user_id, "status": "open"})
+            {"user_id": user_id, "status": "open", "archived": {"$ne": True}})
         active = await self.db.copy_relationships.count_documents(
             {"user_id": user_id, "status": "active"})
         paused = await self.db.copy_relationships.count_documents(
@@ -481,7 +485,7 @@ class CopyEngine:
     async def follower_trades(self, user_id: str, trader_id: Optional[str] = None,
                               status: Optional[str] = None,
                               limit: int = 100) -> List[Dict[str, Any]]:
-        q: Dict[str, Any] = {"user_id": user_id}
+        q: Dict[str, Any] = {"user_id": user_id, "archived": {"$ne": True}}
         if trader_id:
             q["trader_id"] = trader_id
         if status:

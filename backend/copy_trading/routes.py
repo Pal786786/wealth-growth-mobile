@@ -206,12 +206,14 @@ def attach(app, db, get_current_user, engine: CopyEngine, simulator, get_current
         rels = await _engine.list_copies(user["user_id"])
         for rel in rels:
             open_pos = await db.copy_follower_trades.count_documents(
-                {"user_id": user["user_id"], "trader_id": rel["trader_id"], "status": "open"})
+                {"user_id": user["user_id"], "trader_id": rel["trader_id"], "status": "open",
+                 "archived": {"$ne": True}})
             lifetime_pnl = await _engine._lifetime_pnl(user["user_id"], rel["trader_id"])
             from datetime import datetime, timezone
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             stat = await db.copy_daily_stats.find_one(
-                {"user_id": user["user_id"], "trader_id": rel["trader_id"], "day": today}) or {}
+                {"user_id": user["user_id"], "trader_id": rel["trader_id"], "day": today,
+                 "archived": {"$ne": True}}) or {}
             rel["live"] = {
                 "open_positions": open_pos,
                 "lifetime_pnl_usd": round(lifetime_pnl, 2),

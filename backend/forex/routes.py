@@ -182,8 +182,16 @@ def attach(api: APIRouter, db, feed: PriceFeed, engine: TradingEngine,
 
     @public.post("/balance/reset")
     async def reset_balance(user=Depends(_get_current_user)):
-        bal = await _engine.reset_balance(user["user_id"])
-        return {"balance": bal["balance"], "currency": bal["currency"]}
+        # Sprint 15.1 — delegates to the full Demo Account Reset (closes
+        # positions, cancels pending orders, archives history, resets stats).
+        import demo_reset as _dr
+        try:
+            rec = await _dr.perform_demo_reset(
+                db, user["user_id"], "user", user["user_id"],
+                user.get("full_name") or user.get("email") or user["user_id"])
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"balance": rec["new_balance"], "currency": rec["currency"], "reset_id": rec["reset_id"]}
 
     @public.post("/positions")
     async def open_position(req: OpenPositionRequest, user=Depends(_get_current_user)):

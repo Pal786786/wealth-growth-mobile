@@ -1636,3 +1636,34 @@ ProviderManager level. Mock (priority=999) remains as last-resort fallback.
 6. Only ONE scheduler / ONE ProviderManager / ONE QuoteCache exist —
    confirm via `/api/market_providers/status.refresh_running=true` and no
    duplicate refresh log lines.
+
+---
+
+## Sprint 15.1 — Demo Account Reset & Virtual Wallet Recharge
+
+### Scope
+Production-quality demo account reset. Demo trading wallet (forex paper
+trading, INR) resets to admin-configurable default (forex_settings.default_demo_balance,
+₹10,00,000 default). Real wallets (`wallets`/`transactions`/`wallet_ledger`) NEVER touched.
+
+### Changes
+- NEW `/app/backend/demo_reset.py` — perform_demo_reset() + endpoints:
+  POST /api/demo/reset (user), GET /api/demo/reset/history (user),
+  POST /api/admin/demo/reset/{user_id} (admin), GET /api/admin/demo/reset/history (admin).
+  Reset = close open forex positions, cancel pending orders, ARCHIVE (not delete)
+  positions/orders/history under reset_id, close+archive copied demo trades
+  (copy_follower_trades) + archive copy_daily_stats (copy_relationships/follows kept),
+  reset forex_balances to default, record in demo_reset_history + forex_history marker.
+- `forex/engine.py` — list_positions/list_history now exclude archived docs.
+- `forex/routes.py` — legacy POST /api/forex/balance/reset delegates to full reset.
+- `copy_trading/engine.py` + `routes.py` — user-facing queries exclude archived docs.
+- Mobile `app/(tabs)/profile.tsx` — "DEMO WALLET" section: balance + Reset Demo
+  Account button (testID reset-demo-btn) with confirmation Alert.
+- Admin `admin/src/pages/Users.tsx` — per-user "Reset Demo" button with confirm
+  dialog → POST /api/admin/demo/reset/{user_id}. Admin SPA REBUILT and deployed
+  to /app/backend/static/admin-ui/ (bundle index-DSqoye2Y.js).
+
+### Backend regression (already run by main agent — ALL PASS)
+- tests/test_sprint_151_demo_reset.py — 9/9 PASS
+- tests/test_sprint_150_finnhub_migration.py — 22/22 PASS
+- tests/test_forex.py + test_forex_regression.py + test_copy_trading_iter24.py — 56/56 PASS

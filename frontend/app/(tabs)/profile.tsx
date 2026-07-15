@@ -1,14 +1,16 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert, ActivityIndicator } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import {
-  User as UserIcon, Moon, Sun, Shield, FileCheck, Gift, Users, LogOut, ChevronRight,
-  ShieldCheck, Bell, CreditCard, Award, HelpCircle, Globe, Copy as CopyIcon
+  Moon, Sun, Shield, FileCheck, Gift, LogOut, ChevronRight,
+  ShieldCheck, Bell, CreditCard, Award, HelpCircle, Globe, Copy as CopyIcon, RotateCcw, Wallet as WalletIcon
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { useAuth } from "@/src/auth/AuthProvider";
 import { api } from "@/src/api/client";
+import { forexApi } from "@/src/api/forex";
+import { formatINR } from "@/src/utils/format";
 import { Card } from "@/src/components/Card";
 
 export default function ProfileTab() {
@@ -17,6 +19,15 @@ export default function ProfileTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [rewardPoints, setRewardPoints] = useState(0);
+  const [demoBalance, setDemoBalance] = useState<number | null>(null);
+  const [resetting, setResetting] = useState(false);
+
+  const loadDemoBalance = useCallback(async () => {
+    try {
+      const bal = await forexApi.balance();
+      setDemoBalance(bal.balance);
+    } catch {}
+  }, []);
 
   useFocusEffect(useCallback(() => {
     (async () => {
@@ -25,7 +36,35 @@ export default function ProfileTab() {
         setRewardPoints(data.reward_points);
       } catch {}
     })();
-  }, []));
+    loadDemoBalance();
+  }, [loadDemoBalance]));
+
+  const doReset = async () => {
+    setResetting(true);
+    try {
+      const res = await forexApi.demoReset();
+      setDemoBalance(res.new_balance);
+      Alert.alert(
+        "Demo Account Reset ✓",
+        `New balance: ${formatINR(res.new_balance)}\nPositions closed: ${res.positions_closed}\nCopied trades closed: ${res.copy_trades_closed}\n\nYour real wallet was not affected.`,
+      );
+    } catch (e: any) {
+      Alert.alert("Reset failed", e?.response?.data?.detail || e?.message || "Please try again.");
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const confirmReset = () => {
+    Alert.alert(
+      "Reset Demo Account?",
+      "This will close all open demo positions, cancel pending demo orders, archive your demo trade history and restore the default demo balance.\n\nYour REAL wallet and funds are never affected.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Reset", style: "destructive", onPress: doReset },
+      ],
+    );
+  };
 
   const initials = (user?.full_name || "U").split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
@@ -100,6 +139,38 @@ export default function ProfileTab() {
           />
         </Card>
 
+        {/* Demo Wallet — Sprint 15.1 */}
+        <View style={{ gap: 8 }}>
+          <Text style={[s.section, { color: palette.textSecondary }]}>DEMO WALLET</Text>
+          <Card style={{ gap: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <View style={[s.iconWrap, { backgroundColor: "#F59E0B1A" }]}>
+                <WalletIcon color="#F59E0B" size={20} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.rowLabel, { color: palette.textPrimary }]}>Demo Trading Balance</Text>
+                <Text style={[s.rowMeta, { color: palette.textSecondary }]}>Virtual funds — not real money</Text>
+              </View>
+              <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: "800" }} testID="demo-wallet-balance">
+                {demoBalance === null ? "—" : formatINR(demoBalance)}
+              </Text>
+            </View>
+            <Pressable
+              onPress={confirmReset}
+              disabled={resetting}
+              style={[s.resetBtn, { borderColor: "#F59E0B", opacity: resetting ? 0.6 : 1 }]}
+              testID="reset-demo-btn"
+            >
+              {resetting
+                ? <ActivityIndicator size="small" color="#F59E0B" />
+                : <RotateCcw color="#F59E0B" size={16} />}
+              <Text style={{ color: "#F59E0B", fontSize: 14, fontWeight: "700" }}>
+                {resetting ? "Resetting…" : "Reset Demo Account"}
+              </Text>
+            </Pressable>
+          </Card>
+        </View>
+
         {sections.map((sec) => (
           <View key={sec.title} style={{ gap: 8 }}>
             <Text style={[s.section, { color: palette.textSecondary }]}>{sec.title.toUpperCase()}</Text>
@@ -155,5 +226,6 @@ const s = StyleSheet.create({
   rowMeta: { fontSize: 11, marginTop: 2 },
   rowValue: { fontSize: 12, fontWeight: "600" },
   logoutBtn: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8, padding: 14, borderRadius: 14, borderWidth: 1.5, marginTop: 4 },
+  resetBtn: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8, padding: 12, borderRadius: 12, borderWidth: 1.5, minHeight: 44 },
   version: { textAlign: "center", fontSize: 11, marginTop: 8 },
 });

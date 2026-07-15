@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, inr, fmtDate } from "../lib/api";
-import { Search, ShieldOff, ShieldCheck, MoreVertical } from "lucide-react";
+import { Search, ShieldOff, ShieldCheck, RotateCcw } from "lucide-react";
 
 export default function Users() {
   const [q, setQ] = useState("");
@@ -23,6 +23,25 @@ export default function Users() {
       api.post(`/admin/users/${user_id}/action`, { action }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-users"] }); refetch(); },
   });
+
+  // Sprint 15.1 — Demo Account Reset (demo trading wallet only; real wallet untouched)
+  const demoResetMut = useMutation({
+    mutationFn: (user_id: string) => api.post(`/admin/demo/reset/${user_id}`),
+    onSuccess: (res) => {
+      const d = res.data;
+      window.alert(
+        `Demo account reset ✓\n\nPrevious balance: ₹${Number(d.previous_balance).toLocaleString("en-IN")}\nNew balance: ₹${Number(d.new_balance).toLocaleString("en-IN")}\nPositions closed: ${d.positions_closed}\nCopied trades closed: ${d.copy_trades_closed}\n\nReal wallet was NOT affected.`
+      );
+    },
+    onError: (e: any) => window.alert(e?.response?.data?.detail || "Demo reset failed"),
+  });
+
+  const handleDemoReset = (u: any) => {
+    if (!window.confirm(
+      `Reset DEMO account for ${u.full_name}?\n\nThis closes all open demo positions, cancels pending demo orders, archives demo history and restores the default demo balance.\n\nThe user's REAL wallet is never affected.`
+    )) return;
+    demoResetMut.mutate(u.user_id);
+  };
 
   return (
     <div className="space-y-4">
@@ -84,15 +103,22 @@ export default function Users() {
                   </td>
                   <td className="py-3 pr-4 text-xs text-slate-500">{fmtDate(u.created_at)}</td>
                   <td className="py-3 pr-4 text-right">
-                    {u.suspended ? (
-                      <button onClick={() => actionMut.mutate({ user_id: u.user_id, action: "activate" })} className="btn-ghost !py-1.5 !px-3 !text-xs gap-1">
-                        <ShieldCheck className="w-3.5 h-3.5" /> Activate
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => handleDemoReset(u)} disabled={demoResetMut.isPending}
+                        title="Reset demo trading account (real wallet untouched)"
+                        className="btn-ghost !py-1.5 !px-3 !text-xs gap-1 !text-amber-600 !border-amber-200 hover:!bg-amber-50">
+                        <RotateCcw className="w-3.5 h-3.5" /> Reset Demo
                       </button>
-                    ) : (
-                      <button onClick={() => actionMut.mutate({ user_id: u.user_id, action: "suspend" })} className="btn-ghost !py-1.5 !px-3 !text-xs gap-1 !text-red-600 !border-red-200 hover:!bg-red-50">
-                        <ShieldOff className="w-3.5 h-3.5" /> Suspend
-                      </button>
-                    )}
+                      {u.suspended ? (
+                        <button onClick={() => actionMut.mutate({ user_id: u.user_id, action: "activate" })} className="btn-ghost !py-1.5 !px-3 !text-xs gap-1">
+                          <ShieldCheck className="w-3.5 h-3.5" /> Activate
+                        </button>
+                      ) : (
+                        <button onClick={() => actionMut.mutate({ user_id: u.user_id, action: "suspend" })} className="btn-ghost !py-1.5 !px-3 !text-xs gap-1 !text-red-600 !border-red-200 hover:!bg-red-50">
+                          <ShieldOff className="w-3.5 h-3.5" /> Suspend
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
