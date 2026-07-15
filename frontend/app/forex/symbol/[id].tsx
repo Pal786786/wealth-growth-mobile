@@ -271,6 +271,22 @@ export default function SymbolDetail() {
             </Pressable>
           </View>
 
+          {/* Pending price (limit/stop) */}
+          {orderType !== "market" ? (
+            <View>
+              <Text style={[t.label, { color: palette.textSecondary }]}>{`${side.toUpperCase()} ${orderType.toUpperCase()} PRICE`}</Text>
+              <TextInput value={pendingPrice} onChangeText={setPendingPrice} keyboardType="decimal-pad"
+                placeholder={q ? `current ${side === "buy" ? "ask" : "bid"}: ${(side === "buy" ? q.ask : q.bid).toFixed(symbol.price_decimals)}` : ""}
+                placeholderTextColor={palette.textMuted} testID="pending-price-input"
+                style={[t.input, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surface, marginTop: 6 }]} />
+              <Text style={{ color: palette.textMuted, fontSize: 10, marginTop: 4 }}>
+                {side === "buy"
+                  ? (orderType === "limit" ? "Buy Limit must be below current ask" : "Buy Stop must be above current ask")
+                  : (orderType === "limit" ? "Sell Limit must be above current bid" : "Sell Stop must be below current bid")}
+              </Text>
+            </View>
+          ) : null}
+
           {/* Lot size */}
           <View>
             <Text style={t.label}>LOT SIZE</Text>

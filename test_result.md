@@ -1764,3 +1764,11 @@ trading, INR) resets to admin-configurable default (forex_settings.default_demo_
   reorder/collapse, per-indicator source/color settings UI, indicator templates.
 - 16.3 extras: fullscreen double-tap, long-press context menu, symbol linking,
   crosshair sync ACROSS panes, tablet 6-chart.
+
+### Sprint 16.1 fixes after testing_agent iteration_47 (both HIGH bugs FIXED + verified)
+1. pending-price-input JSX restored in symbol/[id].tsx (edit had been lost) —
+   LIMIT/STOP flow verified in browser: input appears, order placed, appears in
+   Pending Orders card, cancel works.
+2. index.html handleMsg switch was missing the `default:` dispatch to
+   window.__chart.extraHandlers — restored. setIndicator via message path now
+   works: RSI sub-pane (#osc.visible) + EMA overlay verified in browser.

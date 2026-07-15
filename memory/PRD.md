@@ -324,3 +324,39 @@ to activate LIVE prices + historical candle backfill (currently MOCK ticks).
 
 **Next sprint (planned)**: indicators — EMA, SMA, RSI, MACD, Bollinger Bands via
 the existing window.Indicators registry + message protocol (addIndicator/removeIndicator).
+
+---
+
+## Sprint 16.1 — Professional Trading Panel MT5-style (COMPLETE) + 16.2/16.3 core
+
+**Delivered**: unified commission engine (forex/costs.py — fixed_per_lot/per_side/
+round_turn, INR/USD, per-trade immutable snapshot, net PnL settlement, applies to
+demo + copy trading), pending limit/stop orders (placement validation, trigger in
+existing mark loop, fill at live quote, drag on chart), position ops (partial
+close 25/50/75/custom, reverse, double, modify TP/SL via sheet or chart drag),
+order-cost estimates (margin/commission/spread/swap/total + R:R), chart drawing
+tools (trend/hline/vline/rect/fib/text/erase, persisted per user+symbol+chartKey
+in `chart_objects`), indicators EMA/SMA/BB/VWAP overlays + RSI/MACD/ATR synced
+oscillator sub-pane (toggle modal, persisted in `chart_prefs`), Multi-Chart
+workspace /forex/multi-chart (single/dual-v/dual-h/quad, independent
+symbol/TF/indicators/drawings per pane, workspace persisted), Admin Trading Costs
+card + Commission Collected report (day/week/month/symbol/user).
+
+**Tests**: tests/test_sprint_161_trading_panel.py 19/19 + sprint160 19/19 PASS.
+testing_agent iteration_47: all green after 2 HIGH fixes (pending-price-input JSX,
+index.html default dispatch for extraHandlers) — both re-verified in browser.
+
+**KNOWN GOTCHA**: chart HTML message dispatch — handleMsg switch MUST keep the
+`default:` case calling window.__chart.extraHandlers[m.type] or setIndicator/
+setTool/setObjects/setDraggable silently stop working.
+
+**Deferred to next sprints (user-approved backlog)**:
+- 16.2: Stochastic/CCI/ADX/Williams %R, SuperTrend/Ichimoku, pane reorder/
+  collapse/height, per-indicator source/color/style settings UI, indicator
+  templates (Scalping/Intraday/Swing/Gold/Crypto), max-3-pane management.
+- 16.3: fullscreen double-tap, long-press context menu, symbol linking,
+  cross-pane crosshair sync, timeframe sync option, tablet 6-chart, ray/arrow
+  drawing tools.
+
+**Still pending USER actions**: Publish to emergent.host (serves pre-15.0
+snapshot) · enter Finnhub API key for LIVE prices + history backfill.

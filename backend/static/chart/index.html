@@ -270,6 +270,8 @@
         break;
       case "addIndicator": window.Indicators.add(m.id, m.params); break;
       case "removeIndicator": window.Indicators.remove(m.id); break;
+      default:
+        if (window.__chart && window.__chart.extraHandlers[m.type]) window.__chart.extraHandlers[m.type](m);
     }
   }
 
