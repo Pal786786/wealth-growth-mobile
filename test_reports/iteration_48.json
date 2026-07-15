@@ -1,0 +1,34 @@
+{
+  "summary": "Sprint 16.3 Forex/Gold candle 500 fix verified end-to-end. Backend: 42/42 pytest tests PASS (19 existing in test_sprint_163_candle_fix.py + 23 new E2E via PUBLIC EXPO_BACKEND_URL in test_sprint_163_e2e_public.py). All six symbols (BTCUSD, EURUSD, GBPUSD, USDJPY, XAUUSD, XAGUSD) return HTTP 200 with non-empty candles at tf=1m/5m/1h/1d; timestamps strictly ascending with no duplicates; response shape matches PRD (symbol, tf, candles[{t,o,h,l,c,v,source,complete}], volume_available, quote, sync). GBPUSD naive-datetime regression scenario (the exact pre-fix 500) now returns 200. Backfill path (before=<future_epoch>) returns 200 with reason='range_cached'. Regression endpoints /api/forex/candles/XAUUSD and /api/market_providers/status (admin auth) both healthy. Frontend: /forex/symbol/XAUUSD and /forex/symbol/BTCUSD screens both render TradingView iframe with candles, OHLC data, and volume bars — no red-screen, no blank, no infinite spinner. sync.reason is 'provider_unavailable' in this preview (no Finnhub key), which is EXPECTED per agent-to-agent note; candles are served live-tick-built.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sprint_163_candle_fix.py",
+    "/app/backend/tests/test_sprint_163_e2e_public.py",
+    "/app/test_reports/pytest/iter47_sprint163.xml",
+    "/app/test_reports/pytest/iter47_sprint163_e2e.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "market_candles.py fixes are surgical and correct: (a) naive last_sync_at now normalized to UTC-aware before subtraction; (b) _store_bars dedupes by timestamp and catches BulkWriteError to salvage partial success; (c) route wraps ensure_history/backfill_older in try/except so sync failures never 500 the read path.",
+    "sync.reason surfaces exception class + message ('sync_error:<ClassName>: <msg>') which is excellent for production diagnosis without leaking a stack trace to clients.",
+    "No lint issues; no deprecated packages referenced in the touched files. TradingView chart iframe served from /api/chart/index.html works cross-origin from the Expo web preview."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint_163_e2e_public.py (new — 23 E2E tests hitting public EXPO_BACKEND_URL)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "GBPUSD:1m meta doc temporarily inserted with a naive last_sync_at datetime (2h ago) via pymongo, then deleted in the test's finally block. XAUUSD:1m meta doc backed up and restored by test_sprint_163_candle_fix.py::TestNaiveDatetimeMeta.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 16.3 candle fix is fully verified. If regressing later, run: cd /app/backend && pytest tests/test_sprint_163_candle_fix.py tests/test_sprint_163_e2e_public.py -v. In this preview env, sync.reason will be 'provider_unavailable' or 'throttled'/'up_to_date' because no Finnhub API key is configured — a 'sync_error:' prefix would indicate a real regression. Chart route is /forex/symbol/<SYMBOL> (e.g. XAUUSD, BTCUSD); iframe src is /api/chart/index.html which calls /api/market/candles/{sym}.",
+  "rca_of_issue": "Original 500 root causes (already fixed in /app/backend/market_candles.py by main agent, verified by tests here): (1) motor default tz_aware=False → Mongo returned naive last_sync_at → subtracting from tz-aware _now_dt() raised TypeError once any meta doc existed (which is why BTCUSD worked initially — no meta yet — but forex/gold 500'd once their meta doc was created). Fix: normalize to UTC-aware before subtract. (2) Finnhub occasionally returns duplicate timestamps in one payload; two upserts targeting the same (symbol, tf, t) inside one unordered bulk race to INSERT and the loser raises E11000 against the unique sym_tf_t index. Fix: dedupe by t (last wins) + catch BulkWriteError and salvage partial success. (3) Route now wraps ensure_history/backfill_older so any sync exception becomes sync.reason='sync_error:<Class>: <msg>' with cached candles still served (HTTP 200)."
+}

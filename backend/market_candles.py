@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from pymongo import UpdateOne
+from pymongo.errors import BulkWriteError
 
 logger = logging.getLogger("market_candles")
 
@@ -258,15 +259,34 @@ async def _fetch_finnhub_bars(symbol: str, res: str, t_from: int,
 async def _store_bars(symbol: str, base_tf: str, bars: List[Dict[str, Any]]) -> int:
     if not bars:
         return 0
+    # Sprint 16.3 — de-duplicate by bucket timestamp. Finnhub can return
+    # repeated stamps in one payload; two upserts targeting the same
+    # (symbol, tf, t) inside a single unordered bulk race to INSERT and the
+    # loser raises E11000 under the unique sym_tf_t index. One op per t.
+    dedup: Dict[int, Dict[str, Any]] = {}
+    for b in bars:
+        dedup[b["t"]] = b
     now_dt = _now_dt()
     ops = [UpdateOne(
-        {"symbol": symbol, "tf": base_tf, "t": b["t"]},
+        {"symbol": symbol, "tf": base_tf, "t": t},
         {"$set": {**b, "symbol": symbol, "tf": base_tf,
                   "source": "finnhub", "updated_at": now_dt}},
         upsert=True,
-    ) for b in bars]
-    res = await _db[HIST_COLL].bulk_write(ops, ordered=False)
-    return (res.upserted_count or 0) + (res.modified_count or 0)
+    ) for t, b in sorted(dedup.items())]
+    try:
+        res = await _db[HIST_COLL].bulk_write(ops, ordered=False)
+        return (res.upserted_count or 0) + (res.modified_count or 0)
+    except BulkWriteError as e:
+        # Salvage partial success (unordered bulk applies every op it can).
+        # Log the exact per-op errors verbatim so production issues are named.
+        d = e.details or {}
+        applied = int(d.get("nUpserted") or 0) + int(d.get("nModified") or 0)
+        logger.error(
+            "candle store %s %s: BulkWriteError — %d/%d ops applied; writeErrors: %s",
+            symbol, base_tf, applied, len(ops),
+            [str(w.get("errmsg", ""))[:160] for w in (d.get("writeErrors") or [])[:3]],
+        )
+        return applied
 
 
 async def _update_meta(symbol: str, base_tf: str, t_from: int, t_to: int) -> None:
@@ -297,6 +317,11 @@ async def ensure_history(symbol: str, tf: str) -> Dict[str, Any]:
 
     if meta:
         last_sync = meta.get("last_sync_at")
+        # Sprint 16.3 — Mongo returns naive UTC datetimes (motor default
+        # tz_aware=False); subtracting one from tz-aware _now_dt() raised
+        # TypeError and 500'd every request once a meta doc existed.
+        if isinstance(last_sync, datetime) and last_sync.tzinfo is None:
+            last_sync = last_sync.replace(tzinfo=timezone.utc)
         if last_sync and (_now_dt() - last_sync).total_seconds() < SYNC_MIN_INTERVAL_SEC:
             return {"synced": False, "reason": "throttled"}
         t_from = int(meta["newest_t"])
@@ -356,10 +381,23 @@ def attach(app, db) -> None:
         if sym not in SYMBOL_MAP:
             raise HTTPException(404, f"unknown symbol {sym}")
 
+        # Sprint 16.3 — a sync failure must NEVER take down the read path;
+        # cached candles are always served. The full traceback is logged and
+        # the exception class/message surfaces in sync.reason for diagnosis.
         if before is None:
-            sync = await ensure_history(sym, tf)
+            try:
+                sync = await ensure_history(sym, tf)
+            except Exception as e:
+                logger.exception("candle sync failed %s %s", sym, tf)
+                sync = {"synced": False,
+                        "reason": f"sync_error:{type(e).__name__}: {str(e)[:180]}"}
         else:
-            sync = await backfill_older(sym, tf, before)
+            try:
+                sync = await backfill_older(sym, tf, before)
+            except Exception as e:
+                logger.exception("candle backfill failed %s %s", sym, tf)
+                sync = {"synced": False,
+                        "reason": f"sync_error:{type(e).__name__}: {str(e)[:180]}"}
 
         items = await get_candles(sym, tf, limit=limit, before=before)
 
