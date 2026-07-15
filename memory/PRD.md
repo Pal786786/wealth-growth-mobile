@@ -360,3 +360,40 @@ setTool/setObjects/setDraggable silently stop working.
 
 **Still pending USER actions**: Publish to emergent.host (serves pre-15.0
 snapshot) · enter Finnhub API key for LIVE prices + history backfill.
+
+---
+## Sprint 16.2a–16.2g + 16.3 (2026-07-15) — Candle 500 investigation & fix
+
+**Investigation (evidence-only sprints 16.2a-e)**: production (emergent.host)
+returned HTTP 500 (~11s) on /api/market/candles for ALL 9 OANDA symbols while
+BTC/crypto/indices returned 200 with live-tick candles. Bisected via public
+API (before=future isolates read path → healthy, 179-818 finnhub bars already
+stored). Deployment drift eliminated in 16.2f/g: build-identity stamp added to
+/api/market/debug/config (build_info.json + LIVE sha256 of market_candles.py,
+forex/feed.py, server.py) — after republish, production == repo byte-identical,
+yet forex 500s persisted on HEAD. Production runtime logs are NOT accessible
+(deployment_agent = static scan only; support confirms no log viewer).
+
+**Sprint 16.3 FIX (market_candles.py only)**:
+1. ensure_history: naive last_sync_at (motor tz_aware=False) minus tz-aware
+   _now_dt() → TypeError → 500 once meta existed. Now normalized to UTC-aware.
+   (Full traceback was captured in preview repro at line 300.)
+2. _store_bars: de-dupes bars by t (one op per (symbol,tf,t) per bulk) and
+   catches BulkWriteError → salvages partial success, logs writeErrors verbatim.
+3. Route: ensure_history/backfill_older wrapped — sync failure NEVER 500s the
+   read path; sync.reason carries "sync_error:<Class>: <msg>" for diagnosis.
+
+**Tests**: /app/backend/tests/test_sprint_163_candle_fix.py (19) +
+test_sprint_163_e2e_public.py (23, by testing_agent) — 42/42 pass
+(iteration_48.json). Charts render for XAUUSD/BTCUSD in preview browser.
+
+**KNOWN GOTCHA**: local market_price_history contains ~800k legacy Sprint-7.x
+tick rows {symbol, ts, price, provider} → unique index sym_tf_t can NEVER
+build (E11000 dup (sym,null,null) at startup, warning in logs). Writes still
+work. Cleanup/migration NOT authorized yet.
+
+**PENDING USER ACTION**: republish to emergent.host so the 16.3 fix reaches
+production; then verify stamp_id cbbce4b5b1d34594a12625edb63b5113 in
+/api/market/debug/config and re-probe XAUUSD/GBPUSD/EURUSD (expect 200; the
+first sync will also finally persist meta, enabling the 60s throttle and
+REDUCING Finnhub usage).
