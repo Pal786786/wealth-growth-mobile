@@ -246,3 +246,45 @@ workflow (ack/resolve/note + audit trail).
 **Final PRR**: `/app/PRODUCTION_READINESS_REPORT_v2.md` — feature completion
 matrix, security checklist, performance summary, Go-Live + Beta→GA
 deployment checklist.
+
+---
+
+## Sprint 15.1 — Demo Account Reset & Virtual Wallet Recharge (COMPLETE)
+
+**Scope**: Production-quality demo account reset. Demo trading wallet stays INR
+(default ₹10,00,000, configurable via Admin → Forex Settings → Default Demo Balance).
+Real wallets (`wallets`/`transactions`/`wallet_ledger`) are NEVER touched.
+
+**Backend** (`/app/backend/demo_reset.py`):
+- `POST /api/demo/reset` (user) · `GET /api/demo/reset/history` (user)
+- `POST /api/admin/demo/reset/{user_id}` (admin, audited) · `GET /api/admin/demo/reset/history`
+- Reset: closes open forex positions (close_reason=demo_reset), cancels pending
+  orders, ARCHIVES (never deletes) positions/orders/history under `reset_id`,
+  closes+archives copied demo trades (copy_relationships/follows preserved),
+  resets `forex_balances` to configured default, writes `demo_reset_history`
+  record {reset_id, initiated_by(kind/id/label), previous_balance, new_balance,
+  positions_closed, orders_cancelled, copy_trades_closed, ts} + a `demo_reset`
+  marker event in the new session's forex_history.
+- Legacy `POST /api/forex/balance/reset` delegates to the full reset.
+- `forex/engine.py` list_positions/list_history and copy_trading user queries
+  exclude `archived: true` docs (fresh session view, data retained).
+
+**Mobile**: Profile → "DEMO WALLET" card (balance testID `demo-wallet-balance`,
+button testID `reset-demo-btn`) with confirmation (window.confirm on web,
+Alert.alert on native) + success summary.
+
+**Admin SPA**: Users page → amber "Reset Demo" button per row with confirm +
+result alert. SPA rebuilt & deployed to `/app/backend/static/admin-ui/`
+(bundle `index-DSqoye2Y.js`). Admin-UI HTML now served with
+`Cache-Control: no-cache` (NoCacheHTMLStaticFiles in server.py) so stale
+bundles can never be cached after redeploys.
+
+**Tests**: `tests/test_sprint_151_demo_reset.py` 9/9 PASS; regressions
+(Finnhub 22, forex 56) all green. E2E verified via testing_agent + browser.
+
+**PENDING USER ACTION**: `https://wealth-growth-mobile.emergent.host` (published
+domain) still serves the pre-Sprint-15.0 snapshot (`index-DKB8rA1W.js`,
+last-modified 13 Jul). User must click **Publish** to ship Sprint 15.0 + 15.1
+to production, then agent should verify the emergent.host URL in a browser.
+Finnhub production API key also still needs to be entered by user in
+Admin → Live Market → Providers.

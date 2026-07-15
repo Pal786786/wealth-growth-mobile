@@ -1667,3 +1667,9 @@ trading, INR) resets to admin-configurable default (forex_settings.default_demo_
 - tests/test_sprint_151_demo_reset.py — 9/9 PASS
 - tests/test_sprint_150_finnhub_migration.py — 22/22 PASS
 - tests/test_forex.py + test_forex_regression.py + test_copy_trading_iter24.py — 56/56 PASS
+
+### Sprint 15.1 frontend fix (post testing_agent iteration_45)
+- FIXED HIGH bug: RN Alert.alert is a no-op on react-native-web → confirmReset()/doReset()
+  in profile.tsx now use window.confirm/window.alert when Platform.OS === "web".
+- Re-verified in real browser: confirm dialog fires, POST /api/demo/reset called,
+  success alert shows new balance ₹10,00,000. Admin SPA path was already green.

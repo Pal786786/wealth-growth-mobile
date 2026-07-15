@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert, ActivityIndicator, Platform } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import {
   Moon, Sun, Shield, FileCheck, Gift, LogOut, ChevronRight,
@@ -44,21 +44,34 @@ export default function ProfileTab() {
     try {
       const res = await forexApi.demoReset();
       setDemoBalance(res.new_balance);
-      Alert.alert(
-        "Demo Account Reset ✓",
-        `New balance: ${formatINR(res.new_balance)}\nPositions closed: ${res.positions_closed}\nCopied trades closed: ${res.copy_trades_closed}\n\nYour real wallet was not affected.`,
-      );
+      const successMsg = `New balance: ${formatINR(res.new_balance)}\nPositions closed: ${res.positions_closed}\nCopied trades closed: ${res.copy_trades_closed}\n\nYour real wallet was not affected.`;
+      if (Platform.OS === "web") {
+        window.alert(`Demo Account Reset ✓\n\n${successMsg}`);
+      } else {
+        Alert.alert("Demo Account Reset ✓", successMsg);
+      }
     } catch (e: any) {
-      Alert.alert("Reset failed", e?.response?.data?.detail || e?.message || "Please try again.");
+      const errMsg = e?.response?.data?.detail || e?.message || "Please try again.";
+      if (Platform.OS === "web") {
+        window.alert(`Reset failed\n\n${errMsg}`);
+      } else {
+        Alert.alert("Reset failed", errMsg);
+      }
     } finally {
       setResetting(false);
     }
   };
 
   const confirmReset = () => {
+    const msg = "This will close all open demo positions, cancel pending demo orders, archive your demo trade history and restore the default demo balance.\n\nYour REAL wallet and funds are never affected.";
+    if (Platform.OS === "web") {
+      // RN Alert.alert is a no-op on react-native-web — use native browser dialog
+      if (window.confirm(`Reset Demo Account?\n\n${msg}`)) doReset();
+      return;
+    }
     Alert.alert(
       "Reset Demo Account?",
-      "This will close all open demo positions, cancel pending demo orders, archive your demo trade history and restore the default demo balance.\n\nYour REAL wallet and funds are never affected.",
+      msg,
       [
         { text: "Cancel", style: "cancel" },
         { text: "Reset", style: "destructive", onPress: doReset },
