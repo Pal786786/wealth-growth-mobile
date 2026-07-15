@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>MFB Trading Chart</title>
+<script src="./lightweight-charts.js"></script>
+<style>
+  html, body { margin:0; padding:0; background:#0e1117; height:100%; overflow:hidden;
+               -webkit-user-select:none; user-select:none; font-family:-apple-system,Roboto,Helvetica,Arial,sans-serif; }
+  #chart { position:absolute; inset:0; }
+  #legend { position:absolute; top:6px; left:8px; z-index:10; pointer-events:none;
+            font-size:11px; line-height:1.5; color:#d1d4dc; text-shadow:0 1px 2px #000; }
+  #legend .sym { font-weight:700; font-size:12px; }
+  #legend .val { font-variant-numeric:tabular-nums; }
+  #legend .up { color:#26a69a; } #legend .down { color:#ef5350; }
+  #vol-na { position:absolute; bottom:26px; left:8px; z-index:10; font-size:9px; color:#5d6570; display:none; }
+  #watermark { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+               color:#1d2330; font-size:34px; font-weight:800; letter-spacing:2px; z-index:0; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="watermark"></div>
+<div id="chart"></div>
+<div id="legend"></div>
+<div id="vol-na">volume unavailable</div>
+<script>
+(function () {
+  "use strict";
+  var UP = "#26a69a", DOWN = "#ef5350";
+  var state = {
+    decimals: 5, symbol: "", chartType: "candles",
+    candles: [], volumeAvailable: true,
+    loadingMore: false, noMoreData: false,
+    positionLines: [], bidLine: null, askLine: null,
+  };
+
+  // ---------- outbound messaging (RN WebView + web iframe) ----------
+  function post(msg) {
+    var s = JSON.stringify(msg);
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(s);
+    } else if (window.parent && window.parent !== window) {
+      window.parent.postMessage(msg, "*");
+    }
+  }
+
+  // ---------- chart setup ----------
+  var chart = LightweightCharts.createChart(document.getElementById("chart"), {
+    layout: { background: { type: "solid", color: "#0e1117" }, textColor: "#d1d4dc", fontSize: 10 },
+    grid: { vertLines: { color: "#1c2230" }, horzLines: { color: "#1c2230" } },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal,
+      vertLine: { color: "#4c5566", width: 1, style: 3, labelBackgroundColor: "#2b3648" },
+      horzLine: { color: "#4c5566", width: 1, style: 3, labelBackgroundColor: "#2b3648" },
+    },
+    rightPriceScale: { borderColor: "#1c2230", scaleMargins: { top: 0.08, bottom: 0.22 } },
+    timeScale: { borderColor: "#1c2230", timeVisible: true, secondsVisible: false, rightOffset: 4 },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+    handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
+    kineticScroll: { touch: true, mouse: false },
+    localization: {
+      // Pin a valid BCP-47 locale — some environments report "en-US@posix"
+      // which makes Intl throw and aborts canvas rendering.
+      locale: "en-US",
+      priceFormatter: function (p) { return Number(p).toFixed(state.decimals); },
+    },
+  });
+
+  var candleSeries = chart.addCandlestickSeries({
+    upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN,
+    borderUpColor: UP, borderDownColor: DOWN,
+    priceFormat: { type: "price", precision: 5, minMove: 0.00001 },
+  });
+  var lineSeries = chart.addLineSeries({
+    color: "#2962ff", lineWidth: 2, visible: false,
+    priceFormat: { type: "price", precision: 5, minMove: 0.00001 },
+    priceLineVisible: false, lastValueVisible: false,
+  });
+  var volumeSeries = chart.addHistogramSeries({
+    priceScaleId: "vol", priceFormat: { type: "volume" },
+    priceLineVisible: false, lastValueVisible: false,
+  });
+  chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
+
+  // ---------- Sprint 17 indicator architecture ----------
+  // Indicators register a compute(candles) -> [{time, value}...] function and a
+  // series factory. The engine never changes — new indicators just register.
+  window.Indicators = {
+    registry: {},
+    active: {},
+    register: function (id, spec) { this.registry[id] = spec; },
+    add: function (id, params) {
+      var spec = this.registry[id];
+      if (!spec) return false;
+      var inst = { params: params || {}, series: spec.createSeries(chart, params || {}) };
+      this.active[id] = inst;
+      this.refresh(id);
+      return true;
+    },
+    remove: function (id) {
+      var inst = this.active[id];
+      if (inst) { inst.series.forEach(function (s) { chart.removeSeries(s); }); delete this.active[id]; }
+    },
+    refresh: function (onlyId) {
+      var self = this;
+      Object.keys(this.active).forEach(function (id) {
+        if (onlyId && id !== onlyId) return;
+        var spec = self.registry[id], inst = self.active[id];
+        var out = spec.compute(state.candles, inst.params);
+        (inst.series || []).forEach(function (s, i) { s.setData(out[i] || []); });
+      });
+    },
+  };
+
+  // ---------- data helpers ----------
+  function toBar(c) { return { time: c.t, open: c.o, high: c.h, low: c.l, close: c.c }; }
+  function toLinePoint(c) { return { time: c.t, value: c.c }; }
+  function toVol(c) {
+    return { time: c.t, value: c.v || 0, color: c.c >= c.o ? "rgba(38,166,154,0.45)" : "rgba(239,83,80,0.45)" };
+  }
+
+  function applyPrecision() {
+    var minMove = Math.pow(10, -state.decimals);
+    var fmt = { type: "price", precision: state.decimals, minMove: minMove };
+    candleSeries.applyOptions({ priceFormat: fmt });
+    lineSeries.applyOptions({ priceFormat: fmt });
+  }
+
+  function setAll(candles, keepRange) {
+    var range = keepRange ? chart.timeScale().getVisibleLogicalRange() : null;
+    var prevLen = state.candles.length;
+    state.candles = candles;
+    candleSeries.setData(candles.map(toBar));
+    lineSeries.setData(candles.map(toLinePoint));
+    volumeSeries.setData(state.volumeAvailable ? candles.map(toVol) : []);
+    if (range && prevLen) {
+      var shift = candles.length - prevLen;
+      chart.timeScale().setVisibleLogicalRange({ from: range.from + shift, to: range.to + shift });
+    }
+    window.Indicators.refresh();
+    updateLegend(null);
+  }
+
+  function updateTail(candles) {
+    if (!candles || !candles.length) return;
+    var lastT = state.candles.length ? state.candles[state.candles.length - 1].t : 0;
+    candles.forEach(function (c) {
+      if (c.t > lastT) { state.candles.push(c); }
+      else if (c.t === lastT) { state.candles[state.candles.length - 1] = c; }
+      else { return; }
+      candleSeries.update(toBar(c));
+      lineSeries.update(toLinePoint(c));
+      if (state.volumeAvailable) volumeSeries.update(toVol(c));
+      lastT = Math.max(lastT, c.t);
+    });
+    window.Indicators.refresh();
+    if (!legendPinned) updateLegend(null);
+  }
+
+  // ---------- legend / crosshair OHLC ----------
+  var legendEl = document.getElementById("legend");
+  var legendPinned = false;
+  function fmt(v) { return v == null ? "—" : Number(v).toFixed(state.decimals); }
+  function updateLegend(bar) {
+    var c = bar || (state.candles.length ? state.candles[state.candles.length - 1] : null);
+    if (!c) { legendEl.innerHTML = ""; return; }
+    var dir = c.c >= c.o ? "up" : "down";
+    var chg = c.o ? (((c.c - c.o) / c.o) * 100).toFixed(2) : "0.00";
+    legendEl.innerHTML =
+      '<span class="sym">' + state.symbol + "</span> " +
+      '<span class="val">O <b class="' + dir + '">' + fmt(c.o) + "</b>  " +
+      'H <b class="' + dir + '">' + fmt(c.h) + "</b>  " +
+      'L <b class="' + dir + '">' + fmt(c.l) + "</b>  " +
+      'C <b class="' + dir + '">' + fmt(c.c) + "</b>  " +
+      '<b class="' + dir + '">' + (c.c >= c.o ? "+" : "") + chg + "%</b>" +
+      (state.volumeAvailable ? "  V <b>" + Math.round(c.v || 0) + "</b>" : "") + "</span>";
+  }
+  chart.subscribeCrosshairMove(function (param) {
+    if (!param || !param.time) { legendPinned = false; updateLegend(null); return; }
+    var bar = null;
+    for (var i = state.candles.length - 1; i >= 0; i--) {
+      if (state.candles[i].t === param.time) { bar = state.candles[i]; break; }
+    }
+    legendPinned = !!bar;
+    updateLegend(bar);
+  });
+
+  // ---------- infinite scroll → ask app for older history ----------
+  chart.timeScale().subscribeVisibleLogicalRangeChange(function (range) {
+    if (!range || state.loadingMore || state.noMoreData || !state.candles.length) return;
+    if (range.from < 12) {
+      state.loadingMore = true;
+      post({ type: "loadMore", oldestT: state.candles[0].t });
+    }
+  });
+
+  // ---------- bid/ask + position lines ----------
+  function setQuoteLines(q) {
+    if (state.bidLine) { candleSeries.removePriceLine(state.bidLine); state.bidLine = null; }
+    if (state.askLine) { candleSeries.removePriceLine(state.askLine); state.askLine = null; }
+    if (!q) return;
+    if (q.bid) state.bidLine = candleSeries.createPriceLine({
+      price: q.bid, color: "#ef5350", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "bid" });
+    if (q.ask) state.askLine = candleSeries.createPriceLine({
+      price: q.ask, color: "#26a69a", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "ask" });
+  }
+
+  function setPositionLines(positions) {
+    state.positionLines.forEach(function (l) { candleSeries.removePriceLine(l); });
+    state.positionLines = [];
+    (positions || []).forEach(function (p) {
+      if (p.entry) state.positionLines.push(candleSeries.createPriceLine({
+        price: p.entry, color: p.side === "buy" ? "#f0b90b" : "#f0b90b", lineWidth: 1, lineStyle: 0,
+        axisLabelVisible: true, title: p.title || (p.side.toUpperCase() + " entry") }));
+      if (p.tp) state.positionLines.push(candleSeries.createPriceLine({
+        price: p.tp, color: UP, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "TP" }));
+      if (p.sl) state.positionLines.push(candleSeries.createPriceLine({
+        price: p.sl, color: DOWN, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "SL" }));
+    });
+  }
+
+  // ---------- inbound message handling ----------
+  function handleMsg(m) {
+    if (!m || !m.type) return;
+    switch (m.type) {
+      case "init":
+        state.decimals = m.decimals || 5;
+        state.symbol = m.symbol || "";
+        document.getElementById("watermark").textContent = state.symbol;
+        applyPrecision();
+        break;
+      case "setCandles":
+        state.volumeAvailable = m.volumeAvailable !== false;
+        document.getElementById("vol-na").style.display = state.volumeAvailable ? "none" : "block";
+        state.noMoreData = false;
+        setAll(m.candles || [], false);
+        if ((m.candles || []).length < 60) { chart.timeScale().fitContent(); }
+        else { chart.timeScale().scrollToRealTime(); }
+        break;
+      case "update":
+        updateTail(m.candles || []);
+        if (m.quote) setQuoteLines(m.quote);
+        break;
+      case "prepend": {
+        var older = m.candles || [];
+        state.loadingMore = false;
+        if (!older.length) { state.noMoreData = true; break; }
+        var oldest = state.candles.length ? state.candles[0].t : Infinity;
+        var fresh = older.filter(function (c) { return c.t < oldest; });
+        if (!fresh.length) { state.noMoreData = true; break; }
+        setAll(fresh.concat(state.candles), true);
+        break;
+      }
+      case "setQuote": setQuoteLines(m.quote); break;
+      case "setPositions": setPositionLines(m.positions); break;
+      case "setMarkers": candleSeries.setMarkers(m.markers || []); break;
+      case "setChartType":
+        state.chartType = m.value === "line" ? "line" : "candles";
+        candleSeries.applyOptions({ visible: state.chartType === "candles" });
+        lineSeries.applyOptions({ visible: state.chartType === "line" });
+        break;
+      case "addIndicator": window.Indicators.add(m.id, m.params); break;
+      case "removeIndicator": window.Indicators.remove(m.id); break;
+    }
+  }
+
+  // Direct call path (RN injectJavaScript) + postMessage paths
+  window.__chartRecv = handleMsg;
+  function onMessageEvent(ev) {
+    var d = ev.data;
+    if (typeof d === "string") { try { d = JSON.parse(d); } catch (e) { return; } }
+    handleMsg(d);
+  }
+  window.addEventListener("message", onMessageEvent);
+  document.addEventListener("message", onMessageEvent); // Android WebView
+
+  // Resize
+  function resize() {
+    chart.applyOptions({ width: window.innerWidth, height: window.innerHeight });
+  }
+  window.addEventListener("resize", resize);
+  resize();
+  post({ type: "ready" });
+})();
+</script>
+</body>
+</html>

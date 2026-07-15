@@ -1160,6 +1160,17 @@ try:
     except Exception as _b:
         logger.warning(f"forex ↔ market_providers bridge failed: {_b}")
     logger.info("market_providers subsystem attached (Sprint 7.5)")
+    # Sprint 16.0 — candle engine (OHLCV history + live forming candles)
+    try:
+        import market_candles as _market_candles
+        _market_candles.attach(app, db)
+
+        @app.on_event("startup")
+        async def _candles_indexes():
+            await _market_candles.ensure_indexes(db)
+        logger.info("market_candles attached (Sprint 16.0)")
+    except Exception as _e:
+        logger.warning(f"market_candles attach failed: {_e}")
 except Exception as _e:
     logger.warning(f"market_providers attach failed: {_e}")
 
@@ -1319,6 +1330,13 @@ if ADMIN_DIST is not None:
     logger.info(f"Admin SPA mounted at /api/admin-ui/ from {ADMIN_DIST}")
 else:
     logger.warning("Admin SPA dist not found — /api/admin-ui/ will 404. Run `cd /app/admin && yarn build` and copy dist/* to /app/backend/static/admin-ui/")
+
+# Sprint 16.0 — professional trading chart (TradingView Lightweight Charts)
+# served same-origin for the mobile WebView/iframe.
+CHART_DIST = Path(__file__).parent / "static" / "chart"
+if CHART_DIST.exists() and (CHART_DIST / "index.html").exists():
+    app.mount("/api/chart", NoCacheHTMLStaticFiles(directory=str(CHART_DIST), html=True), name="trading-chart")
+    logger.info(f"Trading chart mounted at /api/chart/ from {CHART_DIST}")
 
 # Serve corporate marketing website (Next.js static export) at /api/site/
 WEBSITE_DIST = Path(__file__).parent / "static" / "website"

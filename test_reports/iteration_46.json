@@ -1,0 +1,31 @@
+{
+  "summary": "Sprint 16.0 — Professional TradingView candlestick chart on Expo web preview. FRONTEND: 100% GREEN. Full flow verified: onboarding → welcome → email login (demo@mfb.in / demo1234) → Forex tab (TRADING BALANCE DEMO hero = ₹10,00,000, watchlist 5 symbols) → tap XAU/USD → symbol screen shows the new dark professional chart. Chart iframe at /api/chart/index.html is same-origin (HTTP 200), lightweight-charts.js is 200. Inside the iframe: 7 canvases render (>= 4 required), watermark='XAUUSD', legend shows 'XAUUSD O 4253.53 H 4253.53 L 4253.53 C 4253.53 +0.00% V 1'. All 7 timeframe testIDs (tf-1m tf-5m tf-15m tf-30m tf-1h tf-4h tf-1d) + 2 chart-type testIDs (chart-type-candles chart-type-line) are present and tappable. Switching 1m→5m→1H→1m each updates the legend OHLC values in real time (verified: 5m legend '4254.81 4255.57 4251.38 4251.38 V 4', 1h legend '4252.65 4255.57 4251.11 4251.38 V 20'). Chart-type toggle line↔candles works with no crash. Bid/ask/volume overlays visible in screenshots (blue horizontal price lines at bid=4250.95 ask=4251.80, colored volume histogram). ORDER FLOW: side-buy tap + lot-input 0.01 + place-order → window.confirm dialog fires 'Position opened. BUY 0.01 XAU/USD @ 4251.80' → OPEN=1, UNREALIZED P&L=-₹70.57 → close-btn POST /api/forex/positions/{id}/close → 200 → OPEN=0, EQUITY=₹10,00,287.08, no chart crashes. REGRESSION: Profile tab still has reset-demo-btn + demo-wallet-balance (₹10,00,287.08) intact from Sprint 15.1. Forex TRADING BALANCE hero intact. No red screen errors, no React Native crash, no /api errors observed in the network log for the full flow. Alert.alert on web now uses window.confirm/window.alert (confirmed working end-to-end via dialog handler).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_46.json",
+    "/app/backend/tests/test_sprint_160_candles.py (pre-existing, 19 passing)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "TradingChart.tsx correctly sends init → setChartType → setCandles → periodic update messages via postMessage/injectJavaScript — proven working via legend updates.",
+    "static/chart/index.html locale pin ('en-US') is effective — no Intl throw observed, canvases render (7 canvases, not blank).",
+    "Live poll every 4s (POLL_MS=4000) — verified via network log (repeated GET /api/forex/positions and market candle updates).",
+    "Alert.alert on web is now using window.confirm — 'Position opened' confirm dialog fired correctly, matching the Sprint 15.1 web-Alert fix pattern."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (backend not re-tested this iteration; per hand-off 19/19 sprint-16.0 candle pytest + 82/82 regression already green)",
+    "frontend": "100% — all Sprint 16.0 acceptance criteria pass (chart toolbar, iframe render, legend OHLC, timeframe switch, chart-type toggle, order placement with position overlay, position close, profile regression)"
+  },
+  "seed_data_creation": "During testing on demo user: opened 1 BUY 0.01 XAU/USD position and closed it. Demo wallet moved ₹10,00,000 → ₹10,00,287.08 (small demo profit from price movement 4251.80 → 4255.69). No real funds involved (virtual balance only).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 16.0 chart is fully verified on Expo web preview. If a future sprint needs re-verification: (1) login demo@mfb.in/demo1234 via onboarding-skip → welcome-email-btn → login-identifier-input/password → login-submit-button; (2) tab-forex → row-XAUUSD → verify iframe with URL containing '/api/chart/' present, canvas count ≥ 4, #legend innerText matches /XAUUSD O .+ H .+ L .+ C .+/; (3) chart iframe frame.evaluate is fine unless the parent RN screen re-renders and detaches the iframe — attach dialog handler for RN Alert (window.confirm on web) before place-order. All testIDs listed in this report are stable.",
+  "rca_of_issue": "N/A — no bugs found this iteration. Sprint 16.0 shipped clean."
+}

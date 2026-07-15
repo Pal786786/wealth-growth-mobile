@@ -262,6 +262,13 @@ class ProviderManager:
                     _ai_feed.publish_price(sym, q.price)
             except Exception:
                 pass
+            # Sprint 16.0: build the live forming 1m candle from the SAME
+            # unified tick stream (single scheduler — no second price engine).
+            try:
+                import market_candles as _mc
+                await _mc.ingest_ticks(quotes)
+            except Exception:
+                logger.exception("candle ingest failed")
             self._breakers[chosen.name].record_success()
             self._last_refresh = datetime.now(timezone.utc)
             self._last_active_provider = chosen.name

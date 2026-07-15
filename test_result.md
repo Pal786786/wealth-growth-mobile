@@ -1673,3 +1673,48 @@ trading, INR) resets to admin-configurable default (forex_settings.default_demo_
   in profile.tsx now use window.confirm/window.alert when Platform.OS === "web".
 - Re-verified in real browser: confirm dialog fires, POST /api/demo/reset called,
   success alert shows new balance ₹10,00,000. Admin SPA path was already green.
+
+---
+
+## Sprint 16.0 — Professional Trading Chart (TradingView quality)
+
+### Backend
+- NEW `/app/backend/market_candles.py`:
+  - `ingest_ticks()` called from ProviderManager.refresh_once (SINGLE scheduler,
+    no second price engine) → builds the forming 1m candle per symbol in
+    `market_price_history` (tick-count volume, MT4 style).
+  - `aggregate_candles()` pure bucket aggregation (5m/15m/30m/1h/4h/1d from
+    base bars; 4h from 1h). Historical OHLC only from Finnhub REST cached in
+    `market_price_history` (meta in `market_history_meta`), incremental append,
+    per-series 60s sync throttle, infinite-scroll backfill chunks of 600 bars.
+    Preloads: 1m→2d, 5m→7d, 15m/30m→30d, 1h→1y, 1d→5y. Zero API calls without a key.
+  - `GET /api/market/candles/{symbol}?tf=&limit=&before=` (public; tf whitelist,
+    symbol validated against SYMBOL_MAP; returns candles + quote from unified
+    cache + volume_available + sync info).
+- `manager.py`: candle ingest hook after cache.put_many.
+- `server.py`: mounts `/api/chart/` (static chart app) + attaches market_candles.
+
+### Chart app (`/app/backend/static/chart/index.html` + bundled lightweight-charts.js v4.2.3)
+- Dark TradingView theme, candlestick+line toggle, volume histogram (green/red
+  by direction, hidden when volume unavailable), crosshair OHLC+V legend,
+  bid/ask price lines, position entry line with floating PnL title, TP/SL
+  dashed lines, buy/sell arrow markers, pinch zoom/pan, infinite scroll →
+  posts `loadMore` for automatic backfill, indicator registry
+  (window.Indicators) ready for EMA/RSI/MACD/BB next sprint.
+- CRITICAL FIX: `localization.locale: "en-US"` pinned — environments reporting
+  "en-US@posix" locale made Intl throw inside lightweight-charts and the canvas
+  rendered EMPTY. Do not remove.
+
+### Mobile
+- NEW `src/components/TradingChart.tsx` — WebView (native) / iframe (web) to
+  `/api/chart/index.html`, JSON message protocol, 4s candle poll, 2s quote
+  lines, positions/markers push, timeframe row (testIDs tf-1m … tf-1d),
+  chart type toggles (chart-type-candles / chart-type-line).
+- `app/forex/symbol/[id].tsx` — FeedChart replaced by TradingChart; polls
+  open/closed positions every 5s for chart overlays.
+
+### Tests (all run by main agent — PASS)
+- tests/test_sprint_160_candles.py — 19/19 PASS (aggregation math, validation,
+  all 7 TFs, live candle generation via unified scheduler, 4h-from-cached-1h,
+  graceful no-key sync).
+- Regressions: finnhub 22 + forex/demo-reset suites 60 — all PASS.

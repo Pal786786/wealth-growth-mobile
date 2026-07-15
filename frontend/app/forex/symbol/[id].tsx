@@ -6,11 +6,11 @@ import { useTheme } from "@/src/theme/ThemeProvider";
 import { Screen } from "@/src/components/Screen";
 import { Card } from "@/src/components/Card";
 import { useToast } from "@/src/components/Toast";
-import { forexApi, ForexSymbol, Side } from "@/src/api/forex";
+import { forexApi, ForexSymbol, Side, Position } from "@/src/api/forex";
 import { useForexPrices } from "@/src/hooks/useForexPrices";
 import { formatINR } from "@/src/utils/format";
 import { ForexDemoBanner } from "@/src/components/ForexDemoBanner";
-import { FeedChart } from "@/src/components/FeedChart";
+import { TradingChart } from "@/src/components/TradingChart";
 
 const LOT_PRESETS = [0.01, 0.1, 1, 5, 10];
 
@@ -30,6 +30,8 @@ export default function SymbolDetail() {
   const [tp, setTp] = useState("");
   const [sl, setSl] = useState("");
   const [placing, setPlacing] = useState(false);
+  const [openPositions, setOpenPositions] = useState<Position[]>([]);
+  const [closedPositions, setClosedPositions] = useState<Position[]>([]);
 
   // Load symbol (public) — must always succeed; balance is loaded separately so an
   // auth/network failure never leaves the screen stuck on a spinner.
@@ -56,7 +58,25 @@ export default function SymbolDetail() {
     }
   }, []);
 
-  useEffect(() => { loadSymbol(); loadBalance(); }, [loadSymbol, loadBalance]);
+  const loadPositions = useCallback(async () => {
+    try {
+      const [op, cl] = await Promise.all([
+        forexApi.listPositions("open"),
+        forexApi.listPositions("closed"),
+      ]);
+      setOpenPositions(op);
+      setClosedPositions(cl);
+    } catch {
+      // not logged in — chart simply shows no position overlays
+    }
+  }, []);
+
+  useEffect(() => { loadSymbol(); loadBalance(); loadPositions(); }, [loadSymbol, loadBalance, loadPositions]);
+  // Poll positions so entry-line floating PnL stays live on the chart
+  useEffect(() => {
+    const t = setInterval(loadPositions, 5000);
+    return () => clearInterval(t);
+  }, [loadPositions]);
 
   if (!symbol) {
     return (
@@ -100,8 +120,9 @@ export default function SymbolDetail() {
         symbol_id: symbol.id, side, lot_size: lot, tp: tpNum, sl: slNum,
       });
       show("success", `${side.toUpperCase()} ${lot} lot ${symbol.display} @ ${pos.entry_price}`);
-      // Refresh balance, then navigate back
+      // Refresh balance + chart overlays, then navigate back
       await loadBalance();
+      await loadPositions();
       setTp(""); setSl("");
       if (Platform.OS === "web") {
         if (typeof window !== "undefined" && window.confirm(`Position opened.\n\n${side.toUpperCase()} ${lot} ${symbol.display} @ ${pos.entry_price}\n\nView open positions?`)) {
@@ -135,8 +156,16 @@ export default function SymbolDetail() {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40, gap: 12, paddingTop: 12 }}>
         <ForexDemoBanner compact />
-        {/* Custom SVG chart — driven by the SAME feed used by watchlist + order screen */}
-        <FeedChart symbolId={symbol.id} quote={q} priceDecimals={symbol.price_decimals} height={220} />
+        {/* Sprint 16.0 — professional candlestick chart (TradingView Lightweight
+            Charts) fed by the unified Finnhub engine + cached history */}
+        <TradingChart
+          symbolId={symbol.id}
+          priceDecimals={symbol.price_decimals}
+          quote={q}
+          openPositions={openPositions}
+          closedPositions={closedPositions}
+          height={380}
+        />
 
         {/* Quote summary */}
         {q && (

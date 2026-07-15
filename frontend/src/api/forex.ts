@@ -90,4 +90,14 @@ export const forexApi = {
     (await api.put(`/forex/positions/${positionId}`, { tp, sl })).data,
   history: async (limit = 100): Promise<any[]> =>
     (await api.get("/forex/history", { params: { limit } })).data,
+  // Sprint 16.0 — professional chart candles (unified Finnhub engine)
+  marketCandles: async (
+    symbol: string, tf: string, opts?: { limit?: number; before?: number },
+  ): Promise<{ symbol: string; tf: string; candles: Candle[]; volume_available: boolean; quote: any; sync: any }> =>
+    (await api.get(`/market/candles/${encodeURIComponent(symbol)}`, { params: { tf, ...(opts || {}) } })).data,
+};
+
+export type Candle = {
+  t: number; o: number; h: number; l: number; c: number; v: number;
+  complete?: boolean; source?: string;
 };
