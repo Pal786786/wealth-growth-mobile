@@ -104,14 +104,14 @@ class ProviderManager:
         self.cache = QuoteCache(db, ttl_seconds=DEFAULT_CACHE_TTL_SEC)
 
         # Build providers in priority order (lower priority number = tried first)
-        # Sprint 15.0 — Finnhub (100) replaces TwelveData as PRIMARY.
-        # TwelveData (150) remains as an available fallback for symbols that
-        # Finnhub returns 0 for. AlphaVantage (200) then Mock (300).
-        TwelveDataProvider.priority = 150
+        # ------------------------------------------------------------------ #
+        # Sprint 15.0 — Finnhub is now the sole live provider. TwelveData and
+        # AlphaVantage are DISABLED (code retained on disk but not
+        # instantiated here) per user directive. Mock (priority=999) stays as
+        # the last-resort fallback.
+        # ------------------------------------------------------------------ #
         self.providers: List[Provider] = [
             FinnhubProvider(),
-            TwelveDataProvider(),
-            AlphaVantageProvider(),
             MockProvider(),
         ]
         self.providers.sort(key=lambda p: p.priority)
@@ -185,18 +185,25 @@ class ProviderManager:
             self.refresh_interval_sec = stored_interval
         # Load API keys if stored — after legacy migration above, canonical
         # is guaranteed to be authoritative.
+        # Sprint 15.0: TwelveData / AlphaVantage are DISABLED. We still read
+        # the legacy keys so admin history is preserved, but there's no
+        # provider instance to inject them into — so they're logged & ignored.
         td_key = doc.get("twelvedata_api_key")
         av_key = doc.get("alphavantage_api_key")
         fh_key = doc.get("finnhub_api_key")
-        if td_key:
+        if td_key and "twelvedata" in self._by_name:
             self._by_name["twelvedata"].set_api_key(td_key)  # type: ignore[attr-defined]
             logger.info("market_providers.startup: loaded twelvedata api_key (len=%d, fp=%s)",
                         len(td_key), td_key[:4] + "…" + td_key[-2:])
-        if av_key:
+        elif td_key:
+            logger.info("market_providers.startup: twelvedata key present but provider DISABLED (Sprint 15.0)")
+        if av_key and "alphavantage" in self._by_name:
             self._by_name["alphavantage"].set_api_key(av_key)  # type: ignore[attr-defined]
             logger.info("market_providers.startup: loaded alphavantage api_key (len=%d, fp=%s)",
                         len(av_key), av_key[:4] + "…" + av_key[-2:])
-        if fh_key:
+        elif av_key:
+            logger.info("market_providers.startup: alphavantage key present but provider DISABLED (Sprint 15.0)")
+        if fh_key and "finnhub" in self._by_name:
             self._by_name["finnhub"].set_api_key(fh_key)  # type: ignore[attr-defined]
             logger.info("market_providers.startup: loaded finnhub api_key (len=%d, fp=%s)",
                         len(fh_key), fh_key[:4] + "…" + fh_key[-2:])

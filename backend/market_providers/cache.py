@@ -35,16 +35,20 @@ STALE_MAX_SEC = 300      # 30–300s → STALE; >300s → EXPIRED (fallback)
 
 # Provider priority for "who wins on conflict" (lower = higher priority).
 # MUST stay in sync with each provider class's `priority` attribute.
+# Sprint 15.0 — Finnhub is the sole primary. TwelveData & AlphaVantage
+# entries retained (code not deleted, just disabled at manager level) so
+# any legacy rows already in the cache classify sanely on read.
 _PROVIDER_PRIORITY = {
-    "twelvedata":   100,
-    "alphavantage": 200,
+    "finnhub":      100,     # PRIMARY (Sprint 15.0)
+    "twelvedata":   150,     # legacy — disabled at manager level
+    "alphavantage": 200,     # legacy — disabled at manager level
     "binance":      110,     # for BTCUSD only, treated as LIVE
-    "mock":         300,
+    "mock":         999,     # last-resort fallback
     "unknown":      500,
 }
 
 # "LIVE" bucket = any real provider (priority < 300). Mock is degraded.
-_LIVE_PROVIDERS = {"twelvedata", "alphavantage", "binance"}
+_LIVE_PROVIDERS = {"finnhub", "twelvedata", "alphavantage", "binance"}
 
 logger = logging.getLogger("market.cache")
 

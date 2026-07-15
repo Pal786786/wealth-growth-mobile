@@ -177,7 +177,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Sprint 14.1.2 — LIVE quote ingestion trace + debug endpoint"
+    - "Sprint 15.0 — Migrate Live Market from TwelveData to Finnhub (backend verification)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -1583,3 +1583,56 @@ Zero regressions across all modules.
 - ADD `/app/PRODUCTION_READINESS_REPORT_v2.md` — feature completion matrix,
   security checklist, performance summary, remaining integrations (live
   keys only), Go-Live checklist, Beta → GA deployment plan.
+
+---
+
+## Sprint 15.0 — Finnhub Migration (backend testing needed)
+
+### Scope
+Migrate live-market pipeline from TwelveData → Finnhub as the sole primary
+provider. TwelveData & AlphaVantage code retained on disk but disabled at the
+ProviderManager level. Mock (priority=999) remains as last-resort fallback.
+
+### Changes summary
+- `/app/backend/market_providers/finnhub.py` — added backoff machinery
+  (`_reset_backoff`, `_trigger_backoff`, `is_backed_off`, `backoff_state`,
+  `backoff_remaining_sec`), synchronised `set_api_key` to also reset
+  `ProviderStats` + credit info. Extended `SYMBOL_MAP` verified for all 20
+  canonical symbols (FX → OANDA:, crypto → BINANCE:, indices → ETF proxies,
+  foreign IX → ^GDAXI/^FTSE/^NSEI, commodities → CL=F/BZ=F/NG=F).
+- `/app/backend/market_providers/cache.py` — registered `finnhub`=100 in
+  `_PROVIDER_PRIORITY`, added to `_LIVE_PROVIDERS`. Mock demoted to 999.
+- `/app/backend/market_providers/manager.py` — provider chain reduced to
+  `[FinnhubProvider(), MockProvider()]`. TwelveData / AlphaVantage no longer
+  instantiated. Legacy key loaders skip gracefully when providers absent.
+- `/app/backend/market_providers/mock.py` — priority=999.
+- `/app/admin/src/pages/AdminLiveMarket.tsx` — replaced TwelveData UI row
+  with Finnhub. Cache table & Overview tint updated. Manual override buttons
+  reduced to `AUTO / FINNHUB / MOCK`.
+
+### Regression
+- Unit tests: `test_finnhub_provider_iter44.py` — 14/14 PASS
+- Unit tests overall (92 passed, 3 skipped) after marking legacy
+  `test_live_ingestion_iter42.py` (TwelveData-specific) as skipped.
+- `PUT /api/market_providers/api-key` with `provider=finnhub` accepted;
+  probe returns exact Finnhub HTTP body (401 for dummy key, 200 for real).
+- `PUT ... provider=twelvedata` now correctly returns 400
+  `"provider twelvedata does not accept API keys"`.
+- `/api/forex/prices` reads from shared cache (currently `source=mock`
+  because Finnhub key is not yet supplied by the user).
+
+### What the testing agent must verify (backend only)
+1. `GET /api/market_providers/status` — providers list contains ONLY
+   `finnhub` (priority 100) and `mock` (priority 999). TD/AV are absent.
+2. `PUT /api/market_providers/api-key` accepts `provider=finnhub` and
+   rejects `provider=twelvedata` / `provider=alphavantage` with HTTP 400.
+3. `test_connection` probes both `OANDA:EUR_USD` and `OANDA:XAU_USD`.
+4. When `finnhub_api_key` is unset, the manager falls back to `mock` and
+   the `/api/forex/prices` endpoint keeps returning valid values (never
+   crashes, never returns empty list).
+5. Cache writes have `provider="finnhub"` and `source="LIVE"` when a valid
+   Finnhub key IS configured (this can only be fully verified once the
+   user supplies a real production key — please note this in the report).
+6. Only ONE scheduler / ONE ProviderManager / ONE QuoteCache exist —
+   confirm via `/api/market_providers/status.refresh_running=true` and no
+   duplicate refresh log lines.

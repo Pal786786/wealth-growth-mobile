@@ -26,7 +26,7 @@ export default function AdminLiveMarket() {
         <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700"><Zap className="w-5 h-5" /></div>
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Live Market</h1>
-          <p className="text-sm text-slate-500">Sprint 7.5 — Provider architecture with TwelveData → Alpha Vantage → Mock fallback</p>
+          <p className="text-sm text-slate-500">Sprint 15.0 — Finnhub is the sole primary provider (Mock is last-resort fallback)</p>
         </div>
       </div>
       <div className="flex gap-1 mb-5 border-b border-slate-200 overflow-x-auto">
@@ -75,8 +75,7 @@ function OverviewTab() {
 
   if (!data) return <div className="p-8 text-center text-slate-400">Loading…</div>;
   const activeClass = data.active_provider === "mock" ? "text-amber-600 bg-amber-50"
-    : data.active_provider === "twelvedata" ? "text-emerald-600 bg-emerald-50"
-    : data.active_provider === "alphavantage" ? "text-blue-600 bg-blue-50"
+    : data.active_provider === "finnhub" ? "text-emerald-600 bg-emerald-50"
     : "text-slate-600 bg-slate-50";
 
   const ms = data.market_status || {};
@@ -109,7 +108,7 @@ function OverviewTab() {
         </div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Active Provider" value={(data.active_provider || "—").toUpperCase()} tint={data.active_provider === "twelvedata" ? "green" : data.active_provider === "mock" ? "amber" : "blue"} icon={Zap} />
+        <StatCard label="Active Provider" value={(data.active_provider || "—").toUpperCase()} tint={data.active_provider === "finnhub" ? "green" : data.active_provider === "mock" ? "amber" : "blue"} icon={Zap} />
         <StatCard label="Auto Fallback" value={data.auto_fallback ? "ENABLED" : "DISABLED"} tint={data.auto_fallback ? "green" : "amber"} icon={Activity} />
         <StatCard label="Refresh Interval" value={`${data.refresh_interval_sec}s`} icon={RefreshCw} />
         <StatCard label="Symbols" value={data.universe?.length ?? 0} icon={Database} />
@@ -132,7 +131,7 @@ function OverviewTab() {
             className={`px-4 py-2 rounded-lg text-sm font-bold border ${!data.manual_provider ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-700 border-slate-200"}`}>
             AUTO
           </button>
-          {["finnhub", "twelvedata", "alphavantage", "mock"].map((p) => (
+          {["finnhub", "mock"].map((p) => (
             <button key={p} onClick={() => setManual.mutate(p)}
               className={`px-4 py-2 rounded-lg text-sm font-bold border ${data.manual_provider === p ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200"}`}>
               {p.toUpperCase()}
@@ -140,7 +139,7 @@ function OverviewTab() {
           ))}
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          When AUTO is on, the manager picks the highest-priority configured provider (TwelveData → Alpha Vantage → Mock).
+          When AUTO is on, the manager picks the highest-priority configured provider (Finnhub → Mock).
         </p>
       </div>
 
@@ -182,8 +181,6 @@ function ProvidersTab() {
     mutationFn: (payload: { provider: string; key: string }) => api.put("/market_providers/api-key", payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["market-status"] }),
   });
-  const [tdKey, setTdKey] = useState("");
-  const [avKey, setAvKey] = useState("");
   const [fhKey, setFhKey] = useState("");
 
   if (!data) return <div className="p-8 text-center text-slate-400">Loading…</div>;
@@ -259,43 +256,13 @@ function ProvidersTab() {
             {p.name === "finnhub" && (
               <div className="mt-4 flex gap-2 items-end">
                 <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">API Key (from finnhub.io — paid Q-plan)</label>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">API Key (from finnhub.io — paid Marketdata-basic plan)</label>
                   <input type="password" value={fhKey} onChange={(e) => setFhKey(e.target.value)}
                     placeholder="paste key here"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
                 </div>
                 <button onClick={() => setKey.mutate({ provider: "finnhub", key: fhKey })}
                   disabled={!fhKey.trim()}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg disabled:opacity-40">
-                  <Key className="w-4 h-4" /> Save
-                </button>
-              </div>
-            )}
-            {p.name === "twelvedata" && (
-              <div className="mt-4 flex gap-2 items-end">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">API Key (from twelvedata.com)</label>
-                  <input type="password" value={tdKey} onChange={(e) => setTdKey(e.target.value)}
-                    placeholder="paste key here"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-                </div>
-                <button onClick={() => setKey.mutate({ provider: "twelvedata", key: tdKey })}
-                  disabled={!tdKey.trim()}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg disabled:opacity-40">
-                  <Key className="w-4 h-4" /> Save
-                </button>
-              </div>
-            )}
-            {p.name === "alphavantage" && (
-              <div className="mt-4 flex gap-2 items-end">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">API Key (from alphavantage.co)</label>
-                  <input type="password" value={avKey} onChange={(e) => setAvKey(e.target.value)}
-                    placeholder="paste key here"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-                </div>
-                <button onClick={() => setKey.mutate({ provider: "alphavantage", key: avKey })}
-                  disabled={!avKey.trim()}
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg disabled:opacity-40">
                   <Key className="w-4 h-4" /> Save
                 </button>
@@ -376,7 +343,7 @@ function CacheTab() {
                   {q.change_pct != null ? `${q.change_pct >= 0 ? "+" : ""}${Number(q.change_pct).toFixed(2)}%` : "—"}
                 </td>
                 <td className="px-3 py-2 text-center">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${q.provider === "mock" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${q.provider === "mock" ? "bg-amber-100 text-amber-700" : q.provider === "finnhub" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>
                     {q.provider?.toUpperCase()}
                   </span>
                 </td>

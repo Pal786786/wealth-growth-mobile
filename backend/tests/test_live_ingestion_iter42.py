@@ -10,16 +10,29 @@ touch the network. If this test passes, the ingestion drop investigated by
 Sprint 14.1.2 is fixed at the code level. Any drop the operator sees in prod
 after this passes must be an environment / key / rate-limit issue, which the
 new `GET /api/market/debug/xauusd` endpoint will surface directly.
+
+Sprint 15.0 update
+------------------
+TwelveData is DISABLED at the ``ProviderManager`` level. Its code is retained
+on disk (so historic keys still deserialise) but it is no longer instantiated
+in the provider chain. These tests therefore no longer apply to the live
+pipeline — they've been superseded by ``test_finnhub_provider_iter44.py``.
+The whole module is skipped rather than deleted, so the audit trail is
+preserved.
 """
 from __future__ import annotations
+
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="Sprint 15.0: TwelveData provider disabled — superseded by test_finnhub_provider_iter44.py"
+)
 
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch, AsyncMock, MagicMock
-
-import pytest
 
 from market_providers.manager import ProviderManager
 from market_providers.twelvedata import TwelveDataProvider

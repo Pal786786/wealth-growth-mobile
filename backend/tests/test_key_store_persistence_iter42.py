@@ -171,6 +171,6 @@ class TestNoBlockingBugs:
     def test_unknown_provider_migration_is_safe(self):
         db = _DB()
         summary = _run(key_store.migrate_legacy_keys(db))
-        # both known providers appear in summary with no migration
-        assert set(summary.keys()) == {"twelvedata", "alphavantage"}
+        # Sprint 15.0: finnhub is now a known provider alongside twelvedata / alphavantage
+        assert set(summary.keys()) == {"twelvedata", "alphavantage", "finnhub"}
         assert all(v["migrated_from"] is None for v in summary.values())

@@ -19,7 +19,7 @@ from .base import Provider, Quote
 
 class MockProvider(Provider):
     name = "mock"
-    priority = 300     # lowest priority — only reached if all real providers fail
+    priority = 999     # last-resort fallback (Sprint 15.0)
 
     async def _fetch_quotes(self, symbols: List[str]) -> Dict[str, Quote]:
         # Import lazily to avoid a hard import cycle if ai_intelligence loads first
