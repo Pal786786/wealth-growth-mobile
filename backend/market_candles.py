@@ -238,17 +238,31 @@ def _candle_path(fin_sym: str) -> str:
     return "/stock/candle"
 
 
+# Sprint 16.3c — self-diagnosing fetch. Production runtime logs are not
+# accessible, so the exact reason a fetch failed is recorded per (symbol, res)
+# and surfaced in the sync response as `detail`. A short cooldown prevents
+# re-attempting a failing fetch on every request (protects Finnhub credits
+# and keeps response times flat while the provider rejects us).
+_fetch_diag: Dict[str, str] = {}
+_fetch_fail_until: Dict[str, float] = {}
+FETCH_FAIL_COOLDOWN_SEC = 60
+
+
 async def _fetch_finnhub_bars(symbol: str, res: str, t_from: int,
                               t_to: int) -> Optional[List[Dict[str, Any]]]:
     """One Finnhub REST candle request. Returns list of bars or None on error."""
     from market_providers.finnhub import BASE_URL, SYMBOL_MAP
+    dk = f"{symbol}:{res}"
     prov = _finnhub_provider()
     if prov is None or not getattr(prov, "_api_key", ""):
+        _fetch_diag[dk] = "no_provider_or_key"
         return None
     if prov.is_backed_off():
+        _fetch_diag[dk] = "backed_off"
         return None
     fin_sym = SYMBOL_MAP.get(symbol)
     if not fin_sym:
+        _fetch_diag[dk] = "unmapped_symbol"
         return None
     try:
         async with httpx.AsyncClient(timeout=15.0) as c:
@@ -260,13 +274,16 @@ async def _fetch_finnhub_bars(symbol: str, res: str, t_from: int,
         prov._parse_credit_headers(r)
         if r.status_code == 429:
             prov._trigger_backoff("candle HTTP 429")
+            _fetch_diag[dk] = "http_429_rate_limited"
             return None
         if r.status_code != 200:
             logger.warning("finnhub candle %s res=%s http=%d %s",
                            symbol, res, r.status_code, r.text[:120])
+            _fetch_diag[dk] = f"http_{r.status_code}: {r.text[:100]}"
             return None
         data = r.json()
         if data.get("s") != "ok":
+            _fetch_diag[dk] = f"no_data (s={data.get('s')})"
             return []
         bars = []
         for i, ts in enumerate(data.get("t") or []):
@@ -275,9 +292,11 @@ async def _fetch_finnhub_bars(symbol: str, res: str, t_from: int,
                 "l": float(data["l"][i]), "c": float(data["c"][i]),
                 "v": float((data.get("v") or [0] * len(data["t"]))[i] or 0),
             })
+        _fetch_diag.pop(dk, None)
         return bars
     except Exception as e:  # pragma: no cover
         logger.warning("finnhub candle fetch failed %s: %s", symbol, e)
+        _fetch_diag[dk] = f"exception:{type(e).__name__}: {str(e)[:100]}"
         return None
 
 
@@ -383,9 +402,18 @@ async def ensure_history(symbol: str, tf: str) -> Dict[str, Any]:
     else:
         t_from = now - PRELOAD_SEC[base_tf]
 
+    # Sprint 16.3c — failure cooldown: don't re-attempt a failing fetch on
+    # every request; surface the recorded diagnosis instead.
+    dk = f"{symbol}:{res}"
+    if time.time() < _fetch_fail_until.get(mid, 0.0):
+        return {"synced": False, "reason": "provider_unavailable",
+                "detail": _fetch_diag.get(dk), "cooldown": True}
+
     bars = await _fetch_finnhub_bars(symbol, res, t_from, now)
     if bars is None:
-        return {"synced": False, "reason": "provider_unavailable"}
+        _fetch_fail_until[mid] = time.time() + FETCH_FAIL_COOLDOWN_SEC
+        return {"synced": False, "reason": "provider_unavailable",
+                "detail": _fetch_diag.get(dk)}
     st = await _store_bars(symbol, base_tf, bars)
     # Sprint 16.3b — persist meta up to the last SUCCESSFULLY stored batch so
     # the next sync resumes incrementally instead of refetching the window.
@@ -410,9 +438,15 @@ async def backfill_older(symbol: str, tf: str, before: int) -> Dict[str, Any]:
         return {"synced": False, "reason": "range_cached"}
     t_to = oldest
     t_from = t_to - BACKFILL_CHUNK_BARS * base_sec
-    bars = await _fetch_finnhub_bars(symbol, FINNHUB_RES[base_tf], t_from, t_to)
+    res = FINNHUB_RES[base_tf]
+    if time.time() < _fetch_fail_until.get(mid, 0.0):
+        return {"synced": False, "reason": "provider_unavailable",
+                "detail": _fetch_diag.get(f"{symbol}:{res}"), "cooldown": True}
+    bars = await _fetch_finnhub_bars(symbol, res, t_from, t_to)
     if bars is None:
-        return {"synced": False, "reason": "provider_unavailable"}
+        _fetch_fail_until[mid] = time.time() + FETCH_FAIL_COOLDOWN_SEC
+        return {"synced": False, "reason": "provider_unavailable",
+                "detail": _fetch_diag.get(f"{symbol}:{res}")}
     st = await _store_bars(symbol, base_tf, bars)
     # Only extend oldest_t when the whole chunk landed — avoids gaps.
     if not st["complete"]:

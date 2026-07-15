@@ -423,3 +423,23 @@ market_candles.py sha 0cf03595b16beecc….
 **PENDING USER ACTION**: republish → verify prod: first call per symbol syncs
 (seconds), subsequent <1s (throttled via persisted meta), no dup timestamps,
 no chart asserts.
+
+---
+## Sprint 16.3c (2026-07-15) — Self-diagnosing candle sync + cooldown
+
+Production (still on 16.3b stamp 59e0b0ca — the 82b2bd89 fallback-index build
+NEVER deployed; publish pipeline stalled) began returning provider_unavailable
+for XAUUSD too (fetch worked earlier same day). Backoff inactive, credits OK →
+failure branch invisible without prod logs.
+
+**Changes (market_candles.py only)**:
+1. _fetch_finnhub_bars records exact exit branch per (symbol,res) in
+   _fetch_diag: no_provider_or_key / backed_off / unmapped_symbol /
+   http_429_rate_limited / http_<code>:<body> / no_data / exception:<cls>.
+   Surfaced as sync.detail in the API response (additive field).
+2. 60s failure cooldown (_fetch_fail_until) — failing fetches aren't
+   re-attempted on every request (protects credits, flat response times).
+3. Build also carries the 16.3b-r2 fallback index (sym_tf_t_nu non-unique)
+   which never reached production.
+
+Tests 52/52. Stamp for publish verification is in build_info.json (16.3c).
