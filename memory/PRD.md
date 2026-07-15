@@ -288,3 +288,39 @@ last-modified 13 Jul). User must click **Publish** to ship Sprint 15.0 + 15.1
 to production, then agent should verify the emergent.host URL in a browser.
 Finnhub production API key also still needs to be entered by user in
 Admin → Live Market → Providers.
+
+---
+
+## Sprint 16.0 — Professional Trading Chart (COMPLETE)
+
+**Chart**: TradingView Lightweight Charts (bundled, served same-origin at
+/api/chart/index.html — no CDN) inside WebView (native) / iframe (web).
+Features live: OHLC candlesticks + line toggle, 7 timeframes (1m/5m/15m/30m/1H/4H/D1),
+volume histogram (green/red per direction, hidden if unavailable), crosshair OHLC+V
+legend, bid/ask price lines, position entry line with floating PnL, TP/SL dashed
+lines, buy/sell execution markers, pinch/zoom/pan, infinite scroll → automatic
+historical backfill, indicator registry (window.Indicators) ready for EMA/SMA/RSI/
+MACD/Bollinger next sprint.
+
+**Backend** (`market_candles.py`):
+- Live forming 1m candle built from unified ProviderManager tick stream (ingest
+  hook inside refresh_once — ONE scheduler, no second price engine). Tick-count
+  volume until official Finnhub bar replaces it at next sync.
+- Historical OHLC ONLY from Finnhub REST, cached in `market_price_history`
+  (meta: `market_history_meta`), incremental append, never re-fetch cached
+  ranges, 60s per-series throttle. Preloads: 1m→2d, 5m→7d, 15m/30m→30d,
+  1h→1y (covers 4H), 1d→5y. 4h aggregated from cached 1h Finnhub bars.
+- `GET /api/market/candles/{symbol}?tf=&limit=&before=` (before → older-chunk backfill).
+
+**Key gotcha**: chart HTML pins `localization.locale: "en-US"` — environments
+reporting "en-US@posix" crash Intl inside lightweight-charts → blank canvas.
+
+**Tests**: tests/test_sprint_160_candles.py 19/19 PASS; testing_agent E2E 100%
+green (iteration_46). Regressions all green.
+
+**Still pending user actions**: (1) Publish to emergent.host (still serving
+pre-15.0 snapshot), (2) enter Finnhub API key in Admin → Live Market → Providers
+to activate LIVE prices + historical candle backfill (currently MOCK ticks).
+
+**Next sprint (planned)**: indicators — EMA, SMA, RSI, MACD, Bollinger Bands via
+the existing window.Indicators registry + message protocol (addIndicator/removeIndicator).
