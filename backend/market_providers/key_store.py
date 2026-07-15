@@ -54,22 +54,21 @@ CANONICAL_ID   = "active"
 # ordered fallback chain: (collection, filter, path_to_key)
 # path_to_key is dot-notated so we can descend into nested dicts.
 LEGACY_LOCATIONS: Dict[str, Tuple[str, Dict[str, Any], str]] = {
-    # provider name → (collection, filter, dot-path)
     "twelvedata": [
         ("market_settings",       {"_id": "default"},         "api_keys.twelve_data"),
         ("market_data_settings",  {"_id": "default"},         "api_keys.twelvedata"),
         ("forex_settings",        {"_id": "active"},          "twelve_data_api_key"),
-        # Sprint 14.0 API Management registry — see api_settings.py catalog
         ("api_settings",          {"api_name": "twelvedata"}, "api_key"),
         ("api_settings",          {"api_name": "market_data_twelvedata"}, "api_key"),
     ],
     "alphavantage": [
         ("market_settings",       {"_id": "default"},           "api_keys.alpha_vantage"),
         ("market_data_settings",  {"_id": "default"},           "api_keys.alphavantage"),
-        # Sprint 14.0 API Management registry — the "Stock Market Data (Alpha
-        # Vantage)" card writes here.
         ("api_settings",          {"api_name": "stock_market"}, "api_key"),
         ("api_settings",          {"api_name": "alphavantage"}, "api_key"),
+    ],
+    "finnhub": [
+        ("api_settings",          {"api_name": "finnhub"}, "api_key"),
     ],
 }
 

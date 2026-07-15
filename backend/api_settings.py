@@ -68,16 +68,21 @@ API_CATALOG: List[Dict[str, Any]] = [
         "test_kind": "alpha_vantage",
     },
     {
-        # Sprint 14.1.2c — canonical registry entry for TwelveData, wired
-        # to the same ProviderManager as the "Live Market" admin page.
-        # Saving here shadow-writes into market_provider_config and
-        # live-propagates to the running provider.
         "api_name": "twelvedata",
         "display_name": "TwelveData (Live Forex + Metals)",
         "category": "investments",
         "description": "Real-time XAU/USD, EUR/USD and other FX / metals quotes.",
         "fields": ["api_key"],
         "test_kind": "twelvedata",
+    },
+    {
+        # Sprint 15.0 — Finnhub is the new primary live provider.
+        "api_name": "finnhub",
+        "display_name": "Finnhub (PRIMARY — Live Market)",
+        "category": "investments",
+        "description": "Real-time FX/metals/crypto/indices via OANDA + Binance feeds (paid Q-plan).",
+        "fields": ["api_key"],
+        "test_kind": "finnhub",
     },
     {
         "api_name": "mutual_fund",
@@ -318,7 +323,8 @@ async def update_api(api_name: str, req: ApiUpsertReq, admin=Depends(get_current
     # (which reads from market_provider_config) would never see it.
     _provider_for_apiname = {
         "twelvedata":   "twelvedata",
-        "stock_market": "alphavantage",   # legacy card label — same key
+        "finnhub":      "finnhub",
+        "stock_market": "alphavantage",
         "alphavantage": "alphavantage",
     }
     _prov = _provider_for_apiname.get(api_name)
@@ -356,6 +362,16 @@ async def test_connection(api_name: str, admin=Depends(get_current_admin)):
 
     kind = doc.get("test_kind", "noop")
     try:
+        if kind == "finnhub":
+            async with httpx.AsyncClient(timeout=8) as http:
+                r = await http.get("https://finnhub.io/api/v1/quote",
+                                   params={"symbol": "OANDA:EUR_USD", "token": key})
+                data = r.json() or {}
+            if isinstance(data, dict) and float(data.get("c") or 0) > 0:
+                return {"ok": True, "mode": "live",
+                        "message": f"Finnhub OK. EUR/USD current={data['c']}"}
+            return {"ok": False, "mode": "demo",
+                    "message": f"Finnhub rejected key or symbol: HTTP {r.status_code} {str(data)[:120]}"}
         if kind == "twelvedata":
             async with httpx.AsyncClient(timeout=8) as http:
                 r = await http.get("https://api.twelvedata.com/quote",

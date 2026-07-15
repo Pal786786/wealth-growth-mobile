@@ -29,6 +29,7 @@ from .cache import QuoteCache, FRESH_MAX_SEC, STALE_MAX_SEC
 from .mock import MockProvider
 from .twelvedata import TwelveDataProvider
 from .alphavantage import AlphaVantageProvider
+from .finnhub import FinnhubProvider
 
 logger = logging.getLogger("market.providers.manager")
 
@@ -103,7 +104,12 @@ class ProviderManager:
         self.cache = QuoteCache(db, ttl_seconds=DEFAULT_CACHE_TTL_SEC)
 
         # Build providers in priority order (lower priority number = tried first)
+        # Sprint 15.0 — Finnhub (100) replaces TwelveData as PRIMARY.
+        # TwelveData (150) remains as an available fallback for symbols that
+        # Finnhub returns 0 for. AlphaVantage (200) then Mock (300).
+        TwelveDataProvider.priority = 150
         self.providers: List[Provider] = [
+            FinnhubProvider(),
             TwelveDataProvider(),
             AlphaVantageProvider(),
             MockProvider(),
@@ -181,6 +187,7 @@ class ProviderManager:
         # is guaranteed to be authoritative.
         td_key = doc.get("twelvedata_api_key")
         av_key = doc.get("alphavantage_api_key")
+        fh_key = doc.get("finnhub_api_key")
         if td_key:
             self._by_name["twelvedata"].set_api_key(td_key)  # type: ignore[attr-defined]
             logger.info("market_providers.startup: loaded twelvedata api_key (len=%d, fp=%s)",
@@ -189,6 +196,10 @@ class ProviderManager:
             self._by_name["alphavantage"].set_api_key(av_key)  # type: ignore[attr-defined]
             logger.info("market_providers.startup: loaded alphavantage api_key (len=%d, fp=%s)",
                         len(av_key), av_key[:4] + "…" + av_key[-2:])
+        if fh_key:
+            self._by_name["finnhub"].set_api_key(fh_key)  # type: ignore[attr-defined]
+            logger.info("market_providers.startup: loaded finnhub api_key (len=%d, fp=%s)",
+                        len(fh_key), fh_key[:4] + "…" + fh_key[-2:])
 
     async def _save_config(self, patch: Dict[str, Any]):
         await self.db[self._CONF_COLL].update_one(

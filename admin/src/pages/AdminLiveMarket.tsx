@@ -132,7 +132,7 @@ function OverviewTab() {
             className={`px-4 py-2 rounded-lg text-sm font-bold border ${!data.manual_provider ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-700 border-slate-200"}`}>
             AUTO
           </button>
-          {["twelvedata", "alphavantage", "mock"].map((p) => (
+          {["finnhub", "twelvedata", "alphavantage", "mock"].map((p) => (
             <button key={p} onClick={() => setManual.mutate(p)}
               className={`px-4 py-2 rounded-lg text-sm font-bold border ${data.manual_provider === p ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200"}`}>
               {p.toUpperCase()}
@@ -184,6 +184,7 @@ function ProvidersTab() {
   });
   const [tdKey, setTdKey] = useState("");
   const [avKey, setAvKey] = useState("");
+  const [fhKey, setFhKey] = useState("");
 
   if (!data) return <div className="p-8 text-center text-slate-400">Loading…</div>;
 
@@ -255,6 +256,21 @@ function ProvidersTab() {
               </div>
             </div>
 
+            {p.name === "finnhub" && (
+              <div className="mt-4 flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 mb-1">API Key (from finnhub.io — paid Q-plan)</label>
+                  <input type="password" value={fhKey} onChange={(e) => setFhKey(e.target.value)}
+                    placeholder="paste key here"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <button onClick={() => setKey.mutate({ provider: "finnhub", key: fhKey })}
+                  disabled={!fhKey.trim()}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg disabled:opacity-40">
+                  <Key className="w-4 h-4" /> Save
+                </button>
+              </div>
+            )}
             {p.name === "twelvedata" && (
               <div className="mt-4 flex gap-2 items-end">
                 <div className="flex-1">
