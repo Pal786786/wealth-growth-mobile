@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path as _Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -168,6 +169,23 @@ def attach(app, manager, get_current_admin, log_action=None):
             entry["api_key_fingerprint"] = (fp[:4] + "…" + fp[-2:]) if fp and len(fp) > 6 else None
             providers_state.append(entry)
 
+        # ---- Sprint 16.2f: build identity (drift detection) ------------- #
+        # Shipped stamp (written at build time) + LIVE sha256 of the same
+        # source files recomputed at request time — proves byte-identity.
+        import hashlib as _hl, json as _json
+        _backend_dir = _Path(__file__).resolve().parent.parent
+        build_stamp = None
+        try:
+            build_stamp = _json.loads((_backend_dir / "build_info.json").read_text())
+        except Exception:
+            pass
+        live_hashes = {}
+        for _rel in ("market_candles.py", "forex/feed.py", "server.py"):
+            try:
+                live_hashes[_rel] = _hl.sha256((_backend_dir / _rel).read_bytes()).hexdigest()
+            except Exception as _e:
+                live_hashes[_rel] = f"error: {_e}"
+
         return {
             "runtime": {
                 "mongo_url_env_present": bool(_os.environ.get("MONGO_URL")),
@@ -179,6 +197,8 @@ def attach(app, manager, get_current_admin, log_action=None):
                 "canonical_id":          _ks.CANONICAL_ID,
                 "backend_pid":           _os.getpid(),
                 "hostname":              _os.uname().nodename,
+                "build":                 build_stamp,
+                "live_file_hashes":      live_hashes,
             },
             "key_locations":   key_locations,
             "providers_state": providers_state,

@@ -1,0 +1,10 @@
+{
+ "stamp_id": "d2fe1bf22e864e6e9b6ddb459c731631",
+ "generated_at": "2026-07-15T13:24:21.423472+00:00",
+ "sprint": "16.2f",
+ "files": {
+  "market_candles.py": "0a3895ec48f47c25b68fe17647e8251869076f3232fba7ea4571be0f6ee54f26",
+  "forex/feed.py": "d271f74ff582c9fc157dcf7ce9d0498183ee266bc36a940b280fe3e3c301ad14",
+  "server.py": "524a27f4f7aeaa50f9e0d73adc610b659952aa8dbe2b8f1416f40d196ff5019f"
+ }
+}
