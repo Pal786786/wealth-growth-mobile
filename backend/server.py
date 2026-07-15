@@ -1292,8 +1292,27 @@ ADMIN_DIST_CANDIDATES = [
     Path("/app/admin/dist"),                         # legacy local-dev location
 ]
 ADMIN_DIST = next((p for p in ADMIN_DIST_CANDIDATES if p.exists() and (p / "index.html").exists()), None)
+
+
+class NoCacheHTMLStaticFiles(StaticFiles):
+    """StaticFiles that forbids caching of HTML entrypoints (index.html).
+
+    Hashed assets (JS/CSS with content hash in filename) stay cacheable, but the
+    HTML shell must always be revalidated so browsers/CDNs never serve a stale
+    bundle reference after a redeploy.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        content_type = response.headers.get("content-type", "")
+        if "text/html" in content_type:
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
+
 if ADMIN_DIST is not None:
-    app.mount("/api/admin-ui", StaticFiles(directory=str(ADMIN_DIST), html=True), name="admin-ui")
+    app.mount("/api/admin-ui", NoCacheHTMLStaticFiles(directory=str(ADMIN_DIST), html=True), name="admin-ui")
     logger.info(f"Admin SPA mounted at /api/admin-ui/ from {ADMIN_DIST}")
 else:
     logger.warning("Admin SPA dist not found — /api/admin-ui/ will 404. Run `cd /app/admin && yarn build` and copy dist/* to /app/backend/static/admin-ui/")
