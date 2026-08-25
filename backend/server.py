@@ -1040,6 +1040,15 @@ _forex_attach(api, db, forex_feed, forex_engine, get_current_user,
 # Sprint 15.1 — Demo Account Reset & Virtual Wallet Recharge
 import demo_reset  # type: ignore  # noqa: E402
 demo_reset.attach(api, db, get_current_user, admin_module.get_current_admin, admin_module._log_action)
+# Sprint 17 — Real MT5 trading account module (Phase 1: account opening)
+import real_accounts  # type: ignore  # noqa: E402
+real_accounts.attach(api, db, get_current_user, admin_module.get_current_admin)
+
+
+@app.on_event("startup")
+async def _real_accounts_indexes():
+    await real_accounts.ensure_indexes(db)
+
 import firebase_auth  # type: ignore
 firebase_auth.attach(api, db, lambda payload: create_token(payload["user_id"]), now_fn=now_utc)
 # Wallet v2 — double-entry ledger, payments, analytics, admin

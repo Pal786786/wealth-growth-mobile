@@ -443,3 +443,36 @@ failure branch invisible without prod logs.
    which never reached production.
 
 Tests 52/52. Stamp for publish verification is in build_info.json (16.3c).
+
+---
+## Sprint 17 Phase 1 (2026) — Real MT5 Account Opening Module
+
+**Backend**: /app/backend/real_accounts.py (isolated module, attach pattern).
+- MT5AccountService (single MT5 seam): create_real_account / get_account /
+  disable_account / reset_password / sync_account. Env: MT5_MANAGER_API_URL,
+  MT5_MANAGER_LOGIN, MT5_MANAGER_PASSWORD, MT5_SERVER. NOT configured →
+  honest {success:false, error_code:MT5_UNAVAILABLE}; NO fake account numbers.
+- Collections: real_trading_accounts (unique user_id+account_type),
+  real_account_audit (append-only), real_account_config (_id=defaults,
+  admin-editable: mt5_server/account_type/currency/leverage/group/trade_mode/
+  initial_balance). kyc_status field seeded NOT_REQUIRED for future sprint.
+- States: NOT_CREATED→PENDING→ACTIVE|FAILED(→retry)|SUSPENDED(admin).
+- User APIs: POST /api/real-account/apply, GET /api/real-account,
+  GET /api/real-account/status, POST /api/real-account/retry.
+- Admin APIs: GET /api/admin/real-accounts(?status=), GET+/{id} (with history),
+  POST /{id}/retry|suspend|activate, GET/PUT /api/admin/real-accounts-config.
+- Mounted in server.py after demo_reset; ensure_indexes on startup.
+
+**Frontend**: /app/frontend/app/profile/real-account.tsx (full state machine
+UI, email pre-filled+validated); profile tab row "Real Trading Account".
+
+**Tests**: 16/16 tests/test_real_accounts.py + 7/7 test_sprint17_regression.py
+(testing agent) — iteration_49.json FULL PASS incl. demo isolation + secret
+leak scans + cross-user isolation.
+
+**PENDING for production activation**: broker MT5 Manager/Web API credentials
+(env vars above) + adapter endpoint paths may need matching to the actual
+broker API (currently generic REST shape in MT5AccountService._call /
+create_real_account). Also still pending: publish of Sprint 16.3c build
+(stamp 88cdce88…) — candle sync self-diagnosis + fallback index NOT yet in
+production.

@@ -1,0 +1,31 @@
+{
+  "summary": "Sprint 17 Phase 1 (Real MT5 Account Opening) end-to-end verification. Existing 16/16 pytest suite (tests/test_real_accounts.py) still passes. Added a 7-test supplemental suite (tests/test_sprint17_regression.py) covering admin config secret hygiene + status filter, unauth 401, user-token blocked on admin route, demo forex balance regression, XAUUSD candles regression, and full fresh-user apply/retry flow — all PASS (23/23 backend). Frontend UI e2e on preview URL: demo@mfb.in → Profile tab → 'Real Trading Account' row → /profile/real-account. NOT_CREATED intro card → 'Open Real Account' → form pre-fills demo@mfb.in, invalid email shows 'Enter a valid email address' inline error, valid submit yields window.alert 'Account Creation Failed — MT5 provisioning unavailable — broker Manager API is not configured.' and screen switches to FAILED state card with Retry button. Retry re-submits and stays FAILED gracefully (no crash, NO fake MT5 account number rendered — confirmed via body text scrape). Regression: Forex tab loads live prices (XAU/USD 4184.79, EUR/USD, GBP/USD, USD/JPY, BTC/USD), /forex/symbol/XAUUSD renders candlesticks with 1m/5m/15m/30m/1H/4H/D1 timeframes and BID/ASK/SPREAD panel; Profile > Demo Wallet + Reset Demo Account button still present. No deprecated Expo packages detected in the new module. Behaviour matches Phase-1 spec exactly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_real_accounts.py",
+    "/app/backend/tests/test_sprint17_regression.py",
+    "/app/test_reports/pytest/iter49_real_accounts.xml",
+    "/app/test_reports/pytest/iter49_sprint17_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "real_accounts.py is well isolated (own collections, own MT5 service seam, index constraints). No leakage of MT5_MANAGER_PASSWORD/JWT_SECRET into any response body or audit doc — verified.",
+    "duplicate handling covers (PENDING, ACTIVE, SUSPENDED) → DUPLICATE_ACCOUNT; FAILED → treated as retry (correct per spec).",
+    "Frontend real-account.tsx uses testIDs (ra-open, ra-email, ra-submit, ra-retry, ra-back), correct KeyboardAvoidingView, and web-safe notify via window.alert."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint17_regression.py (new supplemental regression suite)"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Cleaned demo@mfb.in real-account docs (delete_many) before UI run to observe NOT_CREATED → FAILED transition. Fresh signup users in supplemental test self-clean via MongoClient teardown. No leftover TEST_ data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "MT5_MANAGER_* env vars intentionally absent → FAILED/MT5_UNAVAILABLE is CORRECT. Market provider in preview is mock (no Finnhub key) — candles still return 200. Use identifier field (not email) for /api/auth/login body: {identifier, password}. Login flow: onboarding → Skip → /welcome → click Continue with Email → /login. Demo user user_id was usr_f360e39107bf.",
+  "rca_of_issue": "N/A — no bugs found."
+}

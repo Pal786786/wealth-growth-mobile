@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert, ActivityI
 import { useRouter, useFocusEffect } from "expo-router";
 import {
   Moon, Sun, Shield, FileCheck, Gift, LogOut, ChevronRight,
-  ShieldCheck, Bell, CreditCard, Award, HelpCircle, Globe, Copy as CopyIcon, RotateCcw, Wallet as WalletIcon
+  ShieldCheck, Bell, CreditCard, Award, HelpCircle, Globe, Copy as CopyIcon, RotateCcw, Wallet as WalletIcon, TrendingUp
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
@@ -85,6 +85,7 @@ export default function ProfileTab() {
     {
       title: "Account",
       items: [
+        { icon: TrendingUp, label: "Real Trading Account", value: "MT5", route: "/profile/real-account", color: palette.primary },
         { icon: FileCheck, label: "KYC Verification", value: user?.kyc_status === "verified" ? "Verified" : "Pending", route: "/profile/kyc", color: user?.kyc_status === "verified" ? palette.success : palette.warning },
         { icon: CreditCard, label: "Linked Bank Accounts", value: "Manage", route: "/profile/banks", color: palette.primary },
         { icon: Award, label: "Rewards & Cashback", value: `${rewardPoints} pts`, route: "/rewards", color: palette.warning },
