@@ -191,6 +191,67 @@ def test_env_overrides_db(monkeypatch):
     assert cfg == {"authkey": "env_ak", "widget_id": "env_wid"}
 
 
+# ---------------------------------------------------------------------------
+# Redirect handling in _msg91_widget_call (httpx transport mocked)
+# ---------------------------------------------------------------------------
+
+def _set_transport(monkeypatch, handler):
+    import httpx
+    orig = httpx.AsyncClient
+
+    def factory(**kw):
+        return orig(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(se.httpx, "AsyncClient", factory)
+
+
+def test_redirect_to_msg91_host_is_followed_with_post(monkeypatch):
+    import httpx
+    hits = []
+
+    def handler(req):
+        hits.append((req.method, str(req.url.host)))
+        if req.url.host == "control.msg91.com":
+            return httpx.Response(302, headers={"location": "https://api.msg91.com/api/v5/widget/sendOtpMobile"})
+        return httpx.Response(200, json={"type": "success", "message": "req_after_redirect"})
+    _set_transport(monkeypatch, handler)
+    s, d = _run(se._msg91_widget_call("/sendOtpMobile", {"authkey": "x"}))
+    assert s == 200 and d["message"] == "req_after_redirect"
+    assert [m for m, _ in hits] == ["POST", "POST"]  # method preserved across redirect
+
+
+def test_redirect_to_foreign_host_not_followed(monkeypatch):
+    import httpx
+
+    def handler(req):
+        assert req.url.host.endswith("msg91.com"), "authkey leaked to foreign host!"
+        return httpx.Response(302, headers={"location": "https://evil.example.com/steal"})
+    _set_transport(monkeypatch, handler)
+    s, d = _run(se._msg91_widget_call("/sendOtpMobile", {"authkey": "x"}))
+    assert s == 302
+    assert d["redirect_location"] == "https://evil.example.com/steal"
+    assert "redirected" in d["message"]
+
+
+def test_redirect_loop_capped(monkeypatch):
+    import httpx
+
+    def handler(req):
+        return httpx.Response(302, headers={"location": "https://control.msg91.com/api/v5/widget/sendOtpMobile"})
+    _set_transport(monkeypatch, handler)
+    s, d = _run(se._msg91_widget_call("/sendOtpMobile", {"authkey": "x"}))
+    assert s == 508
+
+
+def test_redirect_without_location(monkeypatch):
+    import httpx
+
+    def handler(req):
+        return httpx.Response(302)
+    _set_transport(monkeypatch, handler)
+    s, d = _run(se._msg91_widget_call("/sendOtpMobile", {"authkey": "x"}))
+    assert s == 302 and "unknown" in d["message"]
+
+
 def test_max_verify_attempts(live_env, monkeypatch):
     calls = []
     _fake_provider(monkeypatch, calls)

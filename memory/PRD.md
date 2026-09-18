@@ -530,3 +530,21 @@ are dynamic on this cluster).
   test_api_management 24/24 (fixed fork-state empty stock_market key from env).
 - STILL PENDING: real MSG91 credentials → live SMS send+verify to
   +918556939970 before claiming production readiness.
+
+### Sprint 18.2 — MSG91 HTTP 302 redirect fix (production Test Connection)
+- Root symptom: production POST to control.msg91.com/api/v5/widget/sendOtpMobile
+  returns HTTP 302 (dev pod gets 200 with same request shape → egress/WAF
+  behavior, possibly MSG91 IP-security or CDN challenge on datacenter IPs).
+- Fix in security_extras._msg91_widget_call: browser User-Agent header; manual
+  3xx handling — logs Location (redacted-safe), re-POSTs (method+body
+  preserved) ONLY to https *.msg91.com targets (authkey never sent elsewhere),
+  max 3 hops → 508 on loop; non-2xx provider body snippet logged.
+- Test Connection message now includes the redirect Location when a 3xx is
+  not followable → actionable diagnosis in the admin UI.
+- Tests: test_msg91_otp.py 14/14 (added 4 redirect tests w/ httpx MockTransport).
+- Production check performed remotely via prod admin API: prod HAS Sprint 18.1
+  code (fields+config saved: provider=msg91_widget, key+widget_id set,
+  test_mobile +918556939970) but NOT this 18.2 fix → user must Publish again,
+  then re-run Test Connection. If still 302, the shown Location reveals cause
+  (verify IP Security OFF on MSG91 authkey).
+- Live SMS still NOT confirmed.

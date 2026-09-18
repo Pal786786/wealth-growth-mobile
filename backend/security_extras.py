@@ -183,21 +183,52 @@ def _msg91_value(data: Dict[str, Any], *names: str) -> Optional[str]:
 
 
 async def _msg91_widget_call(path: str, body: Dict[str, Any]) -> tuple:
-    """POST to MSG91 widget API. Returns (status_code, json_dict). Redacted logging."""
+    """POST to MSG91 widget API. Returns (status_code, json_dict).
+
+    Redacted logging (never logs authkey/token/OTP). Handles 3xx redirects
+    manually: logs the Location header and re-POSTs (method+body preserved)
+    ONLY when the target is https on *.msg91.com — the authkey is never sent
+    to any other host. httpx's automatic following is not used because it
+    downgrades POST→GET on 301/302, which breaks the widget API.
+    """
+    url = MSG91_WIDGET_BASE + path
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        # Some WAF/CDN layers 302-redirect non-browser clients — present a browser UA
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    }
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0)) as http:
-            r = await http.post(
-                MSG91_WIDGET_BASE + path, json=body,
-                headers={"Accept": "application/json", "Content-Type": "application/json"},
-            )
-            try:
-                data = r.json() if r.text else {}
-            except ValueError:
-                data = {"message": r.text[:300]}
-            if not isinstance(data, dict):
-                data = {"message": str(data)[:300]}
-            logger.info(f"[msg91] {path} status={r.status_code} type={data.get('type')}")
-            return r.status_code, data
+            for hop in range(3):
+                r = await http.post(url, json=body, headers=headers)
+                if r.status_code in (301, 302, 303, 307, 308):
+                    loc = r.headers.get("location", "")
+                    logger.warning(f"[msg91] {path} HTTP {r.status_code} redirect → {loc[:200] or '<no Location>'} (hop {hop + 1})")
+                    if loc:
+                        target = httpx.URL(url).join(loc)
+                        host = str(target.host or "")
+                        if str(target.scheme) == "https" and (host == "msg91.com" or host.endswith(".msg91.com")):
+                            url = str(target)
+                            continue
+                    return r.status_code, {
+                        "message": f"MSG91 redirected the request (HTTP {r.status_code}) to '{loc[:160] or 'unknown'}' instead of answering — the endpoint may be geo-blocked or the request was intercepted",
+                        "redirect_location": loc[:200],
+                    }
+                try:
+                    data = r.json() if r.text else {}
+                except ValueError:
+                    data = {"message": r.text[:300]}
+                if not isinstance(data, dict):
+                    data = {"message": str(data)[:300]}
+                if 200 <= r.status_code < 300 and data.get("type") == "success":
+                    logger.info(f"[msg91] {path} status={r.status_code} type=success")
+                else:
+                    # Provider response body is safe to snippet (no secrets of ours)
+                    logger.warning(f"[msg91] {path} status={r.status_code} type={data.get('type')} body={r.text[:200]}")
+                return r.status_code, data
+            logger.error(f"[msg91] {path} exceeded redirect limit")
+            return 508, {"message": "MSG91 kept redirecting (redirect loop)"}
     except httpx.HTTPError as e:
         logger.error(f"[msg91] {path} network error: {type(e).__name__}")
         return 0, {"message": f"network_error:{type(e).__name__}"}

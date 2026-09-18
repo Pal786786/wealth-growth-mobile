@@ -485,8 +485,12 @@ async def test_connection(api_name: str, admin=Depends(get_current_admin)):
                         if 200 <= status < 300 and data.get("type") == "success":
                             return {"ok": True, "mode": "live",
                                     "message": f"REAL OTP SMS sent to +{test_mobile} via MSG91 Widget — check the phone. Authkey + Widget ID are valid."}
+                        _msg = str(data.get("message"))[:170]
+                        _loc = data.get("redirect_location")
+                        if _loc:
+                            _msg += f" [redirect Location: {str(_loc)[:120]}]"
                         return {"ok": False, "mode": "demo",
-                                "message": f"MSG91 Widget send failed (HTTP {status}): {str(data.get('message'))[:150]}. Check Authkey, Widget ID, and that IP Security is OFF on the authkey."}
+                                "message": f"MSG91 Widget send failed (HTTP {status}): {_msg}. Check Authkey, Widget ID, and that IP Security is OFF on the authkey."}
                     # No test mobile — validate authkey only via balance endpoint
                     async with httpx.AsyncClient(timeout=8) as http:
                         r = await http.get("https://api.msg91.com/api/balance.php",
