@@ -182,6 +182,24 @@ def _msg91_value(data: Dict[str, Any], *names: str) -> Optional[str]:
     return None
 
 
+def _msg91_err(data: Dict[str, Any]) -> str:
+    """Human-readable error from an MSG91 response dict (secrets already scrubbed)."""
+    msg = data.get("message")
+    if msg is None or (isinstance(msg, str) and not msg.strip()):
+        raw = (data.get("_raw") or "").strip()
+        ct = data.get("_content_type") or ""
+        if raw:
+            msg = f"raw response: {raw[:250]}"
+        else:
+            msg = f"EMPTY response body (content-type: {ct or 'none'})"
+    if not isinstance(msg, str):
+        msg = str(msg)[:250]
+    loc = data.get("redirect_location")
+    if loc:
+        msg += f" [redirect Location: {str(loc)[:120]}]"
+    return msg
+
+
 async def _msg91_widget_call(path: str, body: Dict[str, Any]) -> tuple:
     """POST to MSG91 widget API. Returns (status_code, json_dict).
 
@@ -221,11 +239,21 @@ async def _msg91_widget_call(path: str, body: Dict[str, Any]) -> tuple:
                     data = {"message": r.text[:300]}
                 if not isinstance(data, dict):
                     data = {"message": str(data)[:300]}
+                # Redacted raw diagnostics: scrub any of our secret values out of
+                # the body snippet before storing/logging it.
+                raw = (r.text or "")[:400]
+                for v in body.values():
+                    if isinstance(v, str) and len(v) >= 6:
+                        raw = raw.replace(v, "***")
+                data["_raw"] = raw
+                data["_content_type"] = r.headers.get("content-type", "")
                 if 200 <= r.status_code < 300 and data.get("type") == "success":
                     logger.info(f"[msg91] {path} status={r.status_code} type=success")
                 else:
-                    # Provider response body is safe to snippet (no secrets of ours)
-                    logger.warning(f"[msg91] {path} status={r.status_code} type={data.get('type')} body={r.text[:200]}")
+                    logger.warning(
+                        f"[msg91] {path} status={r.status_code} type={data.get('type')} "
+                        f"content-type={data['_content_type']} body[:400]={raw or '<EMPTY BODY>'}"
+                    )
                 return r.status_code, data
             logger.error(f"[msg91] {path} exceeded redirect limit")
             return 508, {"message": "MSG91 kept redirecting (redirect loop)"}
@@ -360,7 +388,7 @@ async def issue_otp(mobile: str, purpose: str = "login") -> Dict[str, Any]:
                 req_id = last["req_id"]
         await _db.sms_logs.insert_one({
             "mobile": mobile, "purpose": purpose, "provider": "msg91_widget",
-            "ok": bool(req_id), "error": None if req_id else str(data.get("message"))[:200],
+            "ok": bool(req_id), "error": None if req_id else _msg91_err(data)[:250],
             "demo": False, "at": _now(),
         })
         if not req_id:

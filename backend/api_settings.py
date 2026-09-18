@@ -484,13 +484,16 @@ async def test_connection(api_name: str, admin=Depends(get_current_admin)):
                         })
                         if 200 <= status < 300 and data.get("type") == "success":
                             return {"ok": True, "mode": "live",
-                                    "message": f"REAL OTP SMS sent to +{test_mobile} via MSG91 Widget — check the phone. Authkey + Widget ID are valid."}
-                        _msg = str(data.get("message"))[:170]
-                        _loc = data.get("redirect_location")
-                        if _loc:
-                            _msg += f" [redirect Location: {str(_loc)[:120]}]"
+                                    "message": f"REAL OTP SMS sent to +{test_mobile} via MSG91 Widget — check the phone. Authkey + Widget ID are valid. (Note: MSG91 only queues SMS when your account KYC is verified and wallet has balance.)"}
+                        _msg = _se._msg91_err(data)
+                        _low = _msg.lower()
+                        hint = "Check Authkey, Widget ID, and that IP Security is OFF on the authkey."
+                        if any(w in _low for w in ("kyc", "verif", "balance", "credit", "wallet", "insufficient", "suspend", "inactive", "disabled")):
+                            hint = "Your MSG91 account appears blocked at account level — complete KYC verification and add wallet balance in the MSG91 dashboard, then re-test."
+                        elif "empty response body" in _low:
+                            hint = "MSG91 accepted the connection but returned nothing — this usually means the account cannot send yet (KYC pending / ₹0 balance) or the Widget is not activated. Fix those in the MSG91 dashboard and re-test."
                         return {"ok": False, "mode": "demo",
-                                "message": f"MSG91 Widget send failed (HTTP {status}): {_msg}. Check Authkey, Widget ID, and that IP Security is OFF on the authkey."}
+                                "message": f"MSG91 Widget send failed (HTTP {status}): {_msg}. {hint}"}
                     # No test mobile — validate authkey only via balance endpoint
                     async with httpx.AsyncClient(timeout=8) as http:
                         r = await http.get("https://api.msg91.com/api/balance.php",

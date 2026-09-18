@@ -548,3 +548,19 @@ are dynamic on this cluster).
   then re-run Test Connection. If still 302, the shown Location reveals cause
   (verify IP Security OFF on MSG91 authkey).
 - Live SMS still NOT confirmed.
+
+### Sprint 18.3 — MSG91 "HTTP 200: None" diagnostics + KYC/balance guidance
+- Prod redeploy fixed the 302 (browser UA); MSG91 now answers HTTP 200 but with
+  a body lacking type/message (likely empty) → root cause per user's MSG91
+  dashboard: account KYC PENDING + wallet ₹0 → MSG91 blocks sends at account
+  level (their OTP Logs show no requests).
+- security_extras: _msg91_widget_call now attaches _raw (400-char body snippet
+  with all request secret values scrubbed) + _content_type to every response
+  and warn-logs them; new _msg91_err() builds human errors (message → raw →
+  EMPTY-body note → redirect location) used by sms_logs and Test Connection.
+- api_settings Test Connection: HTTP 200 is NEVER treated as success (requires
+  type=="success"); failure hints now detect kyc/verification/balance keywords
+  and empty-body case → tells admin to complete KYC + add wallet balance.
+- Tests: 38/38 (msg91 14 + api_management 24). Demo fallback still intact.
+- ACTION FOR USER: complete MSG91 KYC + add balance; Publish to get the
+  diagnostic build; re-run Test Connection. Live SMS still NOT confirmed.
