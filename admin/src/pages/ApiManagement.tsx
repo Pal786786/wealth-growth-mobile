@@ -222,7 +222,10 @@ function ApiRow({ item, expanded, onToggle, onChanged }: { item: ApiItem; expand
         <div className="border-t border-slate-100 p-4 space-y-3 bg-slate-50/50">
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-slate-600">API Key {item.has_key ? <span className="text-slate-400">(current: {item.api_key_masked})</span> : null}</label>
+              <label className="text-xs font-semibold text-slate-600">
+                {item.api_name === "sms_provider" ? "Authkey (API Key)" : "API Key"}{" "}
+                {item.has_key ? <span className="text-slate-400">(current: {item.api_key_masked})</span> : null}
+              </label>
               <input
                 type="password"
                 autoComplete="new-password"
@@ -232,18 +235,46 @@ function ApiRow({ item, expanded, onToggle, onChanged }: { item: ApiItem; expand
                 onChange={(e) => setForm({ ...form, api_key: e.target.value })}
               />
             </div>
-            {extraFields.map((f) => (
-              <div key={f}>
-                <label className="text-xs font-semibold text-slate-600">{labelize(f)}</label>
-                <input
-                  className="input mt-1 font-mono text-sm"
-                  placeholder={f}
-                  value={form.extra[f] || ""}
-                  onChange={(e) => setForm({ ...form, extra: { ...form.extra, [f]: e.target.value } })}
-                />
-              </div>
-            ))}
+            {extraFields.map((f) =>
+              item.api_name === "sms_provider" && f === "provider" ? (
+                <div key={f}>
+                  <label className="text-xs font-semibold text-slate-600">Provider</label>
+                  <select
+                    className="input mt-1 text-sm"
+                    value={form.extra[f] || ""}
+                    onChange={(e) => setForm({ ...form, extra: { ...form.extra, [f]: e.target.value } })}
+                  >
+                    {SMS_PROVIDER_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div key={f}>
+                  <label className="text-xs font-semibold text-slate-600">{labelize(f)}</label>
+                  <input
+                    type={SENSITIVE_EXTRA.has(f) ? "password" : "text"}
+                    autoComplete={SENSITIVE_EXTRA.has(f) ? "new-password" : undefined}
+                    className="input mt-1 font-mono text-sm"
+                    placeholder={f}
+                    value={form.extra[f] || ""}
+                    onChange={(e) => setForm({ ...form, extra: { ...form.extra, [f]: e.target.value } })}
+                  />
+                </div>
+              )
+            )}
           </div>
+
+          {item.api_name === "sms_provider" && (form.extra["provider"] || "") === "msg91_widget" ? (
+            <div className="rounded-xl px-3 py-2 text-xs bg-sky-50 text-sky-900 border border-sky-200 space-y-1">
+              <p className="font-bold">MSG91 OTP Widget setup</p>
+              <p>1. <b>Authkey (API Key)</b> — MSG91 Dashboard → Authkey (disable IP Security on it).</p>
+              <p>2. <b>MSG91 Widget ID</b> — OTP → your Widget → Widget ID.</p>
+              <p>3. <b>MSG91 Server Token</b> — Widget token from the Token section (stored server-side only).</p>
+              <p>4. Fill <b>Test Mobile</b> (e.g. 8556939970) and press <b>Test Connection</b> — a REAL OTP SMS will be sent to that phone.</p>
+              <p>Sender ID / Template ID are NOT used by the Widget flow — they can stay empty.</p>
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -293,7 +324,7 @@ function ApiRow({ item, expanded, onToggle, onChanged }: { item: ApiItem; expand
             <p className="text-xs text-emerald-700 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Saved.</p>
           ) : null}
           {save.isError ? (
-            <p className="text-xs text-red-700 flex items-center gap-1"><Ban className="w-3 h-3" /> Failed to save — try again.</p>
+            <p className="text-xs text-red-700 flex items-center gap-1"><Ban className="w-3 h-3" /> {(save.error as any)?.response?.data?.detail || "Failed to save — try again."}</p>
           ) : null}
 
           <p className="text-[11px] text-slate-400">Last updated: {fmtDate(item.updated_at)}</p>
@@ -304,5 +335,21 @@ function ApiRow({ item, expanded, onToggle, onChanged }: { item: ApiItem; expand
 }
 
 function labelize(s: string) {
+  const SPECIAL: Record<string, string> = {
+    widget_id: "MSG91 Widget ID",
+    server_token: "MSG91 Server Token",
+    test_mobile: "Test Mobile (for Test Connection SMS)",
+  };
+  if (SPECIAL[s]) return SPECIAL[s];
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+const SMS_PROVIDER_OPTIONS = [
+  { value: "", label: "— select provider —" },
+  { value: "msg91_widget", label: "MSG91 OTP Widget (recommended)" },
+  { value: "msg91", label: "MSG91 classic (template SMS)" },
+  { value: "twilio", label: "Twilio" },
+  { value: "firebase", label: "Firebase Phone Auth" },
+];
+
+const SENSITIVE_EXTRA = new Set(["server_token", "key_secret", "client_secret", "token"]);

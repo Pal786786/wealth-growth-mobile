@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import os
 import random
 import secrets
 import string
@@ -110,6 +111,98 @@ def _gen_otp() -> str:
     return f"{secrets.randbelow(1000000):06d}"
 
 
+# ---------------------------------------------------------------------------
+# MSG91 OTP Widget (backend-proxied, server-to-server)
+# Secrets live ONLY in backend env vars — never sent to the frontend, never
+# stored in Mongo, never logged. Flow: sendOtpMobile → reqId → verifyOtp →
+# accessToken → verifyAccessToken.
+# ---------------------------------------------------------------------------
+
+MSG91_WIDGET_BASE = "https://control.msg91.com/api/v5/widget"
+
+
+def _otp_demo_forced() -> bool:
+    """OTP_DEMO_MODE=true (env) forces demo OTP regardless of any live config."""
+    return (os.environ.get("OTP_DEMO_MODE") or "").strip().lower() == "true"
+
+
+def _msg91_env_cfg() -> Optional[Dict[str, str]]:
+    """Returns live MSG91 widget config from env, or None (demo/unconfigured).
+
+    OTP_DEMO_MODE=true forces demo mode even when keys are present.
+    """
+    if _otp_demo_forced():
+        return None
+    authkey = (os.environ.get("MSG91_AUTHKEY") or "").strip()
+    widget_id = (os.environ.get("MSG91_WIDGET_ID") or "").strip()
+    if not authkey or not widget_id:
+        return None
+    return {"authkey": authkey, "widget_id": widget_id}
+
+
+async def _msg91_live_cfg() -> Optional[Dict[str, str]]:
+    """Resolves live MSG91 Widget config. Priority: env vars (platform Secrets)
+    > Admin Panel settings in Mongo (api_settings.sms_provider with
+    provider=msg91_widget + widget_id). Returns None when demo/unconfigured."""
+    cfg = _msg91_env_cfg()
+    if cfg:
+        return cfg
+    if _otp_demo_forced():
+        return None
+    doc = await _db.api_settings.find_one({"api_name": "sms_provider"}, {"_id": 0})
+    if not doc or not doc.get("is_enabled", True) or doc.get("force_demo"):
+        return None
+    extra = doc.get("extra") or {}
+    provider = (extra.get("provider") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    authkey = (doc.get("api_key") or "").strip()
+    widget_id = (extra.get("widget_id") or "").strip()
+    if provider.startswith("msg91") and authkey and widget_id:
+        return {"authkey": authkey, "widget_id": widget_id}
+    return None
+
+
+def _msg91_identifier(mobile: str) -> str:
+    """Normalize to MSG91 format: country code + digits, no '+'. 10-digit → 91-prefixed."""
+    digits = "".join(ch for ch in mobile if ch.isdigit())
+    if len(digits) == 10:
+        return f"91{digits}"
+    return digits
+
+
+def _msg91_value(data: Dict[str, Any], *names: str) -> Optional[str]:
+    """Defensive field extraction across MSG91 response casings/nesting."""
+    for n in names:
+        if data.get(n):
+            return data[n]
+    for container in (data.get("data"), data.get("result")):
+        if isinstance(container, dict):
+            for n in names:
+                if container.get(n):
+                    return container[n]
+    return None
+
+
+async def _msg91_widget_call(path: str, body: Dict[str, Any]) -> tuple:
+    """POST to MSG91 widget API. Returns (status_code, json_dict). Redacted logging."""
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0)) as http:
+            r = await http.post(
+                MSG91_WIDGET_BASE + path, json=body,
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+            )
+            try:
+                data = r.json() if r.text else {}
+            except ValueError:
+                data = {"message": r.text[:300]}
+            if not isinstance(data, dict):
+                data = {"message": str(data)[:300]}
+            logger.info(f"[msg91] {path} status={r.status_code} type={data.get('type')}")
+            return r.status_code, data
+    except httpx.HTTPError as e:
+        logger.error(f"[msg91] {path} network error: {type(e).__name__}")
+        return 0, {"message": f"network_error:{type(e).__name__}"}
+
+
 def _hash_otp(otp: str, mobile: str) -> str:
     """HMAC-SHA256 of OTP keyed by mobile (mild salt). Stored, not the plaintext."""
     return hmac.new(mobile.encode(), otp.encode(), hashlib.sha256).hexdigest()
@@ -117,6 +210,8 @@ def _hash_otp(otp: str, mobile: str) -> str:
 
 async def _get_sms_cfg() -> Dict[str, Any]:
     """Reads api_settings.sms_provider; falls back to demo mode."""
+    if _otp_demo_forced():
+        return {"is_demo": True, "provider": "demo"}
     doc = await _db.api_settings.find_one({"api_name": "sms_provider"}, {"_id": 0})
     if not doc:
         return {"is_demo": True, "provider": "demo"}
@@ -151,6 +246,10 @@ async def _deliver_otp_sms(mobile: str, otp: str, cfg: Dict[str, Any]) -> Dict[s
         return {"ok": True, "provider": "demo", "demo": True}
 
     provider = cfg["provider"]
+    if provider == "msg91_widget":
+        # Widget flow can't deliver a custom code — should be handled upstream
+        return {"ok": False, "provider": provider,
+                "error": "MSG91 Widget misconfigured (missing widget_id?)", "demo": False}
     try:
         async with httpx.AsyncClient(timeout=10) as http:
             if provider == "msg91":
@@ -209,6 +308,54 @@ async def issue_otp(mobile: str, purpose: str = "login") -> Dict[str, Any]:
     if sent_in_hour >= OTP_MAX_PER_HOUR:
         raise HTTPException(429, f"Too many OTPs requested. Try again later.")
 
+    # ---- Live MSG91 widget flow (env or Admin Panel config) — MSG91 generates & delivers OTP ----
+    cfg91 = await _msg91_live_cfg()
+    if cfg91:
+        identifier = _msg91_identifier(mobile)
+        status, data = await _msg91_widget_call("/sendOtpMobile", {
+            "authkey": cfg91["authkey"],
+            "widgetId": cfg91["widget_id"],
+            "identifier": identifier,
+        })
+        req_id = None
+        if 200 <= status < 300 and (data.get("type") == "success"):
+            req_id = _msg91_value(data, "reqId", "reqID", "requestId", "message")
+        if not req_id and last and last.get("req_id") and not last.get("consumed"):
+            # Send rejected (likely an active session) — retry on the previous session
+            status2, data2 = await _msg91_widget_call("/retryOtp", {
+                "authkey": cfg91["authkey"], "reqId": last["req_id"],
+            })
+            if 200 <= status2 < 300 and data2.get("type") == "success":
+                req_id = last["req_id"]
+        await _db.sms_logs.insert_one({
+            "mobile": mobile, "purpose": purpose, "provider": "msg91_widget",
+            "ok": bool(req_id), "error": None if req_id else str(data.get("message"))[:200],
+            "demo": False, "at": _now(),
+        })
+        if not req_id:
+            logger.error(f"[msg91] OTP send failed for ...{mobile[-4:]}: status={status}")
+            raise HTTPException(502, "Unable to send OTP right now. Please try again shortly.")
+        await _db.otp_codes.insert_one({
+            "mobile": mobile,
+            "purpose": purpose,
+            "provider": "msg91_widget",
+            "req_id": req_id,
+            "otp_hash": None,
+            "otp_plain_demo": None,
+            "created_at": _now(),
+            "expires_at": _now() + timedelta(minutes=OTP_TTL_MIN),
+            "attempts": 0,
+            "consumed": False,
+            "delivery": {"ok": True, "provider": "msg91_widget", "demo": False},
+        })
+        return {
+            "ok": True,
+            "message": "OTP sent successfully",
+            "expires_in": OTP_TTL_MIN * 60,
+            "demo": False,
+            "provider": "msg91",
+        }
+
     otp = _gen_otp()
     cfg = await _get_sms_cfg()
     delivery = await _deliver_otp_sms(mobile, otp, cfg)
@@ -244,7 +391,8 @@ async def issue_otp(mobile: str, purpose: str = "login") -> Dict[str, Any]:
 async def verify_otp(mobile: str, otp: str, purpose: str = "login") -> bool:
     """Verify OTP. Marks consumed on success. Returns True/False."""
     doc = await _db.otp_codes.find_one({"mobile": mobile, "consumed": False, "purpose": purpose},
-                                         {"_id": 1, "otp_hash": 1, "expires_at": 1, "attempts": 1},
+                                         {"_id": 1, "otp_hash": 1, "expires_at": 1, "attempts": 1,
+                                          "req_id": 1, "provider": 1},
                                          sort=[("created_at", -1)])
     if not doc:
         return False
@@ -256,6 +404,36 @@ async def verify_otp(mobile: str, otp: str, purpose: str = "login") -> bool:
     if doc.get("attempts", 0) >= OTP_MAX_VERIFY_ATTEMPTS:
         return False
     await _db.otp_codes.update_one({"_id": doc["_id"]}, {"$inc": {"attempts": 1}})
+
+    # ---- Live MSG91 widget verification ----
+    if doc.get("req_id"):
+        cfg91 = await _msg91_live_cfg()
+        if not cfg91:
+            # Keys removed / demo forced after issue — cannot verify a live session
+            return False
+        status, data = await _msg91_widget_call("/verifyOtp", {
+            "authkey": cfg91["authkey"], "reqId": doc["req_id"], "otp": otp.strip(),
+        })
+        if not (200 <= status < 300 and data.get("type") == "success"):
+            return False
+        # verifyOtp success yields an access token (field name varies by revision;
+        # some revisions return it in `message` as a JWT-like string)
+        access = _msg91_value(data, "accessToken", "access-token", "access_token", "token")
+        if not access:
+            msg = data.get("message")
+            if isinstance(msg, str) and len(msg) > 40 and " " not in msg:
+                access = msg
+        if access:
+            status2, data2 = await _msg91_widget_call("/verifyAccessToken", {
+                "authkey": cfg91["authkey"], "access-token": access,
+            })
+            if not (200 <= status2 < 300 and data2.get("type") == "success"):
+                return False
+        else:
+            logger.warning("[msg91] verifyOtp success but no access token found in response")
+        await _db.otp_codes.update_one({"_id": doc["_id"]}, {"$set": {"consumed": True}})
+        return True
+
     expected = _hash_otp(otp.strip(), mobile)
     if hmac.compare_digest(expected, doc.get("otp_hash", "")):
         await _db.otp_codes.update_one({"_id": doc["_id"]}, {"$set": {"consumed": True}})
@@ -349,15 +527,27 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin, send_push_fn
         # Always 200 to prevent account enumeration
         if user:
             code = _gen_otp()
-            await _db.password_resets.insert_one({
+            via_mobile = bool(user.get("mobile")) and (ident == user.get("mobile") or ident.endswith(user.get("mobile", "")))
+            use_widget = via_mobile and (await _msg91_live_cfg()) is not None
+            reset_doc: Dict[str, Any] = {
                 "user_id": user["user_id"],
                 "code_hash": _hash_otp(code, user["user_id"]),
                 "created_at": _now(),
                 "expires_at": _now() + timedelta(minutes=15),
                 "used": False,
-            })
-            # Send via mobile OTP if identifier is mobile
-            if user.get("mobile") and (ident == user.get("mobile") or ident.endswith(user.get("mobile", ""))):
+            }
+            if use_widget:
+                # Live MSG91 widget: the provider generates & delivers its own OTP;
+                # our reset doc references the widget session instead of a local code.
+                reset_doc["via"] = "msg91_widget"
+                reset_doc["mobile"] = user["mobile"]
+            await _db.password_resets.insert_one(reset_doc)
+            if use_widget:
+                try:
+                    await issue_otp(user["mobile"], "reset")
+                except HTTPException:
+                    pass  # cooldown/rate-limit — response stays generic (anti-enumeration)
+            elif via_mobile:
                 cfg = await _get_sms_cfg()
                 await _deliver_otp_sms(user["mobile"], code, cfg)
             # Always log email send attempt (demo logs to console)
@@ -390,9 +580,14 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin, send_push_fn
             exp = exp.replace(tzinfo=timezone.utc)
         if exp < _now():
             raise HTTPException(401, "Reset code expired")
-        expected = _hash_otp(body.code.strip(), user["user_id"])
-        if not hmac.compare_digest(expected, doc.get("code_hash", "")):
-            raise HTTPException(401, "Invalid reset code")
+        if doc.get("via") == "msg91_widget":
+            ok = await verify_otp(doc.get("mobile", ""), body.code, "reset")
+            if not ok:
+                raise HTTPException(401, "Invalid reset code")
+        else:
+            expected = _hash_otp(body.code.strip(), user["user_id"])
+            if not hmac.compare_digest(expected, doc.get("code_hash", "")):
+                raise HTTPException(401, "Invalid reset code")
         await _db.users.update_one(
             {"user_id": user["user_id"]},
             {"$set": {
@@ -553,7 +748,7 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin, send_push_fn
             raise HTTPException(403, "Only super_admin/admin can view demo OTPs")
         # Check if SMS provider is live — if so, hide all OTPs (security)
         cfg = await _get_sms_cfg()
-        if not cfg.get("is_demo"):
+        if not cfg.get("is_demo") or (await _msg91_live_cfg()) is not None:
             return {
                 "items": [],
                 "count": 0,

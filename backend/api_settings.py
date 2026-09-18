@@ -47,8 +47,8 @@ API_CATALOG: List[Dict[str, Any]] = [
         "api_name": "sms_provider",
         "display_name": "SMS Provider / OTP",
         "category": "messaging",
-        "description": "Send real OTP/SMS via MSG91, Twilio, or use Firebase Phone Auth (ID-token verification on backend).",
-        "fields": ["api_key", "provider", "sender_id", "template_id", "twilio_sid", "twilio_from", "firebase_project_id"],
+        "description": "Send real OTP/SMS. Recommended: MSG91 OTP Widget (provider=msg91_widget → fill Authkey in API Key + Widget ID + Server Token). Also supports classic MSG91 template, Twilio, Firebase Phone Auth.",
+        "fields": ["api_key", "provider", "widget_id", "server_token", "test_mobile", "sender_id", "template_id", "twilio_sid", "twilio_from", "firebase_project_id"],
         "test_kind": "sms_provider",
     },
     {
@@ -233,10 +233,23 @@ class ApiUpsertReq(BaseModel):
 router = APIRouter(prefix="/admin/api-settings", tags=["admin-api-settings"])
 
 
+# Extra-config keys whose values are secrets — masked in admin responses and
+# preserved on save when the client round-trips the masked value.
+SENSITIVE_EXTRA_KEYS = {"server_token", "key_secret", "client_secret", "token"}
+
+
+def _mask_secret(val: str) -> str:
+    return (val[:4] + "•" * max(0, len(val) - 8) + val[-4:]) if len(val) >= 8 else ("•" * len(val) if val else "")
+
+
 def _public_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Mask the api_key (don't expose full secret). Show last 4 chars."""
     key = (doc.get("api_key") or "")
-    masked = (key[:4] + "•" * max(0, len(key) - 8) + key[-4:]) if len(key) >= 8 else ("•" * len(key) if key else "")
+    masked = _mask_secret(key)
+    extra = dict(doc.get("extra", {}) or {})
+    for k, v in list(extra.items()):
+        if k in SENSITIVE_EXTRA_KEYS and isinstance(v, str) and v:
+            extra[k] = _mask_secret(v)
     return {
         "api_name": doc["api_name"],
         "display_name": doc.get("display_name", doc["api_name"]),
@@ -246,7 +259,7 @@ def _public_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
         "test_kind": doc.get("test_kind", "noop"),
         "has_key": bool(key),
         "api_key_masked": masked,
-        "extra": doc.get("extra", {}) or {},
+        "extra": extra,
         "is_enabled": doc.get("is_enabled", True),
         "force_demo": doc.get("force_demo", False),
         "status": _status_of(doc),
@@ -307,13 +320,33 @@ async def update_api(api_name: str, req: ApiUpsertReq, admin=Depends(get_current
         "created_at": _now(),
     }
     if req.api_key is not None:
-        base["api_key"] = req.api_key.strip()
+        # Ignore masked round-trips (client re-sent the masked display value)
+        if "•" not in req.api_key:
+            base["api_key"] = req.api_key.strip()
     if req.extra is not None:
-        base["extra"] = req.extra
+        old_extra = (existing or {}).get("extra") or {}
+        new_extra = dict(req.extra)
+        for k, v in list(new_extra.items()):
+            if isinstance(v, str) and "•" in v:
+                # Masked value round-tripped from UI — keep the stored secret
+                new_extra[k] = old_extra.get(k, "")
+            elif isinstance(v, str):
+                new_extra[k] = v.strip()
+        base["extra"] = new_extra
     if req.is_enabled is not None:
         base["is_enabled"] = req.is_enabled
     if req.force_demo is not None:
         base["force_demo"] = req.force_demo
+    # Validate MSG91 Widget configuration on save — a live-but-broken config
+    # would silently break login OTP.
+    if api_name == "sms_provider":
+        _x = base.get("extra") or {}
+        _prov = (_x.get("provider") or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if _prov == "msg91_widget":
+            if not (base.get("api_key") or "").strip():
+                raise HTTPException(status_code=400, detail="MSG91 Widget needs the Authkey in the API Key field")
+            if not (_x.get("widget_id") or "").strip():
+                raise HTTPException(status_code=400, detail="MSG91 Widget needs the Widget ID field")
     base["updated_at"] = _now()
     await _db.api_settings.update_one({"api_name": api_name}, {"$set": base}, upsert=True)
     # Sprint 14.1.2c — When saving a market-provider key on the API
@@ -425,14 +458,43 @@ async def test_connection(api_name: str, admin=Depends(get_current_admin)):
                 return {"ok": False, "mode": "demo", "message": f"Razorpay test failed: {e}"}
         if kind == "sms_provider":
             extra = doc.get("extra", {}) or {}
-            provider = (extra.get("provider") or "").lower().strip()
+            provider = (extra.get("provider") or "").lower().strip().replace("-", "_").replace(" ", "_")
             if not provider:
                 # Auto-infer
-                if key.startswith("AC") and len(key) >= 30:
+                if (extra.get("widget_id") or "").strip():
+                    provider = "msg91_widget"
+                elif key.startswith("AC") and len(key) >= 30:
                     provider = "twilio"
                 else:
                     provider = "msg91"
             try:
+                # MSG91 OTP Widget (server-to-server) — REAL validation
+                if provider == "msg91_widget":
+                    widget_id = (extra.get("widget_id") or "").strip()
+                    if not widget_id:
+                        return {"ok": False, "mode": "demo",
+                                "message": "MSG91 Widget needs 'widget_id'. Authkey goes in the API Key field."}
+                    test_mobile = "".join(ch for ch in (extra.get("test_mobile") or "") if ch.isdigit())
+                    if test_mobile:
+                        if len(test_mobile) == 10:
+                            test_mobile = "91" + test_mobile
+                        import security_extras as _se
+                        status, data = await _se._msg91_widget_call("/sendOtpMobile", {
+                            "authkey": key, "widgetId": widget_id, "identifier": test_mobile,
+                        })
+                        if 200 <= status < 300 and data.get("type") == "success":
+                            return {"ok": True, "mode": "live",
+                                    "message": f"REAL OTP SMS sent to +{test_mobile} via MSG91 Widget — check the phone. Authkey + Widget ID are valid."}
+                        return {"ok": False, "mode": "demo",
+                                "message": f"MSG91 Widget send failed (HTTP {status}): {str(data.get('message'))[:150]}. Check Authkey, Widget ID, and that IP Security is OFF on the authkey."}
+                    # No test mobile — validate authkey only via balance endpoint
+                    async with httpx.AsyncClient(timeout=8) as http:
+                        r = await http.get("https://api.msg91.com/api/balance.php",
+                                           params={"authkey": key, "type": "4"})
+                    if r.status_code == 200 and r.text and not r.text.strip().lower().startswith("invalid"):
+                        return {"ok": True, "mode": "live",
+                                "message": f"MSG91 Authkey valid (balance: {r.text.strip()}). Widget ID NOT yet validated — fill 'test_mobile' and re-test to send a real OTP SMS."}
+                    return {"ok": False, "mode": "demo", "message": f"MSG91 rejected Authkey: {r.text[:120]}"}
                 # Firebase Phone Auth — no balance check needed, validate by
                 # fetching Google's public certs endpoint + project_id presence
                 if provider == "firebase":

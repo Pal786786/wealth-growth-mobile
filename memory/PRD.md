@@ -476,3 +476,57 @@ broker API (currently generic REST shape in MT5AccountService._call /
 create_real_account). Also still pending: publish of Sprint 16.3c build
 (stamp 88cdce88…) — candle sync self-diagnosis + fallback index NOT yet in
 production.
+
+## Sprint 18 — MSG91 Real SMS OTP (backend-proxied Widget flow)
+
+**Backend**: /app/backend/security_extras.py
+- Env vars (backend-only, never in frontend/bundle/DB/logs): MSG91_AUTHKEY,
+  MSG91_WIDGET_ID, MSG91_TOKEN, OTP_DEMO_MODE.
+- Gating: OTP_DEMO_MODE=true → demo; keys present + not demo → LIVE MSG91
+  Widget server-to-server flow (https://control.msg91.com/api/v5/widget):
+  sendOtpMobile → reqId (stored in otp_codes.req_id, provider=msg91_widget,
+  no plaintext/hash) → verifyOtp(reqId,otp) → accessToken → verifyAccessToken.
+- Resend: sendOtpMobile again; on rejection falls back to retryOtp with the
+  previous reqId. Send failure → 502 (never fake success).
+- Kept intact: 30s cooldown, 5/hour rate limit, 5 verify attempts, 5-min TTL,
+  consumed/replay protection, sms_logs audit.
+- Forgot-password via mobile in live mode uses the widget session
+  (password_resets.via=msg91_widget) — verify through verify_otp(purpose=reset).
+- Admin Demo-OTPs page hides OTPs when MSG91 env keys are live.
+- Identifier normalization: 10-digit Indian numbers → 91-prefixed, no '+'.
+
+**Tests**: tests/test_msg91_otp.py — 8/8 pass (mocked provider: gating,
+normalization, send/verify/replay, retry fallback, 502, attempt cap). Demo
+regression verified via curl. 103/103 core suites still pass.
+
+**PENDING**: user adding MSG91 env vars via platform UI, then live SMS test
+to +918556939970. MSG91 auth key must have IP Security DISABLED (egress IPs
+are dynamic on this cluster).
+
+### Sprint 18.1 — Admin Panel MSG91 Widget configuration (Mongo-backed)
+- Config resolution priority in security_extras._msg91_live_cfg():
+  1) env vars MSG91_AUTHKEY+MSG91_WIDGET_ID (platform Secrets)
+  2) Mongo api_settings.sms_provider: api_key=Authkey, extra.provider=msg91_widget,
+     extra.widget_id (+extra.server_token stored, extra.test_mobile for testing).
+  OTP_DEMO_MODE=true (env) forces demo globally; force_demo/is_enabled in admin
+  doc gate the DB path.
+- api_settings.py: sms_provider catalog fields now include widget_id,
+  server_token, test_mobile. _public_doc masks sensitive extra keys
+  (server_token/key_secret/client_secret/token); PUT preserves masked
+  round-trips (values containing '•' keep stored secret) for api_key + extra.
+  PUT validates msg91_widget config (400 if Authkey/Widget ID missing).
+- Test Connection (POST /admin/api-settings/sms_provider/test): for
+  msg91_widget sends a REAL OTP SMS to extra.test_mobile via sendOtpMobile
+  (validates Authkey+WidgetID); without test_mobile falls back to balance.php
+  authkey check.
+- Admin UI (/app/admin/src/pages/ApiManagement.tsx): provider dropdown
+  (msg91_widget recommended / msg91 / twilio / firebase), MSG91 setup hint box,
+  password-type inputs for sensitive fields, save error detail shown.
+  Rebuilt → /app/admin/dist + /app/backend/static/admin-ui (index-D0TAKYjr.js).
+- Verified E2E via API: save validation, masking, masked round-trip preserve,
+  live routing (fake key → 502, no demo bypass), demo-otps hides in live mode,
+  Test Connection surfaces real MSG91 AuthenticationFailure.
+- Tests: tests/test_msg91_otp.py now 10/10 (added DB-config + env-priority).
+  test_api_management 24/24 (fixed fork-state empty stock_market key from env).
+- STILL PENDING: real MSG91 credentials → live SMS send+verify to
+  +918556939970 before claiming production readiness.
