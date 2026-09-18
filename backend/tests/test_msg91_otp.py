@@ -117,12 +117,12 @@ def test_live_send_verify_replay(live_env, monkeypatch):
     assert calls[0][1]["identifier"] == "917000000001"
 
 
-def test_live_send_failure_raises_502(live_env, monkeypatch):
+def test_live_send_failure_raises_503(live_env, monkeypatch):
     calls = []
     _fake_provider(monkeypatch, calls, send_ok=False, retry_ok=False)
     with pytest.raises(HTTPException) as e:
         _run(se.issue_otp(MOBILE, "login"))
-    assert e.value.status_code == 502
+    assert e.value.status_code == 503
 
 
 def test_live_send_falls_back_to_retry(live_env, monkeypatch):

@@ -564,3 +564,22 @@ are dynamic on this cluster).
 - Tests: 38/38 (msg91 14 + api_management 24). Demo fallback still intact.
 - ACTION FOR USER: complete MSG91 KYC + add balance; Publish to get the
   diagnostic build; re-run Test Connection. Live SMS still NOT confirmed.
+
+### Sprint 18.4 — OTP Health View + 503 fix
+- New admin endpoint GET /api/admin/sms-logs (super_admin/admin): recent 150
+  sms_logs entries + 24h stats {total,sent,failed} + mode
+  (live_msg91_widget/demo/live_<provider>). No secrets/OTPs in payload.
+- Test Connection attempts now also logged to sms_logs (purpose=test_connection).
+- issue_otp live send failure now raises 503 (was 502 — Cloudflare replaces
+  origin 502/504 bodies with its HTML error page, hiding our JSON detail).
+- New admin page /otp-health (AdminOtpHealth.tsx): mode badge, 24h stat cards,
+  most-recent-failure banner w/ KYC-balance guidance, filterable table (time,
+  mobile, purpose, provider, result, error), 10s auto-refresh. Nav added for
+  super_admin+admin. Admin rebuilt → index-D341p9RK.js (copied to
+  backend/static/admin-ui). Verified via screenshot with live data.
+- Verified prod behavior: /auth/otp/request returns 502 (old build) with NO
+  demo fallback. Prod still on pre-18.3 build — user must Publish again.
+- MSG91 account facts (user): KYC pending + ₹0 wallet → MSG91 blocks sends.
+  Guidance: complete KYC (e-KYC via Aadhaar or manual docs), add balance
+  (min ~₹1000), AND register entity on DLT platform (TRAI requirement for
+  India SMS). Tests 14/14 pass.

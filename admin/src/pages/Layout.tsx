@@ -8,8 +8,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
 const ROLE_NAV: Record<string, string[]> = {
-  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/ai-console", "/market-settings", "/market-data", "/live-market", "/copy-trading", "/payments", "/gold", "/mutual-funds", "/bank-verification", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
-  admin: ["/", "/users", "/user-security", "/demo-otps", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/ai-console", "/market-settings", "/market-data", "/live-market", "/copy-trading", "/payments", "/gold", "/mutual-funds", "/bank-verification", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings"],
+  super_admin: ["/", "/users", "/user-security", "/demo-otps", "/otp-health", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/ai-console", "/market-settings", "/market-data", "/live-market", "/copy-trading", "/payments", "/gold", "/mutual-funds", "/bank-verification", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings", "/admins"],
+  admin: ["/", "/users", "/user-security", "/demo-otps", "/otp-health", "/kyc", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/ai-advisor", "/ai-console", "/market-settings", "/market-data", "/live-market", "/copy-trading", "/payments", "/gold", "/mutual-funds", "/bank-verification", "/notifications", "/push-logs", "/investments", "/calculator-config", "/forex-settings", "/travel", "/insurance", "/insurance/claims", "/rewards", "/tier-upgrades", "/cashback-editor", "/content", "/reports", "/audit", "/api-management", "/settings"],
   finance_manager: ["/", "/users", "/transactions", "/wallet", "/wallet-analytics", "/withdrawals", "/insurance/claims", "/rewards", "/tier-upgrades", "/reports", "/audit", "/gold", "/mutual-funds", "/bank-verification"],
   support_manager: ["/", "/users", "/kyc", "/transactions", "/notifications", "/push-logs", "/travel", "/insurance", "/insurance/claims", "/tier-upgrades"],
   investment_manager: ["/", "/users", "/investments", "/calculator-config", "/content", "/gold", "/mutual-funds"],
@@ -20,6 +20,7 @@ const NAV = [
   { to: "/users", label: "Users", icon: UsersIcon },
   { to: "/user-security", label: "User Security", icon: Lock },
   { to: "/demo-otps", label: "Demo OTPs", icon: Smartphone },
+  { to: "/otp-health", label: "OTP Health", icon: Activity },
   { to: "/kyc", label: "KYC Review", icon: FileCheck2 },
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { to: "/wallet", label: "Wallet Adjust", icon: Wallet },

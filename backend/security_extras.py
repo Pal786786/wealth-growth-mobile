@@ -393,7 +393,9 @@ async def issue_otp(mobile: str, purpose: str = "login") -> Dict[str, Any]:
         })
         if not req_id:
             logger.error(f"[msg91] OTP send failed for ...{mobile[-4:]}: status={status}")
-            raise HTTPException(502, "Unable to send OTP right now. Please try again shortly.")
+            # 503 (not 502): Cloudflare replaces origin 502/504 bodies with its
+            # own HTML error page, which would hide this JSON detail from the app.
+            raise HTTPException(503, "Unable to send OTP right now. Please try again shortly.")
         await _db.otp_codes.insert_one({
             "mobile": mobile,
             "purpose": purpose,
@@ -836,6 +838,33 @@ def attach(api: APIRouter, db, get_current_user, get_current_admin, send_push_fn
             "count": len(recent),
             "live_mode": False,
             "warning": "These OTPs are visible only in DEMO mode. Configure SMS provider in API Management to enable real SMS delivery — once enabled, OTP values will no longer appear here.",
+        }
+
+    @admin.get("/sms-logs")
+    async def sms_logs_view(limit: int = 100, adm=Depends(get_current_admin)):
+        """OTP/SMS delivery health: recent attempts with provider + error detail.
+        Never contains OTP values, API keys, or tokens (sms_logs stores none)."""
+        _ensure(adm)
+        if adm["role"] not in ("super_admin", "admin"):
+            raise HTTPException(403, "Only super_admin/admin can view SMS logs")
+        limit = max(1, min(limit, 200))
+        rows = await _db.sms_logs.find({}, {"_id": 0}).sort("at", -1).limit(limit).to_list(limit)
+        since = _now() - timedelta(hours=24)
+        total_24h = await _db.sms_logs.count_documents({"at": {"$gte": since}})
+        sent_24h = await _db.sms_logs.count_documents({"at": {"$gte": since}, "ok": True})
+        live91 = (await _msg91_live_cfg()) is not None
+        cfg = await _get_sms_cfg()
+        if live91:
+            mode = "live_msg91_widget"
+        elif cfg.get("is_demo"):
+            mode = "demo"
+        else:
+            mode = f"live_{cfg.get('provider')}"
+        return {
+            "items": rows,
+            "count": len(rows),
+            "mode": mode,
+            "stats_24h": {"total": total_24h, "sent": sent_24h, "failed": total_24h - sent_24h},
         }
 
     api.include_router(admin)

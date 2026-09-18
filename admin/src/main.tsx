@@ -21,6 +21,7 @@ import AdminAuditLogs from "./pages/AdminAuditLogs";
 import AdminPushLogs from "./pages/AdminPushLogs";
 import AdminUserSecurity from "./pages/AdminUserSecurity";
 import AdminDemoOtps from "./pages/AdminDemoOtps";
+import AdminOtpHealth from "./pages/AdminOtpHealth";
 import AdminInsuranceClaims from "./pages/AdminInsuranceClaims";
 import AdminTierUpgrades from "./pages/AdminTierUpgrades";
 import AdminCashbackEditor from "./pages/AdminCashbackEditor";
@@ -66,6 +67,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="users" element={<Users />} />
               <Route path="user-security" element={<AdminUserSecurity />} />
               <Route path="demo-otps" element={<AdminDemoOtps />} />
+              <Route path="otp-health" element={<AdminOtpHealth />} />
               <Route path="kyc" element={<AdminKYCDashboard />} />
               <Route path="kyc-legacy" element={<KYC />} />
               <Route path="transactions" element={<Transactions />} />

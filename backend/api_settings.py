@@ -482,7 +482,14 @@ async def test_connection(api_name: str, admin=Depends(get_current_admin)):
                         status, data = await _se._msg91_widget_call("/sendOtpMobile", {
                             "authkey": key, "widgetId": widget_id, "identifier": test_mobile,
                         })
-                        if 200 <= status < 300 and data.get("type") == "success":
+                        _sent = 200 <= status < 300 and data.get("type") == "success"
+                        await _db.sms_logs.insert_one({
+                            "mobile": test_mobile, "purpose": "test_connection",
+                            "provider": "msg91_widget", "ok": _sent,
+                            "error": None if _sent else f"HTTP {status}: {_se._msg91_err(data)[:230]}",
+                            "demo": False, "at": datetime.now(timezone.utc),
+                        })
+                        if _sent:
                             return {"ok": True, "mode": "live",
                                     "message": f"REAL OTP SMS sent to +{test_mobile} via MSG91 Widget — check the phone. Authkey + Widget ID are valid. (Note: MSG91 only queues SMS when your account KYC is verified and wallet has balance.)"}
                         _msg = _se._msg91_err(data)
