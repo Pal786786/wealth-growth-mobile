@@ -1,0 +1,145 @@
+# ==============================================================================
+# My Funding Bank — Reverse proxy vhosts (HTTP + HTTPS)
+# ==============================================================================
+# This is a TEMPLATE. At container start, deploy/nginx/entrypoint.sh replaces
+# ${DOMAIN_NAME}, ${ADMIN_DOMAIN} and ${WEBSITE_DOMAIN} with the values from
+# .env.prod and writes the result to /etc/nginx/conf.d/mfb.conf.
+# Only those three variables are substituted — nginx's own $host etc. are kept.
+# ==============================================================================
+
+# --------- Port 80: health probe, ACME challenge, redirect to HTTPS ----------
+server {
+    listen 80 default_server;
+    server_name _;
+    location /nginx-health {
+        access_log off;
+        return 200 "ok\n";
+    }
+    # Certbot ACME challenge over HTTP
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ================== APP DOMAIN (public API used by the mobile app) ==================
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN_NAME};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem;
+    include /etc/nginx/snippets/ssl.conf;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    limit_conn perip 100;
+
+    # ---- API: /api/* → backend ----
+    location /api/ {
+        limit_req zone=api_general burst=60 nodelay;
+        proxy_pass http://mfb_backend;
+    }
+
+    # Stricter auth endpoints
+    location ~ ^/api/(auth|admin/login|kyc|withdrawals) {
+        limit_req zone=api_auth burst=10 nodelay;
+        proxy_pass http://mfb_backend;
+    }
+
+    # Write-heavy endpoints (payments, ledger)
+    location ~ ^/api/(payments|wallet|finance|withdrawals-payout) {
+        limit_req zone=api_write burst=30 nodelay;
+        proxy_pass http://mfb_backend;
+    }
+
+    # WebSockets (live market stream, AI intelligence)
+    location ~ ^/api/.*/(ws|stream) {
+        proxy_pass http://mfb_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+        proxy_buffering off;
+    }
+
+    # Health probes are unrestricted (for load balancers)
+    location = /api/health/live  { access_log off; proxy_pass http://mfb_backend; }
+    location = /api/health/ready { access_log off; proxy_pass http://mfb_backend; }
+
+    # Prometheus metrics scraping (restricted to internal networks)
+    location = /api/metrics {
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        proxy_pass http://mfb_backend;
+    }
+
+    location / {
+        default_type application/json;
+        return 200 '{"service":"mfb-api","status":"ok"}';
+    }
+}
+
+# ================== ADMIN DOMAIN ==================
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${ADMIN_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${ADMIN_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${ADMIN_DOMAIN}/privkey.pem;
+    include /etc/nginx/snippets/ssl.conf;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://${DOMAIN_NAME} wss://${DOMAIN_NAME} wss://${ADMIN_DOMAIN}" always;
+
+    limit_conn perip 50;
+
+    location /api/ {
+        limit_req zone=api_general burst=40 nodelay;
+        proxy_pass http://mfb_backend;
+    }
+
+    location ~ ^/api/.*/(ws|stream) {
+        proxy_pass http://mfb_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+        proxy_buffering off;
+    }
+
+    location / {
+        proxy_pass http://mfb_admin;
+    }
+}
+
+# ================== WEBSITE DOMAIN (marketing site, static) ==================
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${WEBSITE_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${WEBSITE_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${WEBSITE_DOMAIN}/privkey.pem;
+    include /etc/nginx/snippets/ssl.conf;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    root /usr/share/nginx/website;
+    index index.html;
+    error_page 404 /404.html;
+
+    location / {
+        try_files $uri $uri/ $uri.html =404;
+    }
+
+    location /_next/static/ {
+        expires 365d;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+}

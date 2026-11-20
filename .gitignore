@@ -94,3 +94,10 @@ website/node_modules/@next/swc-linux-arm64-musl/next-swc.linux-arm64-musl.node
 credentials.json
 *.key
 .credentials
+
+# ---- VPS deploy ----
+!.env.prod.example
+.env.prod
+frontend/.metro-cache/
+website/out/
+website/.next/

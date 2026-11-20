@@ -4,9 +4,8 @@
 
 FROM node:20-alpine AS builder
 WORKDIR /build
-RUN corepack enable
 COPY admin/package.json admin/yarn.lock* admin/package-lock.json* ./
-RUN if [ -f yarn.lock ]; then yarn install --frozen-lockfile; else npm ci; fi
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 COPY admin/ ./
 ARG VITE_API_BASE=/api
 ENV VITE_API_BASE=${VITE_API_BASE}

@@ -10,7 +10,10 @@ WORKDIR /build
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_EXTRA_INDEX_URL=https://d33sy5i8bnduwe.cloudfront.net/simple/
+# ^ `emergentintegrations` (used by the AI features) is NOT on PyPI; it is
+#   published on Emergent's package index above.
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential gcc libffi-dev libssl-dev curl \

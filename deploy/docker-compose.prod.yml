@@ -2,15 +2,14 @@
 # My Funding Bank — Production Docker Compose
 # ==============================================================================
 # Usage:
-#   docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod up -d
+#   docker compose -f deploy/docker-compose.prod.yml --env-file .env.prod up -d --build
+#   (or simply: bash deploy/update.sh)
 #
 # Optional monitoring stack:
 #   docker compose -f deploy/docker-compose.prod.yml \
 #                  -f deploy/docker-compose.monitoring.yml \
 #                  --profile monitoring up -d
 # ==============================================================================
-
-version: "3.9"
 
 x-logging: &default-logging
   driver: json-file
@@ -126,9 +125,9 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN_NAME: ${DOMAIN_NAME:-app.myfundingbank.in}
-      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.myfundingbank.in}
-      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-ops@myfundingbank.in}
+      DOMAIN_NAME: ${DOMAIN_NAME:?DOMAIN_NAME required}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?ADMIN_DOMAIN required}
+      WEBSITE_DOMAIN: ${WEBSITE_DOMAIN:?WEBSITE_DOMAIN required}
     volumes:
       - nginx_certs:/etc/letsencrypt
       - nginx_challenges:/var/www/certbot
@@ -154,7 +153,6 @@ services:
       - nginx_challenges:/var/www/certbot
     entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --quiet --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done;'
     networks: [mfb_net]
-    profiles: ["tls"]
     logging: *default-logging
 
   # ---------------- Automated MongoDB Backup ----------------
@@ -170,6 +168,7 @@ services:
       MONGO_URL: mongodb://${MONGO_ROOT_USER:-mfbadmin}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
       MONGO_DB_NAME: ${MONGO_DB_NAME:-mfb_prod}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_CRON: ${BACKUP_CRON:-0 2 * * *}
       BACKUP_STORAGE: ${BACKUP_STORAGE:-local}
       BACKUP_ENCRYPT: ${BACKUP_ENCRYPT:-false}
       BACKUP_ENCRYPT_PASSPHRASE: ${BACKUP_ENCRYPT_PASSPHRASE:-}
@@ -181,9 +180,10 @@ services:
       S3_PREFIX: ${S3_PREFIX:-mfb-backups}
     volumes:
       - mongo_backups:/backups
-      - ./scripts/mongo_backup.sh:/usr/local/bin/mongo_backup.sh:ro
-      - ./scripts/mongo_restore.sh:/usr/local/bin/mongo_restore.sh:ro
-    entrypoint: /bin/bash -c 'apt-get update -qq && apt-get install -y -qq cron gnupg awscli >/dev/null && echo "$${BACKUP_CRON:-0 2 * * *} root /usr/local/bin/mongo_backup.sh >> /var/log/mfb_backup.log 2>&1" > /etc/cron.d/mfb_backup && chmod 0644 /etc/cron.d/mfb_backup && touch /var/log/mfb_backup.log && cron && tail -f /var/log/mfb_backup.log'
+      - ../scripts/deploy/mongo_backup.sh:/usr/local/bin/mongo_backup.sh:ro
+      - ../scripts/deploy/mongo_restore.sh:/usr/local/bin/mongo_restore.sh:ro
+      - ../scripts/deploy/backup_entrypoint.sh:/usr/local/bin/backup_entrypoint.sh:ro
+    entrypoint: ["/bin/bash", "/usr/local/bin/backup_entrypoint.sh"]
     networks: [mfb_net]
     logging: *default-logging
     labels:
