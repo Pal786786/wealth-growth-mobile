@@ -37,7 +37,7 @@ Teeno domains ka **A record** VPS ke IP pe point karo:
 ssh root@VPS_IP
 
 apt-get update && apt-get install -y git
-git clone -b vps-deploy https://github.com/Pal786786/wealth-growth-mobile.git /opt/mfb
+git clone --depth 1 -b vps-deploy https://github.com/Pal786786/wealth-growth-mobile.git /opt/mfb
 cd /opt/mfb
 ```
 
